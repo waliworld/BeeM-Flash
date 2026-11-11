@@ -87,8 +87,15 @@
       "key": "source",
       "label": "Data source",
       "type": "choice",
-      "options": [["auto", "Auto"], ["someip", "Bus signals"], ["diag", "Diagnostic (UDS)"]],
+      "options": [["auto", "Auto"], ["mhd", "MHD live monitor"], ["someip", "Bus signals"], ["diag", "Diagnostic (UDS)"]],
       "default": "auto"
+    },
+    {
+      "key": "platform",
+      "label": "Engine platform",
+      "type": "choice",
+      "options": [["B58", "B58 (gen 1/2)"], ["S58", "S58"]],
+      "default": "B58"
     },
     {
       "key": "rate",

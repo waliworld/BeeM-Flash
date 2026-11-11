@@ -6,6 +6,25 @@ This file is the procedure to fill them in. Until then the app shows
 clearly-labelled demo data and marks these sources unverified so **no wrong
 number is ever displayed or logged**.
 
+## 0. MHD live monitor — the easy path for an MHD-flashed MG1 car
+
+If the car is MHD-flashed (B58/S58, MG1), the simplest and most accurate source
+needs **no PID map at all**. MHD's live monitor is one fixed UDS exchange —
+request `2C 88 01`, reply `6C 88` + a 36-byte little-endian packed block — that
+returns a full live set already correctly scaled: RPM, load, boost / target /
+deviation, coolant, gear, ethanol, WG distribution, mass flow, boost setpoint
+factor, speed, ambient and intake air temp.
+
+`src/mhdmonitor.js` implements it and is the **preferred source** (Settings →
+Data source → *Auto* or *MHD live monitor*; set *Engine platform* to B58 or
+S58 so mass flow is read from the right field). The field table and scaling are
+transcribed from MHD's own published TunerPro ADX via the MIT-licensed
+`freebeamer/core`; see `data/SOURCES.md`. It is read-only — the map-switch write
+path is MHD's closed plugin and is not implemented.
+
+This is the recommended route; the per-PID map below is for stock cars, extra
+channels, or non-MHD setups.
+
 ## 1. SOME/IP bus signals (`src/signalmap.js`)
 
 Signals such as RPM, vehicle speed and temperatures are broadcast on the unit's

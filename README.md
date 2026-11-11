@@ -36,6 +36,11 @@ app, and it is built from scratch — see [`NOTICE.md`](NOTICE.md).
 - **Matches your MHD preset** — convert an MHD Flasher `LogPresets.csv` export to
   a channel preset with `scripts/preset_from_mhd_csv.js`, drop it on the unit as
   `preset.json`, and the selection mirrors what MHD+ logs on that ECU.
+- **MHD live monitor (B58/S58)** — if the car is MHD-flashed, one UDS exchange
+  (`2C 88 01`) returns a 36-byte packed block with ~14 channels already scaled
+  (boost/target/deviation, load, coolant, IAT, ethanol, WG distribution, mass
+  flow, speed…). No PID map needed; it's the preferred source. Read-only;
+  transcribed from MHD's published ADX via MIT `freebeamer/core` (`data/SOURCES.md`).
 - **Ready-made B58 / S58 maps** — an attributed, open-sourced enhanced-PID
   dataset (`data/bmw_enhanced_pids.csv`, ~2000 PIDs) and curated
   `profiles/pidmap.b58.json` / `pidmap.s58.json` (21 core channels, scaling +
@@ -90,7 +95,7 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the data flow.
 
 All application logic — the logging state machine and CSV, the UDS/ISO-14229
 codec, unit conversion, map-control gating, demo fallback, and every screen's
-rendering — is covered by `npm test` (75 assertions) and the headless
+rendering — is covered by `npm test` (83 assertions) and the headless
 `npm run sim`, and the screens are rendered to real pixels by `npm run shots`.
 
 Three things are, by their nature, completed on the actual unit and are clearly

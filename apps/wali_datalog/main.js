@@ -12,6 +12,7 @@
 var SomeipProvider = require('./src/someip');
 var DiagProvider = require('./src/diag');
 var Provider = require('./src/provider');
+var MhdMonitor = require('./src/mhdmonitor');
 var LogEngine = require('./src/logengine');
 var MapControl = require('./src/mapcontrol');
 var Channels = require('./src/channels');
@@ -23,7 +24,7 @@ var surface = require('./src/ui/surface');
 var F = require('./src/format');
 
 var SCREEN_ORDER = ['live', 'datalog', 'channels', 'maps', 'mhd'];
-var DEFAULTS = { demo: 'auto', source: 'auto', rate: 10, units: 'metric', autostart: false, mapcontrol: false };
+var DEFAULTS = { demo: 'auto', source: 'auto', platform: 'B58', rate: 10, units: 'metric', autostart: false, mapcontrol: false };
 
 function App() {}
 
@@ -49,8 +50,12 @@ App.prototype.start = function (ctx) {
   var profile = this._loadPidProfile();
   this.diag = new DiagProvider(this.ctx, profile ? { profile: profile } : {});
   if (this.diag.supported) trySafe(function () { self.diag.start(); });
+  // MHD live monitor (2C 88 01) over the same diagnostic transport; preferred
+  // source for an MHD-flashed MG1 car. Read-only.
+  this.monitor = new MhdMonitor(this.ctx, { transport: this.diag.transport, platform: this.getSetting('platform') });
+  if (this.monitor.supported) trySafe(function () { self.monitor.start(); });
   this.provider = new Provider(this.ctx, {
-    someip: this.someip, diag: this.diag, getSetting: this.getSetting
+    someip: this.someip, diag: this.diag, mhd: this.monitor, getSetting: this.getSetting
   });
 
   // ---- log engine -------------------------------------------------------
@@ -367,6 +372,7 @@ App.prototype.stop = function () {
   if (this._sampler) clearInterval(this._sampler);
   trySafe(function () { this.someip.stop(); }.bind(this));
   trySafe(function () { this.diag.stop(); }.bind(this));
+  trySafe(function () { this.monitor.stop(); }.bind(this));
 };
 
 // ---- helpers ------------------------------------------------------------

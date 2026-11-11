@@ -120,6 +120,31 @@ ok(!!Channels.get('wgdcP') && !!Channels.get('boostDeviation') && !!Channels.get
   ok(threw, 'profile entry without a did is rejected');
 })();
 
+// ---- MHD live-monitor decode (2C 88 01 -> 36-byte LE packed block) --------
+(function () {
+  var MhdMonitor = require(A + 'mhdmonitor');
+  var body = [];
+  for (var i = 0; i < 36; i++) body.push(0);
+  function u16(off, v) { body[off] = v & 0xff; body[off + 1] = (v >> 8) & 0xff; }
+  u16(0x00, 3000);   // RPM
+  u16(0x02, 5000);   // LOAD -> 50.00 %
+  u16(0x04, 12800);  // BOOST -> ~1.00 bar (psi->bar)
+  u16(0x0C, 9000);   // ENGINETEMP -> 90 C
+  body[0x0E] = 3;    // GEAR
+  u16(0x1C, 100);    // SPEED
+  u16(0x20, 300);    // INTAKEAIRTEMP -> 30 C
+  var reply = [0x6C, 0x88].concat(body);
+  var v = MhdMonitor.decodeReply(reply, 'B58');
+  eq(v.rpm, 3000, 'mhd monitor: RPM');
+  near(v.load, 50.0, 1e-6, 'mhd monitor: LOAD (signed, %)');
+  near(v.boost, 1.0, 0.01, 'mhd monitor: BOOST psi->bar');
+  near(v.coolant, 90.0, 1e-6, 'mhd monitor: ENGINETEMP -> coolant');
+  eq(v.gear, 3, 'mhd monitor: GEAR');
+  eq(v.speed, 100, 'mhd monitor: SPEED');
+  near(v.iat, 30.0, 1e-6, 'mhd monitor: INTAKEAIRTEMP -> iat');
+  ok(MhdMonitor.decodeReply([0x7f, 0x2c, 0x31].concat(body), 'B58') === null, 'negative monitor reply -> null');
+})();
+
 // ---- log engine -----------------------------------------------------------
 (function () {
   var mem = Store.memStorage();

@@ -3,7 +3,7 @@
 ## Automated checks (run anywhere)
 
 ```bash
-npm test        # 75 assertions, 0 dependencies
+npm test        # 83 assertions, 0 dependencies
 npm run sim     # headless end-to-end drive + render of every screen
 npm run shots   # renders every screen to real pixels (out/shots/*.png)
 ```
@@ -22,6 +22,9 @@ npm run shots   # renders every screen to real pixels (out/shots/*.png)
 - **Measurement importer** — maps a measurement table (English/German BMW/ISTA
   names, hex or decimal DIDs) to channel keys, groups shared DIDs into packed
   blocks, reports unmatched rows.
+- **MHD live-monitor decode** — a synthetic `6C 88` + 36-byte little-endian reply
+  decodes to the right channels/scaling (RPM 3000, LOAD 50 %, BOOST→1.00 bar,
+  ENGINETEMP→90 °C, GEAR 3, SPEED 100, IAT 30 °C); a negative reply → null.
 - **Enhanced-PID dataset + pidmap composition** — data-type → len/signed; curated
   channel→PID selection composes DID + unit-converted scaling (hPa→bar folded in).
   The B58 map's scaling was spot-checked against known values (coolant 90 °C,

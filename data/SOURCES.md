@@ -14,6 +14,34 @@ scaling for datalogging. Every row carries its `source` and `verified=false`.
   vendored wholesale — we generate our own schema and keep the derivation script
   for provenance.
 
+## MHD live-monitor protocol (`src/mhdmonitor.js`)
+
+The MHD live-monitor exchange — request `2C 88 01`
+(DynamicallyDefineDataIdentifier), reply `6C 88` + a 36-byte little-endian
+packed block — and its field table (offsets, sizes, signedness, scaling) are
+transcribed from:
+
+- **MHD Tuning's own publicly published TunerPro RT ADX file** (`MG1.adx`) for
+  the live monitor, via
+- **`github.com/freebeamer/core`** (**MIT License**), package `pkg/mhd`, which
+  documents the exchange field-by-field.
+
+Copyright (c) the `freebeamer/core` authors; used under the MIT License. We port
+the factual field/scaling table (not the Go code) and map the fields to our
+channel keys. Read-only: the write / map-switch path is MHD's closed plugin and
+is intentionally not implemented, consistent with that source.
+
+## MGFlasher A2L / XDF map packs (staged for integration)
+
+- **`github.com/mgflasher-team/mgflasher-map-packs`** (**Apache-2.0**) — 913 A2L
+  files + XDFs for B48/B58 gen1, B58 gen2, S58, N63/S63. A2L (ASAM MCD-2 MC)
+  defines MEASUREMENT and CHARACTERISTIC objects with addresses, data types and
+  conversions. These are **memory-address** definitions (for XCP / flash tools),
+  a different transport from the enhanced-PID (`0x22`) and MHD-monitor (`0x2C`)
+  paths. Planned: an A2L MEASUREMENT parser that extends the unified dataset
+  with `identifier_type=address` rows, plus UDS ReadMemoryByAddress (`0x23`)
+  support. Not yet wired in; attributed here.
+
 ## Referenced but NOT used
 
 - `github.com/gediz/bmw-unified-db` (MIT) — a build pipeline that assembles a DB

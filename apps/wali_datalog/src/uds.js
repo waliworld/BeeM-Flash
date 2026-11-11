@@ -12,6 +12,7 @@ var SID = {
   SECURITY: 0x27,
   TESTER_PRESENT: 0x3E,
   READ_DID: 0x22,
+  DDDI: 0x2C, // DynamicallyDefineDataIdentifier (MHD live monitor uses 2C 88 01)
   ROUTINE: 0x31
 };
 
@@ -78,6 +79,12 @@ function buildRoutineControl(sub, rid, data) {
   return [SID.ROUTINE, u8(sub), hi(rid), lo(rid)].concat(data || []);
 }
 
+// MHD live-monitor request: DynamicallyDefineDataIdentifier 0x2C 0x88 0x01.
+// Positive reply is 0x6C 0x88 followed by the packed monitor body.
+function buildMonitorRequest() {
+  return [SID.DDDI, 0x88, 0x01];
+}
+
 // ---- response parsing -----------------------------------------------------
 
 // Returns { positive, sid, sub, did, rid, data, nrc, nrcName, pending, error }
@@ -109,6 +116,9 @@ function parseResponse(requestSid, bytes) {
     out.sub = bytes[1];
     out.rid = (bytes[2] << 8) | bytes[3];
     out.data = bytes.slice(4);
+  } else if (requestSid === SID.DDDI) {
+    out.sub = bytes[1];        // 0x88
+    out.data = bytes.slice(2); // packed monitor body
   } else {
     out.data = bytes.slice(1);
   }
@@ -152,6 +162,7 @@ module.exports = {
   buildSecurityRequestSeed: buildSecurityRequestSeed,
   buildSecuritySendKey: buildSecuritySendKey,
   buildRoutineControl: buildRoutineControl,
+  buildMonitorRequest: buildMonitorRequest,
   parseResponse: parseResponse,
   readInt: readInt,
   scaleFromSpec: scaleFromSpec
