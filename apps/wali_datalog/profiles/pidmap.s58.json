@@ -1,0 +1,197 @@
+{
+  "label": "S58 enhanced-PID map (community-sourced, unverified; derived from B58/MG1 — verify on an S58)",
+  "platform": "S58",
+  "verified": false,
+  "source": "thesecretingredient.neocities.org/bmw via github.com/Shooooooooo/bmw_pid_data",
+  "reads": {
+    "rpm": {
+      "did": 18439,
+      "off": 0,
+      "len": 2,
+      "signed": true,
+      "le": false,
+      "m": 0.5,
+      "b": 0
+    },
+    "speed": {
+      "did": 19121,
+      "off": 0,
+      "len": 2,
+      "signed": true,
+      "le": false,
+      "m": 0.01,
+      "b": 0
+    },
+    "pedal": {
+      "did": 18443,
+      "off": 0,
+      "len": 2,
+      "signed": true,
+      "le": false,
+      "m": 0.01220703,
+      "b": 0
+    },
+    "throttle": {
+      "did": 17920,
+      "off": 0,
+      "len": 2,
+      "signed": true,
+      "le": false,
+      "m": 0.0078125,
+      "b": 0
+    },
+    "boostAbs": {
+      "did": 16901,
+      "off": 0,
+      "len": 2,
+      "signed": false,
+      "le": false,
+      "m": 0.000078125,
+      "b": 0
+    },
+    "baro": {
+      "did": 16897,
+      "off": 0,
+      "len": 2,
+      "signed": false,
+      "le": false,
+      "m": 0.0000390625,
+      "b": 0
+    },
+    "boostTarget": {
+      "did": 19120,
+      "off": 0,
+      "len": 2,
+      "signed": false,
+      "le": false,
+      "m": 0.0000390625,
+      "b": 0
+    },
+    "iat": {
+      "did": 22543,
+      "off": 0,
+      "len": 1,
+      "signed": false,
+      "le": false,
+      "m": 0.75,
+      "b": -48
+    },
+    "coolant": {
+      "did": 17152,
+      "off": 0,
+      "len": 2,
+      "signed": true,
+      "le": false,
+      "m": 0.1,
+      "b": -273.14
+    },
+    "oil": {
+      "did": 17410,
+      "off": 0,
+      "len": 2,
+      "signed": false,
+      "le": false,
+      "m": 0.75,
+      "b": -48
+    },
+    "railPressure": {
+      "did": 22104,
+      "off": 0,
+      "len": 2,
+      "signed": false,
+      "le": false,
+      "m": 0.02,
+      "b": 0
+    },
+    "railTarget": {
+      "did": 22209,
+      "off": 0,
+      "len": 2,
+      "signed": false,
+      "le": false,
+      "m": 0.02,
+      "b": 0
+    },
+    "timing": {
+      "did": 22052,
+      "off": 0,
+      "len": 1,
+      "signed": true,
+      "le": false,
+      "m": 0.75,
+      "b": 0
+    },
+    "lambda": {
+      "did": 22665,
+      "off": 0,
+      "len": 2,
+      "signed": false,
+      "le": false,
+      "m": 0.000244140625,
+      "b": 0
+    },
+    "lambda2": {
+      "did": 22666,
+      "off": 0,
+      "len": 2,
+      "signed": false,
+      "le": false,
+      "m": 0.000244140625,
+      "b": 0
+    },
+    "maf": {
+      "did": 16902,
+      "off": 0,
+      "len": 2,
+      "signed": false,
+      "le": false,
+      "m": 0.03125,
+      "b": 0
+    },
+    "mafReq": {
+      "did": 22433,
+      "off": 0,
+      "len": 2,
+      "signed": false,
+      "le": false,
+      "m": 0.1,
+      "b": 0
+    },
+    "wastegatePos": {
+      "did": 22823,
+      "off": 0,
+      "len": 1,
+      "signed": false,
+      "le": false,
+      "m": 0.390625,
+      "b": 0
+    },
+    "battery": {
+      "did": 22588,
+      "off": 0,
+      "len": 1,
+      "signed": false,
+      "le": false,
+      "m": 0.0942,
+      "b": 0
+    },
+    "ethanol": {
+      "did": 22840,
+      "off": 0,
+      "len": 2,
+      "signed": false,
+      "le": false,
+      "m": 0.003052,
+      "b": 0
+    },
+    "vanosInTarget": {
+      "did": 17669,
+      "off": 0,
+      "len": 2,
+      "signed": true,
+      "le": false,
+      "m": 0.0078125,
+      "b": 0
+    }
+  }
+}

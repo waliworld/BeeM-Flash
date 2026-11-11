@@ -124,6 +124,30 @@ the result, confirm the scaling on your car, then set `verified: true`.
 > definitions from your own licensed tools, your tuner, or your own on-car
 > readout; the importer only reformats a table you provide.
 
+### Ready-made maps from open PID data (B58 / S58)
+
+The repo ships a unified, attributed dataset of BMW **enhanced PIDs** (read via
+UDS `0x22`) and curated channel maps built from it — no BMW SGBD binaries, all
+community-sourced and `verified:false`:
+
+- `data/bmw_enhanced_pids.csv` — ~2000 PIDs across B48/B58/N55/N63/S55/S63 in the
+  schema `platform,ecu_variant,software_id,measurement_name,identifier_type,
+  identifier,address,data_type,endianness,scale,offset,unit,source,verified`
+  (see `data/SOURCES.md` for attribution). Rebuild with
+  `node scripts/build_pid_dataset.js <bmw_pid_data-checkout>`.
+- `apps/wali_datalog/profiles/pidmap.b58.json` — 21 core channels mapped to B58
+  enhanced PIDs, with units folded into the scaling (hPa→bar, MPa→bar, …).
+  Rebuild/extend via `profiles/select.b58.json` +
+  `node scripts/pidmap_from_dataset.js data/bmw_enhanced_pids.csv profiles/select.b58.json`.
+- `apps/wali_datalog/profiles/pidmap.s58.json` — S58 candidate (S58 and B58 gen2
+  are both Bosch MG1 and share the enhanced-PID map); derived from B58, flagged
+  unverified for S58.
+
+To use one: copy it to the head unit as the app's `pidmap.json`. It stays in
+demo (strict mode suppresses it) until you confirm a few channels on your car
+and set `verified: true`. Enhanced PIDs are read one per `0x22` request, so each
+channel is its own single-field block.
+
 ### Per-channel, by hand (alternative)
 
 1. Identify the measured-value DID and the field's position within its response

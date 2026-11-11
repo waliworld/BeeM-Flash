@@ -15,8 +15,7 @@ someip-interfaces.json
 # Generated preview bundle (regenerate with scripts/bundle.js)
 runtime/web/app.bundle.js
 
-# Scratch data dirs a run might create
-/data/
+# Scratch dirs a run might create (note: /data/ is tracked — it holds the PID dataset)
 /tmp/
 
 # NOTE: out/shots/*.png are committed on purpose (README/docs screenshots).

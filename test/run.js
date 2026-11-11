@@ -80,6 +80,25 @@ ok(!!Channels.get('wgdcP') && !!Channels.get('boostDeviation') && !!Channels.get
   ok(r.unmapped.indexOf('Bogus Chan') >= 0, 'unknown measurement name is reported, not guessed');
   eq(mi.keyFor('Oil temperature'), 'oil', 'English BMW alias maps to channel key');
 })();
+
+// Unified enhanced-PID dataset + curated pidmap composition
+(function () {
+  var dsb = require('../scripts/build_pid_dataset');
+  var pfd = require('../scripts/pidmap_from_dataset');
+  var dt = dsb.dtype('signed int'); eq(dt.bytes, 2, 'data type "int" = 2 bytes'); ok(dt.signed, '"signed int" is signed');
+  var dt2 = dsb.dtype('unsigned char'); eq(dt2.bytes, 1, '"char" = 1 byte'); ok(!dt2.signed, '"unsigned char" unsigned');
+  var csv = dsb.COLS.join(',') + '\n' +
+    'B58,,,Coolant temperature,enhanced_pid,0x4300,,i16,big,0.1,-273.14,C,src,false\n' +
+    'B58,,,Boost pressure,enhanced_pid,0x4205,,u16,big,0.078125,0,hPa,src,false';
+  var res = pfd.build(csv, { platform: 'B58', select: { coolant: { pid: '0x4300', uscale: 1 }, boostAbs: { pid: '0x4205', uscale: 0.001 } } });
+  eq(res.mapped, 2, 'composed 2 channels from dataset');
+  var c = res.reads.coolant;
+  eq(c.did, 0x4300, 'coolant DID'); eq(c.len, 2, 'coolant len'); ok(c.signed, 'coolant signed');
+  near(c.m, 0.1, 1e-9, 'coolant scale'); near(c.b, -273.14, 1e-6, 'coolant offset');
+  var b = res.reads.boostAbs;
+  near(b.m, 0.078125 * 0.001, 1e-12, 'boost hPa->bar unit conversion folded into scale');
+  ok(b.signed === false, 'boost unsigned');
+})();
 (function () {
   var tmpl = dme.get('generic_template');
   ok(Object.keys(tmpl.reads).length > 30, 'template covers many diag channels');

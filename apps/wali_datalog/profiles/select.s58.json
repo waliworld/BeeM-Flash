@@ -1,0 +1,91 @@
+{
+  "_doc": "S58 candidate: S58 (G80 M3) and B58 gen2 are both Bosch MG1 and share the enhanced-PID architecture, so this reuses the B58 PID selection against the B58 rows of the dataset. It is UNVERIFIED for S58 \u2014 confirm identifiers/scaling on an S58 before trusting, then set verified:true. Some S58-specific PIDs will differ.",
+  "platform": "S58",
+  "datasetPlatform": "B58",
+  "select": {
+    "rpm": {
+      "pid": "0x4807",
+      "uscale": 1
+    },
+    "speed": {
+      "pid": "0x4ab1",
+      "uscale": 1
+    },
+    "pedal": {
+      "pid": "0x480b",
+      "uscale": 1
+    },
+    "throttle": {
+      "pid": "0x4600",
+      "uscale": 1
+    },
+    "boostAbs": {
+      "pid": "0x4205",
+      "uscale": 0.001
+    },
+    "baro": {
+      "pid": "0x4201",
+      "uscale": 0.001
+    },
+    "boostTarget": {
+      "pid": "0x4ab0",
+      "uscale": 0.001
+    },
+    "iat": {
+      "pid": "0x580f",
+      "uscale": 1
+    },
+    "coolant": {
+      "pid": "0x4300",
+      "uscale": 1
+    },
+    "oil": {
+      "pid": "0x4402",
+      "uscale": 1
+    },
+    "railPressure": {
+      "pid": "0x5658",
+      "uscale": 10
+    },
+    "railTarget": {
+      "pid": "0x56c1",
+      "uscale": 10
+    },
+    "timing": {
+      "pid": "0x5624",
+      "uscale": 1
+    },
+    "lambda": {
+      "pid": "0x5889",
+      "uscale": 1
+    },
+    "lambda2": {
+      "pid": "0x588a",
+      "uscale": 1
+    },
+    "maf": {
+      "pid": "0x4206",
+      "uscale": 1
+    },
+    "mafReq": {
+      "pid": "0x57a1",
+      "uscale": 1
+    },
+    "wastegatePos": {
+      "pid": "0x5927",
+      "uscale": 1
+    },
+    "battery": {
+      "pid": "0x583c",
+      "uscale": 1
+    },
+    "ethanol": {
+      "pid": "0x5938",
+      "uscale": 100
+    },
+    "vanosInTarget": {
+      "pid": "0x4505",
+      "uscale": 1
+    }
+  }
+}
