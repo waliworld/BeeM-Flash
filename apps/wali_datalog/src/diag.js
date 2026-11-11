@@ -47,10 +47,10 @@ function DiagProvider(ctx, opts) {
   this.ctx = ctx || {};
   this.transport = opts.transport || makeCtxTransport(ctx);
   this.send = promisifySend(this.transport);
-  this.profile = opts.profile || dme.get(opts.profileName || 'generic_i6t');
+  this.profile = opts.profile || dme.get(opts.profileName || 'generic_template');
   this.strict = opts.strict !== false;
-  this.pollMs = opts.pollMs || 100;
-  this.keys = Object.keys(this.profile.reads);
+  this.pollMs = opts.pollMs || 50;
+  this.blocks = dme.byDid(this.profile); // packed measurement blocks (one read per DID)
   this.cache = {};
   this.lastUpdate = 0;
   this.timer = null;
@@ -64,22 +64,22 @@ DiagProvider.prototype.start = function (scheduler) {
   var self = this;
   var setI = scheduler || (typeof setInterval === 'function' ? setInterval : null);
   if (!setI) return false;
-  // Round-robin one DID per tick keeps the diagnostic channel responsive.
-  var order = this.keys.slice();
+  // Round-robin one packed block (DID) per tick; unpack all its fields at once.
+  var blocks = this.blocks;
   var i = 0;
   this.timer = setI(function () {
-    if (self.busy || order.length === 0) return;
-    var key = order[i % order.length]; i++;
+    if (self.busy || blocks.length === 0) return;
+    var block = blocks[i % blocks.length]; i++;
     self.busy = true;
-    var spec = self.profile.reads[key];
-    self.send(uds.buildReadDataByIdentifier(spec.did)).then(function (resp) {
+    self.send(uds.buildReadDataByIdentifier(block.did)).then(function (resp) {
       var p = uds.parseResponse(uds.SID.READ_DID, resp);
       if (p.positive) {
-        var v = uds.scaleFromSpec(p.data, spec);
-        if (typeof v === 'number' && isFinite(v)) {
-          self.cache[key] = v;
-          self.lastUpdate = Date.now();
+        for (var f = 0; f < block.fields.length; f++) {
+          var spec = block.fields[f];
+          var v = uds.scaleFromSpec(p.data, spec);
+          if (typeof v === 'number' && isFinite(v)) self.cache[spec.key] = v;
         }
+        self.lastUpdate = Date.now();
       }
       self.busy = false;
     }, function () { self.busy = false; });

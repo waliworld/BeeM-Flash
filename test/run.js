@@ -13,6 +13,8 @@ var LogEngine = require(A + 'logengine');
 var MapControl = require(A + 'mapcontrol');
 var Provider = require(A + 'provider');
 var Store = require(A + 'storage');
+var dme = require(A + 'dme_profiles');
+var DiagProvider = require(A + 'diag');
 
 var pass = 0, fail = 0, failures = [];
 function ok(cond, msg) { if (cond) pass++; else { fail++; failures.push(msg); } }
@@ -45,6 +47,30 @@ ok(rc.positive && rc.rid === 0x611e && rc.sub === 0x01, 'routine positive parse'
 ok(Channels.defaults().indexOf('rpm') >= 0, 'rpm is a default channel');
 near(Channels.toUnits(Channels.get('speed'), 100, 'imperial'), 62.1371, 1e-3, 'speed to mph');
 eq(Channels.unitLabel(Channels.get('boost'), 'imperial'), 'psi', 'boost imperial unit');
+
+// ---- MHD+ PID profile + packed blocks ------------------------------------
+ok(Channels.all().length > 50, 'catalogue has 50+ channels (MHD+ class)');
+ok(!!Channels.get('timingCyl6') && !!Channels.get('knockCyl6'), 'per-cylinder channels present');
+(function () {
+  var tmpl = dme.get('generic_template');
+  ok(Object.keys(tmpl.reads).length > 30, 'template covers many diag channels');
+  ok(tmpl.verified === false, 'template is unverified (suppressed in strict mode)');
+
+  var prof = dme.fromJson({
+    label: 't', verified: true,
+    reads: {
+      boost: { did: 0x4100, off: 0, len: 2, m: 0.001, b: -1 },
+      iat: { did: 0x4100, off: 2, len: 2, m: 0.1, b: -40, signed: true },
+      railPressure: { did: 0x4101, off: 0, len: 2, m: 0.1 }
+    }
+  });
+  var blocks = dme.byDid(prof);
+  eq(blocks.length, 2, 'two DIDs -> two packed blocks');
+  eq(blocks[0].fields.length, 2, 'first block packs 2 channels (boost+iat share a DID)');
+  ok(dme.fromJson({ reads: { not_a_channel: { did: 1 } } }).reads.not_a_channel === undefined, 'unknown channel ignored');
+  var threw = false; try { dme.fromJson({ reads: { boost: { off: 0 } } }); } catch (e) { threw = true; }
+  ok(threw, 'profile entry without a did is rejected');
+})();
 
 // ---- log engine -----------------------------------------------------------
 (function () {
@@ -137,6 +163,28 @@ Promise.resolve()
     var on = new MapControl({ enabled: true });
     return on.commit(1, { speed: 50, rpm: 800 }, fakeDiag(true)).then(function (res) {
       ok(!res.ok, 'commit refuses when preconditions fail (never calls DME)');
+    });
+  })
+  .then(function () {
+    // Packed-block read: one DID returns boost (raw 2000) + iat (raw 650).
+    var prof = dme.fromJson({
+      label: 'pk', verified: true,
+      reads: {
+        boost: { did: 0x4100, off: 0, len: 2, m: 0.001, b: -1 },
+        iat: { did: 0x4100, off: 2, len: 2, m: 0.1, b: -40, signed: true }
+      }
+    });
+    var resp = [0x62, 0x41, 0x00, 0x07, 0xD0, 0x02, 0x8A];
+    var trans = { supported: true, send: function (bytes, cb) { cb(null, resp); } };
+    var d = new DiagProvider({}, { transport: trans, profile: prof, strict: true });
+    var sched = function (fn) { sched.fn = fn; return 1; };
+    d.start(sched);
+    var delay = function () { return new Promise(function (r) { setTimeout(r, 0); }); };
+    sched.fn();
+    return delay().then(function () {
+      var r = d.read();
+      near(r.boost, 1.0, 1e-6, 'packed block: boost unpacked + scaled');
+      near(r.iat, 25.0, 1e-6, 'packed block: iat unpacked + scaled from same DID');
     });
   })
   .then(report)

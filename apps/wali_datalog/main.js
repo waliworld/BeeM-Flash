@@ -16,6 +16,7 @@ var LogEngine = require('./src/logengine');
 var MapControl = require('./src/mapcontrol');
 var Channels = require('./src/channels');
 var storageMod = require('./src/storage');
+var dme = require('./src/dme_profiles');
 var theme = require('./src/ui/theme');
 var screens = require('./src/ui/screens');
 var surface = require('./src/ui/surface');
@@ -38,18 +39,21 @@ App.prototype.start = function (ctx) {
     return v === undefined || v === null ? DEFAULTS[k] : v;
   };
 
+  // ---- storage (needed before loading the PID profile) ------------------
+  var dataDir = this.ctx.dataDir || './data';
+  this.storage = this.ctx._storage ? this.ctx._storage : storageMod.fsStorage(dataDir); // sim injects _storage
+
   // ---- data sources -----------------------------------------------------
   this.someip = new SomeipProvider(this.ctx);
   trySafe(function () { self.someip.start(); });
-  this.diag = new DiagProvider(this.ctx);
+  var profile = this._loadPidProfile();
+  this.diag = new DiagProvider(this.ctx, profile ? { profile: profile } : {});
   if (this.diag.supported) trySafe(function () { self.diag.start(); });
   this.provider = new Provider(this.ctx, {
     someip: this.someip, diag: this.diag, getSetting: this.getSetting
   });
 
   // ---- log engine -------------------------------------------------------
-  var dataDir = this.ctx.dataDir || './data';
-  this.storage = this.ctx._storage ? this.ctx._storage : storageMod.fsStorage(dataDir); // sim injects _storage
   this.engine = new LogEngine({
     storage: this.storage,
     onError: function (msg) { if (self.ctx.log && self.ctx.log.error) self.ctx.log.error(msg); }
@@ -108,6 +112,24 @@ App.prototype._saveEnabled = function () {
       this.storage.close(h);
     }
   } catch (e) {}
+};
+
+// Load an imported per-tune PID profile (pidmap.json) if the user supplied one.
+// Returns a normalised profile or null (then DiagProvider uses the template).
+App.prototype._loadPidProfile = function () {
+  try {
+    if (this.storage && this.storage.read) {
+      var txt = this.storage.read('pidmap.json');
+      if (txt && txt.length) {
+        var prof = dme.fromJson(JSON.parse(txt));
+        if (this.ctx.log && this.ctx.log.info) this.ctx.log.info('Loaded PID profile: ' + prof.label);
+        return prof;
+      }
+    }
+  } catch (e) {
+    if (this.ctx.log && this.ctx.log.warn) this.ctx.log.warn('pidmap.json ignored: ' + (e && e.message ? e.message : e));
+  }
+  return null;
 };
 
 // ---- runtime loops ------------------------------------------------------

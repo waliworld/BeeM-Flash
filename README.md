@@ -26,6 +26,12 @@ app, and it is built from scratch — see [`NOTICE.md`](NOTICE.md).
 - **Datalogging** — start/stop a session, pick channels, drop markers on a
   pull, self-describing CSV with units in the header, sessions listed on-screen,
   one-button export to USB. Metric or imperial.
+- **Full MHD+ class channel set** — ~67 channels (boost actual/target, charge-air
+  temp, per-cylinder ignition timing and knock, lambda actual/target + trims,
+  HPFP/LPFP, VANOS, torque, EGT, flex-fuel, G-forces, …), read the efficient
+  **packed measurement-block** way. The per-tune PID address map is imported as
+  `pidmap.json` (see `apps/wali_datalog/profiles/template.json`) so every channel
+  goes live on your DME without touching code.
 - **Map control (opt-in)** — switch tune maps via the DME diagnostic job,
   guarded by on-screen confirmation and "stationary + engine idle" preconditions.
   **Off by default.**
@@ -74,7 +80,7 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the data flow.
 
 All application logic — the logging state machine and CSV, the UDS/ISO-14229
 codec, unit conversion, map-control gating, demo fallback, and every screen's
-rendering — is covered by `npm test` (43 assertions) and the headless
+rendering — is covered by `npm test` (53 assertions) and the headless
 `npm run sim`, and the screens are rendered to real pixels by `npm run shots`.
 
 Three things are, by their nature, completed on the actual unit and are clearly

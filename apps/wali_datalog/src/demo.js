@@ -89,26 +89,48 @@ Demo.prototype.step = function (dt) {
   this.iat = clamp(lerp(this.iat, iatTarget, clamp(dt * 0.5, 0, 1)), 18, 85);
   this.egt = clamp(lerp(this.egt, 300 + load * 4, clamp(dt * 0.6, 0, 1)), 250, 980);
 
-  return {
-    rpm: this.rpm,
-    speed: this.speed,
-    gear: this.gear,
-    pedal: this.throttle,
-    throttle: plate,
-    boost: boost,
-    iat: this.iat,
-    coolant: this.coolant,
-    oil: this.oil,
-    timing: timing,
-    lambda: lambda,
-    lambdaTarget: lamTarget,
-    railPressure: rail,
-    wastegate: wg,
-    load: load,
-    knock: knock,
-    egt: this.egt,
+  // Extended MHD+ class channels derived from the toy model.
+  var baro = 1.0;
+  var boostAbs = clamp(boost + baro, 0, 4);
+  var out = {
+    rpm: this.rpm, speed: this.speed, gear: this.gear, pedal: this.throttle, throttle: plate,
+    load: load, loadAbs: clamp(load * 1.25, 0, 300),
+    torqueActual: clamp(load * 4.2, 0, 900), torqueReq: clamp(this.throttle * 7.5, 0, 900), torqueLimit: 680,
+
+    boost: boost, boostTarget: clamp(boost * 1.03 + 0.02, -0.95, 2.6), boostAbs: boostAbs,
+    putp: clamp(boostAbs * 0.98, 0, 4), baro: baro,
+    iat: this.iat, ambientT: 22,
+    maf: clamp(load * 6, 0, 1200), mafSpec: clamp(load * 6.1, 0, 1200),
+    wastegate: wg, wastegateTarget: clamp(wg * 0.98, 0, 100), wastegatePos: clamp(wg, 0, 100),
+
+    lambda: lambda, lambda2: clamp(lambda + 0.008 * Math.sin(this.t * 5), 0.75, 1.05), lambdaTarget: lamTarget,
+    stft: clamp(2 * Math.sin(this.t * 3), -10, 10), ltft: clamp(-1.5 + Math.sin(this.t * 0.2), -8, 8),
+    railPressure: rail, railTarget: clamp(rail * 1.02, 120, 360),
+    lpfp: clamp(5 + load * 0.004, 4.5, 6.5), lpfpTarget: 5.2,
+    injDuty: clamp(load * 0.45, 0, 100), injPulse: clamp(0.3 + load * 0.03, 0, 10),
+    fuelFlow: clamp(load * 0.45, 0, 120), ethanol: 10,
+
+    timing: timing, knock: knock,
+
+    coolant: this.coolant, oil: this.oil, oilPressure: clamp(1.2 + this.rpm / 2200, 1, 6),
+    egt: this.egt, egt2: clamp(this.egt - 12, 250, 980), cht: clamp(this.coolant + 8, 40, 160),
+    transOil: clamp(80 + load * 0.1, 60, 140), clutchTemp: clamp(55 + load * 0.4, 40, 400),
+
+    battery: clamp(14.1 - load * 0.003 - (this.throttle > 80 ? 0.2 : 0), 11.5, 14.6),
+    alternator: clamp(55 + load * 0.1, 0, 100),
+
+    vanosIn: clamp(5 + this.throttle * 0.25, -40, 60), vanosInTarget: clamp(6.5 + this.throttle * 0.25, -40, 60),
+    vanosEx: clamp(-5 - this.throttle * 0.1, -40, 60), vanosExTarget: clamp(-6 - this.throttle * 0.1, -40, 60),
+    valvetronic: clamp(1 + this.throttle * 0.085, 0, 10),
+
+    gLong: clamp((this.throttle / 100) * 0.9 - 0.1, -1.2, 1.3), gLat: clamp(0.15 * Math.sin(this.t * 0.8), -1.5, 1.5),
     demo: true
   };
+  for (var c = 1; c <= 6; c++) {
+    out['timingCyl' + c] = clamp(timing + (c - 3.5) * 0.4 + 0.2 * Math.sin(this.t * 2 + c), -8, 36);
+    out['knockCyl' + c] = clamp(knock + (c % 2) * 0.3 + Math.max(0, 0.4 * Math.sin(this.t * 0.7 + c)), 0, 15);
+  }
+  return out;
 };
 
 // Advance using wall-clock delta; safe to call at any cadence.

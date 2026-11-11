@@ -84,8 +84,11 @@
       app.render(cv, 'datalog');
       cap = 'DATALOG — recording (REC state)';
     } else if (name === 'channels') {
-      app = makeApp(); drive(app, 40); app.selection = 4; app.render(cv, 'channels');
-      cap = 'CHANNELS — picker';
+      app = makeApp(); drive(app, 40); app.selection = 10; app.render(cv, 'channels');
+      cap = 'CHANNELS — picker (page 1)';
+    } else if (name === 'channels-p2') {
+      app = makeApp(); drive(app, 40); app.selection = 46; app.render(cv, 'channels');
+      cap = 'CHANNELS — per-cylinder PIDs (later page)';
     } else if (name === 'maps') {
       app = makeApp({ mapcontrol: true }); drive(app, 6); app.map.requested = 2; app.render(cv, 'maps');
       cap = 'MAP CONTROL — enabled, stationary';

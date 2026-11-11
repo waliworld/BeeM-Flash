@@ -38,12 +38,53 @@ wastegate, load, knock, EGT…) are read from the DME as measured values over UD
 and scaling are **DME- and tune-specific** and differ between engine families
 and tune revisions — exactly as in any professional logging tool.
 
-Procedure per channel:
+The app ships the full **MHD+ class channel catalogue** (~67 channels across
+Engine, Air/Boost, Fuel, Ignition incl. per-cylinder timing and knock, Temps,
+Electrical, Cams/VANOS, and Dynamics — see `src/channels.js`). What it does not
+ship is a vendor PID address table; you supply that for your DME/tune.
+
+### Packed measurement blocks (how MHD+ reads fast)
+
+MHD+ does not read one value per request — it reads a few **wide blocks**: one
+`0x22` request returns many values packed at fixed byte offsets, which the app
+unpacks into many channels in a single read. Model that by giving several
+channels the **same `did`** at different `off`. `diag.js` groups reads by DID
+(`dme_profiles.byDid`) and reads each block once per cycle, so adding channels to
+a block costs no extra requests.
+
+### Importing a per-tune PID profile (`pidmap.json`)
+
+Rather than editing code, drop a JSON profile on the unit as the app's
+**`pidmap.json`** (in the app's data dir). `main.js` loads it at startup via
+`dme_profiles.fromJson`. Start from the documented example at
+[`apps/wali_datalog/profiles/template.json`](../apps/wali_datalog/profiles/template.json):
+
+```json
+{
+  "label": "My B58 tune v3",
+  "verified": true,
+  "reads": {
+    "boost":       { "did": 16640, "off": 0, "len": 2, "m": 0.001, "b": -1 },
+    "boostTarget": { "did": 16640, "off": 2, "len": 2, "m": 0.001, "b": -1 },
+    "iat":         { "did": 16640, "off": 4, "len": 2, "m": 0.1, "b": -40, "signed": true }
+  }
+}
+```
+
+- `engineering = raw·m + b`; `len` bytes big-endian (`le:true` for little-endian);
+  `signed:true` for two's-complement.
+- Unknown channel keys are ignored; an entry without a numeric `did` is rejected.
+- `verified:true` enables live reads; omit it (or `false`) to keep the profile in
+  the suppressed/demo state while you work on it.
+
+### Per-channel, by hand (alternative)
 
 1. Identify the measured-value DID and the field's position within its response
    for your DME/tune (from your tuner's measurement-block definition, or by
    correlating a `0x22` read against a known reference while logging).
-2. Fill the entry `{ did, off, len, signed, le, m, b }` in a profile.
+2. Fill the entry `{ did, off, len, signed, le, m, b }` in a profile (code or
+   JSON). The catalogue carries a `dguess` seed per channel that the built-in
+   `generic_template` uses as a placeholder.
 3. When the whole profile is confirmed on the car, set `verified: true`.
 
 In strict mode (default) `diag.js` suppresses output until the profile is

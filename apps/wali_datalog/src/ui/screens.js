@@ -69,7 +69,7 @@ function live(cv, t, view) {
   });
 
   // right-side tiles
-  var tiles = ['speed', 'iat', 'coolant', 'oil', 'timing', 'lambda'];
+  var tiles = ['speed', 'iat', 'coolant', 'oil', 'timing', 'knock'];
   var tx = [892, 1248], tw = 324, th = 120;
   var ty = [44, 184, 324];
   for (var i = 0; i < tiles.length; i++) {
@@ -135,29 +135,36 @@ function datalog(cv, t, view) {
 function channels(cv, t, view) {
   cv.clear(t.bg);
   var enabled = view.enabled || [];
-  ribbon(cv, t, view, 'Channels — ' + enabled.length + ' selected');
-
   var all = Channels.all();
+  var perPage = 18;
+  var sel = view.selection || 0;
+  var page = Math.floor(sel / perPage);
+  var pages = Math.ceil(all.length / perPage);
+  ribbon(cv, t, view, 'Channels — ' + enabled.length + '/' + all.length + ' on');
+
   var cols = 3, cw = 500, ch = 60, gx = 20, gy = 12;
   var x0 = 32, y0 = 50;
-  for (var i = 0; i < all.length; i++) {
-    var c = all[i];
-    var col = i % cols, row = Math.floor(i / cols);
+  var startI = page * perPage;
+  for (var p = 0; p < perPage; p++) {
+    var gi = startI + p;
+    if (gi >= all.length) break;
+    var c = all[gi];
+    var col = p % cols, row = Math.floor(p / cols);
     var x = x0 + col * (cw + gx), y = y0 + row * (ch + gy);
     var on = enabled.indexOf(c.key) >= 0;
-    var sel = i === view.selection;
-    cv.roundRect(x, y, cw, ch, 10, sel ? t.accentDim : t.panel2);
-    if (sel) cv.strokeRoundRect(x, y, cw, ch, 10, t.accent, 2);
-    // checkbox
+    var isSel = gi === sel;
+    cv.roundRect(x, y, cw, ch, 10, isSel ? t.accentDim : t.panel2);
+    if (isSel) cv.strokeRoundRect(x, y, cw, ch, 10, t.accent, 2);
     cv.roundRect(x + 14, y + 16, 28, 28, 6, on ? t.good : t.line);
     if (on) cv.text('✓', x + 28, y + 37, 22, '#07121a', { align: 'c', weight: 'bold' });
     cv.text(c.label, x + 58, y + 27, 21, t.text, { weight: 'bold' });
-    var isDiag = c.read.kind === 'diag';
-    cv.text(isDiag ? 'diag' : (c.read.kind === 'derived' ? 'calc' : 'bus'), x + 58, y + 50, 15, t.faint, {});
+    var tag = c.read.kind === 'diag' ? (c.cat || 'diag') : (c.read.kind === 'derived' ? 'calc' : 'bus');
+    cv.text(tag, x + 58, y + 50, 15, t.faint, {});
     var cvv = cval(view, c.key);
     cv.text(cvv.str + (cvv.unit ? ' ' + cvv.unit : ''), x + cw - 16, y + 39, 24, on ? t.text : t.dim, { align: 'r', weight: 'bold' });
   }
   cv.text('A Toggle   ·   B All   ·   C None   ·   D Back', 32, 506, 20, t.dim, {});
+  cv.text('Page ' + (page + 1) + '/' + pages + '   ·   rotary to scroll', W - 32, 506, 20, t.dim, { align: 'r' });
 }
 
 // ----------------------------------------------------------------- MAPS -----
