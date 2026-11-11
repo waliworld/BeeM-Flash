@@ -3,7 +3,7 @@
 ## Automated checks (run anywhere)
 
 ```bash
-npm test        # 59 assertions, 0 dependencies
+npm test        # 63 assertions, 0 dependencies
 npm run sim     # headless end-to-end drive + render of every screen
 npm run shots   # renders every screen to real pixels (out/shots/*.png)
 ```
@@ -19,6 +19,9 @@ npm run shots   # renders every screen to real pixels (out/shots/*.png)
   catalogue size (85+ channels incl. per-cylinder + B58 boost/wastegate control).
 - **MHD preset converter** — parses a `LogPresets.csv` (names + flags only),
   maps selected parameters to channel keys, reports unmapped ones.
+- **Measurement importer** — maps a measurement table (English/German BMW/ISTA
+  names, hex or decimal DIDs) to channel keys, groups shared DIDs into packed
+  blocks, reports unmatched rows.
 - **PID profiles** — `generic_template` coverage; `fromJson` import (unknown
   channels ignored, missing `did` rejected); **packed-block** grouping and a
   live `DiagProvider` read that unpacks two channels (boost + IAT) from one DID.

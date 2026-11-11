@@ -84,7 +84,7 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the data flow.
 
 All application logic — the logging state machine and CSV, the UDS/ISO-14229
 codec, unit conversion, map-control gating, demo fallback, and every screen's
-rendering — is covered by `npm test` (59 assertions) and the headless
+rendering — is covered by `npm test` (63 assertions) and the headless
 `npm run sim`, and the screens are rendered to real pixels by `npm run shots`.
 
 Three things are, by their nature, completed on the actual unit and are clearly

@@ -69,6 +69,17 @@ ok(!!Channels.get('wgdcP') && !!Channels.get('boostDeviation') && !!Channels.get
   ok(r.enabled.indexOf('ambientT') < 0, 'unselected names are excluded');
   ok(r.unmappedSelected.indexOf('RF Max Index') >= 0, 'unmapped selected names are reported');
 })();
+
+// Measurement-definition importer (ISTA/INPA/tuner table -> pidmap.json)
+(function () {
+  var mi = require('../scripts/pidmap_from_measurements');
+  var rows = mi.parseCsv('name;did;off;len;scale;signed\nLadedruck;0x4100;0;2;0.03;false\nZuendwinkel;0x4101;0;1;0.5;true\nBogus Chan;0x4102;0;2;1;false');
+  var r = mi.build(rows);
+  ok(r.reads.boostAbs && r.reads.boostAbs.did === 0x4100, 'German "Ladedruck" + hex DID -> boostAbs');
+  ok(r.reads.timing && r.reads.timing.did === 0x4101 && r.reads.timing.signed === true, 'German "Zuendwinkel" -> timing (signed)');
+  ok(r.unmapped.indexOf('Bogus Chan') >= 0, 'unknown measurement name is reported, not guessed');
+  eq(mi.keyFor('Oil temperature'), 'oil', 'English BMW alias maps to channel key');
+})();
 (function () {
   var tmpl = dme.get('generic_template');
   ok(Object.keys(tmpl.reads).length > 30, 'template covers many diag channels');

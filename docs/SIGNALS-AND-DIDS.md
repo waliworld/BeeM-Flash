@@ -100,6 +100,30 @@ Rather than editing code, drop a JSON profile on the unit as the app's
 - `verified:true` enables live reads; omit it (or `false`) to keep the profile in
   the suppressed/demo state while you work on it.
 
+### From a measurement table (ISTA / INPA / tuner) — `pidmap_from_measurements.js`
+
+If you have a table of measured-value definitions from a **legitimate** source —
+your own licensed ISTA/INPA export, or a sheet from your tuner — convert it in
+one step:
+
+```bash
+node scripts/pidmap_from_measurements.js measurements.csv --label "B58 gen2"
+# -> apps/wali_datalog/profiles/pidmap.json  (verified:false until you confirm)
+```
+
+The table is a CSV (or JSON array) with columns matched case-insensitively:
+`name` , `did`/`identifier` (decimal or `0x…`) , `off` , `len` , `scale`/`m` ,
+`bias`/`b` , `signed` , `le` , `unit`. Measurement names are mapped to channel
+keys via built-in aliases (English + German BMW/ISTA terms, e.g. *Ladedruck →
+boostAbs*, *Zündwinkel → timing*); unmatched rows are **reported, not guessed**,
+and several rows sharing a `did` become one packed block automatically. Review
+the result, confirm the scaling on your car, then set `verified: true`.
+
+> On sourcing: this project does not ship or download BMW's SGBD/EDIABAS
+> diagnostic files — those are BMW's licensed software. Bring the measurement
+> definitions from your own licensed tools, your tuner, or your own on-car
+> readout; the importer only reformats a table you provide.
+
 ### Per-channel, by hand (alternative)
 
 1. Identify the measured-value DID and the field's position within its response
