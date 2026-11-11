@@ -38,10 +38,33 @@ wastegate, load, knock, EGT…) are read from the DME as measured values over UD
 and scaling are **DME- and tune-specific** and differ between engine families
 and tune revisions — exactly as in any professional logging tool.
 
-The app ships the full **MHD+ class channel catalogue** (~67 channels across
+The app ships the full **MHD+ class channel catalogue** (~92 channels across
 Engine, Air/Boost, Fuel, Ignition incl. per-cylinder timing and knock, Temps,
-Electrical, Cams/VANOS, and Dynamics — see `src/channels.js`). What it does not
-ship is a vendor PID address table; you supply that for your DME/tune.
+Electrical, Cams/VANOS, Dynamics, Port Injection, and Status — see
+`src/channels.js`). What it does not ship is a vendor PID address table; you
+supply that for your DME/tune.
+
+### Matching your MHD log preset (channel selection)
+
+If you have an MHD Flasher **`LogPresets.csv`** export, convert it into a Wali
+Datalog preset (an enabled-channel list — just the parameter names and on/off
+flags, no vendor data):
+
+```bash
+node scripts/preset_from_mhd_csv.js path/to/LogPresets.csv
+# -> apps/wali_datalog/presets/<ECU>.json  (e.g. 00005C64145A05.json)
+```
+
+Copy that file to the head unit as the app's **`preset.json`** (in the app data
+dir) and the channel selection matches what MHD+ logs on that ECU. The converter
+reports any MHD parameters it does not represent. This sets *which* channels are
+on; the live *values* still come from the DID map below.
+
+> Note: an MHD `LogPresets.csv` and `.xdf`/`.bin` identify the ECU and the
+> channel set, but they do **not** contain the runtime measurement DIDs/scaling.
+> Those come from the BMW diagnostic description (SGBD/ISTA) or your tuner — see
+> the `pidmap.json` import below. (MHD application binaries and signing/bundle
+> files are not used by this project.)
 
 ### Packed measurement blocks (how MHD+ reads fast)
 

@@ -130,6 +130,33 @@ Demo.prototype.step = function (dt) {
     out['timingCyl' + c] = clamp(timing + (c - 3.5) * 0.4 + 0.2 * Math.sin(this.t * 2 + c), -8, 36);
     out['knockCyl' + c] = clamp(knock + (c % 2) * 0.3 + Math.max(0, 0.4 * Math.sin(this.t * 0.7 + c)), 0, 15);
   }
+
+  // Extended B58 / MHD+ class channels
+  out.boostDeviation = clamp(boost - (boost * 1.03 + 0.02), -1, 1);
+  out.boostSetpointFactor = clamp(0.9 + this.throttle * 0.001, 0, 2);
+  out.compressorAfterPD = clamp(boostAbs * 0.99, 0, 4);
+  out.compressorBase = clamp(boostAbs * 0.92, 0, 4);
+  out.chargeAirTemp = clamp(this.iat + 6, -20, 120);
+  out.mafReq = clamp(load * 6.2, 0, 1200);
+  out.mafReqWg = clamp(load * 6.3, 0, 1200);
+  out.wgDistribution = clamp(0.5 + this.throttle * 0.004, 0, 2);
+  out.wgdcP = clamp(wg * 0.3 - 5, -50, 50);
+  out.wgdcI = clamp(wg * 0.1, -50, 50);
+  out.wgdcD = clamp(2 * Math.sin(this.t * 4), -50, 50);
+  out.loadReq = clamp(load * 1.02, 0, 200);
+  out.stft2 = clamp(1.5 * Math.sin(this.t * 3 + 1), -10, 10);
+  out.railPressureDev = clamp(3 * Math.sin(this.t * 2), -50, 50);
+  out.diffFuelPress = clamp(rail * 0.98, 0, 300);
+  out.portInjIdc = clamp(this.throttle > 50 ? load * 0.3 : 0, 0, 100);
+  out.portInjIpw = clamp(this.throttle > 50 ? load * 0.02 : 0, 0, 20);
+  out.diInjIdc = clamp(load * 0.35, 0, 100);
+  out.fuelMassTotal = clamp(load * 0.4, 0, 120);
+  out.knockAdapt = clamp(-knock * 0.5 + 0.3 * Math.sin(this.t), -5, 5);
+  out.throttleReq = clamp(this.throttle + 2, 0, 100);
+  out.torqueLimiter = 0;
+  out.fuelLevel = 62;
+  out.exhaustFlap = this.throttle > 40 ? 1 : 0;
+  out.launchStatus = 0;
   return out;
 };
 

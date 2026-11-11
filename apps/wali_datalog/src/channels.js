@@ -90,7 +90,40 @@ var BASE = [
 
   // ---- Dynamics ----------------------------------------------------------
   { key: 'gLong', label: 'Longitudinal G', unit: 'g', cat: 'Dynamics', read: diag('gLong'), min: -2, max: 2, dp: 2, dguess: { len: 2, m: 0.001, b: -2, signed: true }, def: false },
-  { key: 'gLat', label: 'Lateral G', unit: 'g', cat: 'Dynamics', read: diag('gLat'), min: -2, max: 2, dp: 2, dguess: { len: 2, m: 0.001, b: -2, signed: true }, def: false }
+  { key: 'gLat', label: 'Lateral G', unit: 'g', cat: 'Dynamics', read: diag('gLat'), min: -2, max: 2, dp: 2, dguess: { len: 2, m: 0.001, b: -2, signed: true }, def: false },
+
+  // ---- Extended boost / wastegate control (B58 / MHD+ class) -------------
+  { key: 'boostDeviation', label: 'Boost deviation', unit: 'bar', iunit: 'psi', toImp: F.barToPsi, cat: 'Air/Boost', read: diag('boostDeviation'), min: -1, max: 1, dp: 2, dguess: { len: 2, m: 0.001, b: -1, signed: true }, def: true },
+  { key: 'boostSetpointFactor', label: 'Boost setpoint factor', unit: '', cat: 'Air/Boost', read: diag('boostSetpointFactor'), min: 0, max: 2, dp: 2, dguess: { len: 2, m: 0.001 }, def: true },
+  { key: 'compressorAfterPD', label: 'Compressor after P-D', unit: 'bar', iunit: 'psi', toImp: F.barToPsi, cat: 'Air/Boost', read: diag('compressorAfterPD'), min: 0, max: 4, dp: 2, dguess: { len: 2, m: 0.001 }, def: true },
+  { key: 'compressorBase', label: 'Compressor base', unit: 'bar', iunit: 'psi', toImp: F.barToPsi, cat: 'Air/Boost', read: diag('compressorBase'), min: 0, max: 4, dp: 2, dguess: { len: 2, m: 0.001 }, def: true },
+  { key: 'chargeAirTemp', label: 'Charge air temp', unit: '°C', iunit: '°F', toImp: F.cToF, cat: 'Air/Boost', read: diag('chargeAirTemp'), min: -20, max: 120, dp: 0, warn: 60, crit: 80, dguess: { len: 2, m: 0.1, b: -40, signed: true }, def: false },
+  { key: 'mafReq', label: 'MAF req (P corr.)', unit: 'kg/h', cat: 'Air/Boost', read: diag('mafReq'), min: 0, max: 1200, dp: 0, dguess: { len: 2, m: 0.1 }, def: true },
+  { key: 'mafReqWg', label: 'MAF req (WGDC)', unit: 'kg/h', cat: 'Air/Boost', read: diag('mafReqWg'), min: 0, max: 1200, dp: 0, dguess: { len: 2, m: 0.1 }, def: true },
+  { key: 'wgDistribution', label: 'WG distribution factor', unit: '', cat: 'Air/Boost', read: diag('wgDistribution'), min: 0, max: 2, dp: 2, dguess: { len: 2, m: 0.001 }, def: true },
+  { key: 'wgdcP', label: 'WGDC P-factor', unit: '%', cat: 'Air/Boost', read: diag('wgdcP'), min: -50, max: 50, dp: 1, dguess: { len: 2, m: 0.01, b: -50, signed: true }, def: true },
+  { key: 'wgdcI', label: 'WGDC I-factor', unit: '%', cat: 'Air/Boost', read: diag('wgdcI'), min: -50, max: 50, dp: 1, dguess: { len: 2, m: 0.01, b: -50, signed: true }, def: true },
+  { key: 'wgdcD', label: 'WGDC D-factor', unit: '%', cat: 'Air/Boost', read: diag('wgdcD'), min: -50, max: 50, dp: 1, dguess: { len: 2, m: 0.01, b: -50, signed: true }, def: true },
+
+  // ---- Extended fuel -----------------------------------------------------
+  { key: 'loadReq', label: 'Load requested', unit: '%', cat: 'Engine', read: diag('loadReq'), min: 0, max: 200, dp: 0, dguess: { len: 2, m: 0.01 }, def: true },
+  { key: 'stft2', label: 'Short fuel trim (B2)', unit: '%', cat: 'Fuel', read: diag('stft2'), min: -25, max: 25, dp: 1, dguess: { len: 1, m: 0.5, b: -64, signed: true }, def: false },
+  { key: 'railPressureDev', label: 'Rail pressure dev.', unit: 'bar', cat: 'Fuel', read: diag('railPressureDev'), min: -50, max: 50, dp: 0, dguess: { len: 2, m: 0.1, b: -200, signed: true }, def: false },
+  { key: 'diffFuelPress', label: 'Diff. fuel pressure', unit: 'bar', cat: 'Port Inj', read: diag('diffFuelPress'), min: 0, max: 300, dp: 0, dguess: { len: 2, m: 0.1 }, def: false },
+  { key: 'portInjIdc', label: 'Port inj duty', unit: '%', cat: 'Port Inj', read: diag('portInjIdc'), min: 0, max: 100, dp: 1, dguess: { len: 1, m: 0.5 }, def: false },
+  { key: 'portInjIpw', label: 'Port inj pulse', unit: 'ms', cat: 'Port Inj', read: diag('portInjIpw'), min: 0, max: 20, dp: 2, dguess: { len: 2, m: 0.001 }, def: false },
+  { key: 'diInjIdc', label: 'Direct inj duty', unit: '%', cat: 'Port Inj', read: diag('diInjIdc'), min: 0, max: 100, dp: 1, dguess: { len: 1, m: 0.5 }, def: false },
+  { key: 'fuelMassTotal', label: 'Fuel mass (total)', unit: 'mg', cat: 'Port Inj', read: diag('fuelMassTotal'), min: 0, max: 120, dp: 1, dguess: { len: 2, m: 0.01 }, def: false },
+
+  // ---- Ignition (knock adaptation) ---------------------------------------
+  { key: 'knockAdapt', label: 'Knock adapt delta', unit: '°', cat: 'Ignition', read: diag('knockAdapt'), min: -5, max: 5, dp: 1, dguess: { len: 1, m: 0.1, b: -12, signed: true }, def: true },
+
+  // ---- Status / driver ---------------------------------------------------
+  { key: 'throttleReq', label: 'Throttle requested', unit: '%', cat: 'Status', read: diag('throttleReq'), min: 0, max: 100, dp: 0, dguess: { len: 1, m: 0.5 }, def: false },
+  { key: 'torqueLimiter', label: 'Torque limiter status', unit: '', cat: 'Status', read: diag('torqueLimiter'), min: 0, max: 15, dp: 0, dguess: { len: 1 }, def: false },
+  { key: 'fuelLevel', label: 'Fuel level', unit: '%', cat: 'Status', read: diag('fuelLevel'), min: 0, max: 100, dp: 0, dguess: { len: 1, m: 0.5 }, def: false },
+  { key: 'exhaustFlap', label: 'Exhaust flap', unit: '', cat: 'Status', read: diag('exhaustFlap'), min: 0, max: 1, dp: 0, dguess: { len: 1 }, def: false },
+  { key: 'launchStatus', label: 'Launch control status', unit: '', cat: 'Status', read: diag('launchStatus'), min: 0, max: 10, dp: 0, dguess: { len: 1 }, def: false }
 ];
 
 // Per-cylinder ignition timing and knock (1..6).

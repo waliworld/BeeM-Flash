@@ -95,14 +95,30 @@ App.prototype._applySettings = function () {
 
 // ---- channel-enable persistence ----------------------------------------
 App.prototype._loadEnabled = function () {
+  // 1) the user's live channel edits
+  var edits = this._readKeyList('channels.json');
+  if (edits) return edits;
+  // 2) an imported preset, e.g. converted from an MHD LogPresets.csv
+  var preset = this._readKeyList('preset.json');
+  if (preset) return preset;
+  // 3) catalogue defaults
+  return Channels.defaults();
+};
+
+// Read a channel-key list from storage. Accepts a bare array or { enabled:[...] }.
+App.prototype._readKeyList = function (name) {
   try {
-    if (this.storage && this.storage.read) {
-      var txt = this.storage.read('channels.json');
-      var arr = JSON.parse(txt);
-      if (arr && arr.length) return arr.filter(function (k) { return !!Channels.get(k); });
+    if (!(this.storage && this.storage.read)) return null;
+    var txt = this.storage.read(name);
+    if (!txt) return null;
+    var data = JSON.parse(txt);
+    var arr = Array.isArray(data) ? data : (data && data.enabled);
+    if (arr && arr.length) {
+      var filtered = arr.filter(function (k) { return !!Channels.get(k); });
+      if (filtered.length) return filtered;
     }
   } catch (e) {}
-  return Channels.defaults();
+  return null;
 };
 App.prototype._saveEnabled = function () {
   try {

@@ -49,8 +49,26 @@ near(Channels.toUnits(Channels.get('speed'), 100, 'imperial'), 62.1371, 1e-3, 's
 eq(Channels.unitLabel(Channels.get('boost'), 'imperial'), 'psi', 'boost imperial unit');
 
 // ---- MHD+ PID profile + packed blocks ------------------------------------
-ok(Channels.all().length > 50, 'catalogue has 50+ channels (MHD+ class)');
+ok(Channels.all().length > 85, 'catalogue has 85+ channels (MHD+ class)');
 ok(!!Channels.get('timingCyl6') && !!Channels.get('knockCyl6'), 'per-cylinder channels present');
+ok(!!Channels.get('wgdcP') && !!Channels.get('boostDeviation') && !!Channels.get('loadReq'), 'B58 wastegate/boost control channels present');
+
+// MHD LogPresets.csv -> preset converter (names + flags only; no vendor data)
+(function () {
+  var conv = require('../scripts/preset_from_mhd_csv');
+  var csv = [
+    '#ECU Info: 0000TEST',
+    'Parameter;Selected',
+    'RPM;1', 'Boost;1', 'WGDC P-factor;1', 'Cyl1 Timing Cor;1',
+    'Amb. temp.;0', 'RF Max Index;1'
+  ].join('\n');
+  var r = conv.convert(csv);
+  eq(r.ecu, '0000TEST', 'converter reads ECU id');
+  ok(r.enabled.indexOf('rpm') >= 0 && r.enabled.indexOf('boost') >= 0 && r.enabled.indexOf('wgdcP') >= 0, 'selected names map to keys');
+  ok(r.enabled.indexOf('knockCyl1') >= 0, 'Cyl1 Timing Cor -> knockCyl1');
+  ok(r.enabled.indexOf('ambientT') < 0, 'unselected names are excluded');
+  ok(r.unmappedSelected.indexOf('RF Max Index') >= 0, 'unmapped selected names are reported');
+})();
 (function () {
   var tmpl = dme.get('generic_template');
   ok(Object.keys(tmpl.reads).length > 30, 'template covers many diag channels');
