@@ -1,0 +1,120 @@
+{
+  "id": "wali_datalog",
+  "title": "Wali Datalog",
+  "description": "Live datalogging and map switching for tuned BMW vehicles on the MGU head unit. Reads engine data for logging; optionally requests a map switch on an already-tuned car. Independent app, read-only by default.",
+  "version": "0.1.0",
+  "vendor": "TunedByWali",
+  "loggingId": "WDLG",
+  "iconGlyph": "gauge",
+
+  "signals": {
+    "VehicleData": {
+      "engineSpeed": "s",
+      "vehicleSpeed": "s",
+      "coolantTemp": "s",
+      "oilTemp": "s",
+      "gear": "s",
+      "accelPedal": "s",
+      "intakeTemp": "s"
+    }
+  },
+
+  "screens": [
+    {
+      "name": "live",
+      "title": "Live",
+      "kind": "canvas",
+      "buttons": [
+        ["BTN_A", "Datalog"],
+        ["BTN_B", "Maps"],
+        ["BTN_C", "Channels"],
+        ["BTN_SETTINGS", "Settings"]
+      ]
+    },
+    {
+      "name": "datalog",
+      "title": "Datalog",
+      "kind": "canvas",
+      "buttons": [
+        ["BTN_A", "Start"],
+        ["BTN_B", "Stop"],
+        ["BTN_C", "Export"],
+        ["BTN_D", "Live"]
+      ]
+    },
+    {
+      "name": "channels",
+      "title": "Channels",
+      "kind": "canvas",
+      "buttons": [
+        ["BTN_A", "Toggle"],
+        ["BTN_B", "All"],
+        ["BTN_C", "None"],
+        ["BTN_D", "Back"]
+      ]
+    },
+    {
+      "name": "maps",
+      "title": "Map Control",
+      "kind": "canvas",
+      "buttons": [
+        ["BTN_A", "Prev"],
+        ["BTN_B", "Next"],
+        ["BTN_C", "Apply"],
+        ["BTN_D", "Back"]
+      ]
+    },
+    {
+      "name": "mhd",
+      "title": "MHD Datalog (web)",
+      "kind": "canvas",
+      "buttons": [
+        ["BTN_A", "Open site"],
+        ["BTN_D", "Back"]
+      ]
+    }
+  ],
+
+  "settings": [
+    {
+      "key": "demo",
+      "label": "Demo data",
+      "type": "choice",
+      "options": [["auto", "Auto"], ["on", "On"], ["off", "Off"]],
+      "default": "auto"
+    },
+    {
+      "key": "source",
+      "label": "Data source",
+      "type": "choice",
+      "options": [["auto", "Auto"], ["someip", "Bus signals"], ["diag", "Diagnostic (UDS)"]],
+      "default": "auto"
+    },
+    {
+      "key": "rate",
+      "label": "Sample rate",
+      "type": "choice",
+      "options": [[5, "5 Hz"], [10, "10 Hz"], [20, "20 Hz"], [50, "50 Hz"]],
+      "default": 10
+    },
+    {
+      "key": "units",
+      "label": "Units",
+      "type": "choice",
+      "options": [["metric", "Metric (°C, km/h, bar)"], ["imperial", "Imperial (°F, mph, psi)"]],
+      "default": "metric"
+    },
+    {
+      "key": "autostart",
+      "label": "Auto-start logging on drive",
+      "type": "bool",
+      "default": false
+    },
+    {
+      "key": "mapcontrol",
+      "label": "Enable map control (writes to DME)",
+      "type": "bool",
+      "default": false
+    }
+  ]
+}

@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Wali Datalog — preview</title>
+<style>
+  html, body { margin: 0; background: #05080b; color: #cdd; font-family: Arial, sans-serif; }
+  #wrap { padding: 16px; }
+  canvas { display: block; border-radius: 16px; box-shadow: 0 10px 40px rgba(0,0,0,.6); background:#0b0f14; }
+  .cap { margin: 10px 2px; font-size: 13px; color: #789; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="screen" width="1600" height="520"></canvas>
+  <div class="cap" id="cap">loading…</div>
+</div>
+
+<script src="app.bundle.js"></script>
+<script src="cv2d.js"></script>
+<script>
+(function () {
+  var canvas = document.getElementById('screen');
+  var cv = window.makeCv2d(canvas, 1600, 520);
+  var App = window.__ENTRY.App;
+
+  function memStore() {
+    var files = {};
+    return {
+      open: function (n) { files[n] = ''; return { name: n }; },
+      append: function (h, t) { files[h.name] = (files[h.name] || '') + t; },
+      close: function () {},
+      size: function (h) { return (files[h.name] || '').length; },
+      list: function () { return Object.keys(files); },
+      read: function (n) { return files[n] || ''; },
+      remove: function (n) { delete files[n]; },
+      export: function (n, d) { return (d || 'usb') + '/' + n; }
+    };
+  }
+
+  function makeApp(settings) {
+    var s = Object.assign({ demo: 'on', source: 'auto', rate: 20, units: 'metric', autostart: false, mapcontrol: false }, settings || {});
+    var ctx = {
+      _noTimers: true,
+      _storage: memStore(),
+      internet: true,
+      surface: function () { return cv; },
+      settings: { get: function (k) { return s[k]; }, onChange: function () {} },
+      ui: { onClick: function () {}, image: function () { return null; } },
+      log: { info: function () {}, warn: function () {}, error: function () {} }
+    };
+    var app = new App();
+    app.start(ctx);
+    return app;
+  }
+
+  // Drive N demo ticks with a deterministic clock.
+  function drive(app, frames, startMs) {
+    var now = startMs || 1700000000000;
+    app.engine.clock = function () { return now; };
+    for (var i = 0; i < frames; i++) { now += 50; app.tick(now); }
+    return now;
+  }
+
+  window.renderScreen = function (name) {
+    var app, cap = name;
+    if (name === 'live') {
+      app = makeApp(); drive(app, 210); app.screen = 'live'; app.render(cv, 'live');
+      cap = 'LIVE — gauges (demo drive, mid-pull)';
+    } else if (name === 'datalog') {
+      app = makeApp();
+      var now = 1700000000000; app.engine.clock = function () { return now; };
+      app._startLog();
+      for (var i = 0; i < 140; i++) { now += 50; app.tick(now); if (i === 60) app.marker('pull-1'); }
+      app._stopLog();
+      app.render(cv, 'datalog');
+      cap = 'DATALOG — session saved (DONE state)';
+    } else if (name === 'datalog-rec') {
+      app = makeApp();
+      var n2 = 1700000000000; app.engine.clock = function () { return n2; };
+      app._startLog();
+      for (var j = 0; j < 90; j++) { n2 += 50; app.tick(n2); }
+      app.render(cv, 'datalog');
+      cap = 'DATALOG — recording (REC state)';
+    } else if (name === 'channels') {
+      app = makeApp(); drive(app, 40); app.selection = 4; app.render(cv, 'channels');
+      cap = 'CHANNELS — picker';
+    } else if (name === 'maps') {
+      app = makeApp({ mapcontrol: true }); drive(app, 6); app.map.requested = 2; app.render(cv, 'maps');
+      cap = 'MAP CONTROL — enabled, stationary';
+    } else if (name === 'maps-confirm') {
+      app = makeApp({ mapcontrol: true }); drive(app, 6); app.map.requested = 2; app.confirm = true; app.render(cv, 'maps');
+      cap = 'MAP CONTROL — confirm overlay';
+    } else if (name === 'maps-off') {
+      app = makeApp({ mapcontrol: false }); drive(app, 6); app.render(cv, 'maps');
+      cap = 'MAP CONTROL — off (safe default)';
+    } else if (name === 'mhd') {
+      app = makeApp(); drive(app, 6); app.render(cv, 'mhd');
+      cap = 'MHD DATALOG (web) link';
+    } else {
+      app = makeApp(); app.render(cv, 'live');
+    }
+    document.getElementById('cap').textContent = cap;
+    return true;
+  };
+
+  window.PREVIEW_READY = true;
+  window.renderScreen('live');
+})();
+</script>
+</body>
+</html>

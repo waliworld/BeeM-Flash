@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "components": [
+    {
+      "id": "wali_datalog",
+      "kind": "app",
+      "path": "apps/wali_datalog",
+      "title": "Wali Datalog",
+      "description": "Live datalogging and map switching for tuned BMW vehicles (MGU iDrive 7/8).",
+      "mguHmi": ["ID7", "ID8"],
+      "uninstallable": true,
+      "build": {
+        "python": "scripts/mgu_build.py",
+        "args": ["{id}", "{dir}"],
+        "output": "dist/{id}@{version}.tgz"
+      }
+    }
+  ]
+}

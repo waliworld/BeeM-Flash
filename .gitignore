@@ -1,0 +1,27 @@
+# Build output and local artifacts
+/dist/
+node_modules/
+
+# Never commit the BMW SDK. The head unit supplies it from a donor app.
+# (oap-sdk / rhmiData generated modules)
+**/oap-sdk/
+**/rhmiData/generated/
+*.mgu
+
+# Local car reference pulled from a specific head unit (do not publish)
+/reference/
+someip-interfaces.json
+
+# Generated preview bundle (regenerate with scripts/bundle.js)
+runtime/web/app.bundle.js
+
+# Scratch data dirs a run might create
+/data/
+/tmp/
+
+# NOTE: out/shots/*.png are committed on purpose (README/docs screenshots).
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
