@@ -31,16 +31,24 @@ the factual field/scaling table (not the Go code) and map the fields to our
 channel keys. Read-only: the write / map-switch path is MHD's closed plugin and
 is intentionally not implemented, consistent with that source.
 
-## MGFlasher A2L / XDF map packs (staged for integration)
+## MGFlasher A2L / XDF map packs (integrated: measurements)
 
 - **`github.com/mgflasher-team/mgflasher-map-packs`** (**Apache-2.0**) — 913 A2L
   files + XDFs for B48/B58 gen1, B58 gen2, S58, N63/S63. A2L (ASAM MCD-2 MC)
   defines MEASUREMENT and CHARACTERISTIC objects with addresses, data types and
-  conversions. These are **memory-address** definitions (for XCP / flash tools),
-  a different transport from the enhanced-PID (`0x22`) and MHD-monitor (`0x2C`)
-  paths. Planned: an A2L MEASUREMENT parser that extends the unified dataset
-  with `identifier_type=address` rows, plus UDS ReadMemoryByAddress (`0x23`)
-  support. Not yet wired in; attributed here.
+  conversions.
+- `scripts/a2l_to_dataset.js` extracts the MEASUREMENTs (name, data type,
+  endianness, ECU address, and linear scaling derived from each RAT_FUNC
+  COMPU_METHOD) into the unified schema with `identifier_type=address`. Samples
+  committed: `data/a2l_measurements.s58.csv` (89) and
+  `data/a2l_measurements.b58gen2.csv` (84). These are **memory addresses**
+  (specific to one software id), read via UDS ReadMemoryByAddress `0x23`
+  (implemented, read-only) or XCP — a different transport from enhanced PIDs.
+  Rows are `verified=false`.
+- The CHARACTERISTIC (map/table) side is used only for a planned **read-only map
+  viewer**. This project does **not** implement ECU flashing / calibration
+  writing, a virtual map generator, or automation of MHD's app — see the project
+  README/NOTICE.
 
 ## Referenced but NOT used
 

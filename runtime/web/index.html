@@ -66,8 +66,14 @@
   window.renderScreen = function (name) {
     var app, cap = name;
     if (name === 'live') {
-      app = makeApp(); drive(app, 210); app.screen = 'live'; app.render(cv, 'live');
-      cap = 'LIVE — gauges (demo drive, mid-pull)';
+      app = makeApp({ style: 'tiles' }); drive(app, 210); app.render(cv, 'live');
+      cap = 'LIVE — Tiles style';
+    } else if (name === 'live-bars') {
+      app = makeApp({ style: 'bars' }); drive(app, 210); app.render(cv, 'live');
+      cap = 'LIVE — Bars style';
+    } else if (name === 'live-dials') {
+      app = makeApp({ style: 'dials' }); drive(app, 210); app.render(cv, 'live');
+      cap = 'LIVE — Dials style';
     } else if (name === 'datalog') {
       app = makeApp();
       var now = 1700000000000; app.engine.clock = function () { return now; };

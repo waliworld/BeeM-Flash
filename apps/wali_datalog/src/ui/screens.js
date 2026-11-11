@@ -46,38 +46,73 @@ function ribbon(cv, t, view, title) {
   }
 }
 
+// Grid of n cells inside (x0,y0,totalW,totalH).
+function cellGrid(n, cols, x0, y0, totalW, totalH, gap) {
+  cols = Math.max(1, cols);
+  var rows = Math.ceil(n / cols);
+  var w = (totalW - (cols - 1) * gap) / cols;
+  var h = (totalH - (rows - 1) * gap) / rows;
+  var cells = [];
+  for (var i = 0; i < n; i++) {
+    var c = i % cols, r = Math.floor(i / cols);
+    cells.push({ x: x0 + c * (w + gap), y: y0 + r * (h + gap), w: w, h: h });
+  }
+  return cells;
+}
+
+function rangeU(view, c) {
+  return { min: Channels.toUnits(c.ch, c.ch.min, view.units), max: Channels.toUnits(c.ch, c.ch.max, view.units) };
+}
+function shownVal(view, c) { return F.isNum(c.metric) ? Channels.toUnits(c.ch, c.metric, view.units) : NaN; }
+
 // ---------------------------------------------------------------- LIVE ------
 function live(cv, t, view) {
   cv.clear(t.bg);
   ribbon(cv, t, view, 'Live');
 
-  var rpm = cval(view, 'rpm');
-  var gear = cval(view, 'gear');
-  D.radial(cv, t, 250, 268, 180, {
-    value: rpm.metric, min: 0, max: 7500, dp: 0, label: 'RPM', thick: 26,
-    level: rpm.metric > 6800 ? 'crit' : (rpm.metric > 6200 ? 'warn' : 'ok'), vsize: 76
-  });
-  cv.text(F.isNum(gear.metric) ? ('Gear ' + F.fixed(gear.metric, 0)) : 'Gear -', 250, 352, 24, t.dim, { align: 'c', weight: 'bold' });
+  var keys = (view.displayed || []).slice(0, view.maxtiles || 8).filter(function (k) { return !!Channels.get(k); });
+  var x0 = 24, y0 = 58, W2 = W - 48, H2 = 452, gap = 14;
+  if (keys.length === 0) {
+    cv.text('No display channels selected', W / 2, 240, 30, t.dim, { align: 'c' });
+    cv.text('On Channels, press Show to add up to ' + (view.maxtiles || 8) + ' gauges.', W / 2, 282, 22, t.faint, { align: 'c' });
+    return;
+  }
+  var style = view.style || 'tiles';
+  var i, c, cell;
 
-  var boost = cval(view, 'boost');
-  var bmin = Channels.toUnits(boost.ch, boost.ch.min, view.units);
-  var bmax = Channels.toUnits(boost.ch, boost.ch.max, view.units);
-  D.radial(cv, t, 620, 268, 162, {
-    value: F.isNum(boost.metric) ? Channels.toUnits(boost.ch, boost.metric, view.units) : NaN,
-    min: bmin, max: bmax, dp: boost.ch.dp, label: 'BOOST', unit: boost.unit, thick: 24,
-    level: boost.level, vsize: 64
-  });
-
-  // right-side tiles
-  var tiles = ['speed', 'iat', 'coolant', 'oil', 'timing', 'knock'];
-  var tx = [892, 1248], tw = 324, th = 120;
-  var ty = [44, 184, 324];
-  for (var i = 0; i < tiles.length; i++) {
-    var c = cval(view, tiles[i]);
-    var col = i % 2, row = Math.floor(i / 2);
-    D.statTile(cv, t, tx[col], ty[row], tw, th, {
-      label: c.ch.label.toUpperCase(), value: c.str, unit: c.unit, level: c.level
-    });
+  if (style === 'dials') {
+    var dcols = keys.length <= 3 ? keys.length : 4;
+    var dc = cellGrid(keys.length, dcols, x0, y0, W2, H2, gap);
+    for (i = 0; i < keys.length; i++) {
+      c = cval(view, keys[i]); cell = dc[i];
+      var r = Math.min(cell.w, cell.h) / 2 - 6;
+      var rg = rangeU(view, c);
+      D.radial(cv, t, cell.x + cell.w / 2, cell.y + cell.h / 2, r, {
+        value: shownVal(view, c), min: rg.min, max: rg.max, dp: c.ch.dp,
+        label: c.ch.label.toUpperCase(), unit: c.unit, level: c.level,
+        thick: Math.max(10, r * 0.16), vsize: Math.max(22, r * 0.52)
+      });
+    }
+  } else if (style === 'bars') {
+    var bcols = keys.length > 6 ? 2 : 1;
+    var bc = cellGrid(keys.length, bcols, x0, y0, W2, H2, gap);
+    for (i = 0; i < keys.length; i++) {
+      c = cval(view, keys[i]); cell = bc[i];
+      var rg2 = rangeU(view, c);
+      D.barMeter(cv, t, cell.x, cell.y + (cell.h - 48) / 2, cell.w, 20, {
+        label: c.ch.label, value: shownVal(view, c), min: rg2.min, max: rg2.max,
+        dp: c.ch.dp, unit: c.unit, level: c.level
+      });
+    }
+  } else { // tiles
+    var tcols = keys.length <= 6 ? 3 : 4;
+    var tc = cellGrid(keys.length, tcols, x0, y0, W2, H2, gap);
+    for (i = 0; i < keys.length; i++) {
+      c = cval(view, keys[i]); cell = tc[i];
+      D.statTile(cv, t, cell.x, cell.y, cell.w, cell.h, {
+        label: c.ch.label.toUpperCase(), value: c.str, unit: c.unit, level: c.level
+      });
+    }
   }
 }
 
@@ -135,12 +170,14 @@ function datalog(cv, t, view) {
 function channels(cv, t, view) {
   cv.clear(t.bg);
   var enabled = view.enabled || [];
+  var shown = view.displayed || [];
+  var limit = view.maxtiles || 8;
   var all = Channels.all();
   var perPage = 18;
   var sel = view.selection || 0;
   var page = Math.floor(sel / perPage);
   var pages = Math.ceil(all.length / perPage);
-  ribbon(cv, t, view, 'Channels — ' + enabled.length + '/' + all.length + ' on');
+  ribbon(cv, t, view, 'Channels — log ' + enabled.length + ' · show ' + shown.length + '/' + limit);
 
   var cols = 3, cw = 500, ch = 60, gx = 20, gy = 12;
   var x0 = 32, y0 = 50;
@@ -151,19 +188,23 @@ function channels(cv, t, view) {
     var c = all[gi];
     var col = p % cols, row = Math.floor(p / cols);
     var x = x0 + col * (cw + gx), y = y0 + row * (ch + gy);
-    var on = enabled.indexOf(c.key) >= 0;
+    var onLog = enabled.indexOf(c.key) >= 0;
+    var onShow = shown.indexOf(c.key) >= 0;
     var isSel = gi === sel;
     cv.roundRect(x, y, cw, ch, 10, isSel ? t.accentDim : t.panel2);
     if (isSel) cv.strokeRoundRect(x, y, cw, ch, 10, t.accent, 2);
-    cv.roundRect(x + 14, y + 16, 28, 28, 6, on ? t.good : t.line);
-    if (on) cv.text('✓', x + 28, y + 37, 22, '#07121a', { align: 'c', weight: 'bold' });
-    cv.text(c.label, x + 58, y + 27, 21, t.text, { weight: 'bold' });
+    // Log box (L) and Show box (S)
+    cv.roundRect(x + 12, y + 16, 28, 28, 6, onLog ? t.good : t.line);
+    cv.text('L', x + 26, y + 37, 18, onLog ? '#07121a' : t.dim, { align: 'c', weight: 'bold' });
+    cv.roundRect(x + 46, y + 16, 28, 28, 6, onShow ? t.accent : t.line);
+    cv.text('S', x + 60, y + 37, 18, onShow ? '#07121a' : t.dim, { align: 'c', weight: 'bold' });
+    cv.text(c.label, x + 90, y + 27, 20, t.text, { weight: 'bold' });
     var tag = c.read.kind === 'diag' ? (c.cat || 'diag') : (c.read.kind === 'derived' ? 'calc' : 'bus');
-    cv.text(tag, x + 58, y + 50, 15, t.faint, {});
+    cv.text(tag, x + 90, y + 50, 15, t.faint, {});
     var cvv = cval(view, c.key);
-    cv.text(cvv.str + (cvv.unit ? ' ' + cvv.unit : ''), x + cw - 16, y + 39, 24, on ? t.text : t.dim, { align: 'r', weight: 'bold' });
+    cv.text(cvv.str + (cvv.unit ? ' ' + cvv.unit : ''), x + cw - 16, y + 39, 22, onLog || onShow ? t.text : t.dim, { align: 'r', weight: 'bold' });
   }
-  cv.text('A Toggle   ·   B All   ·   C None   ·   D Back', 32, 506, 20, t.dim, {});
+  cv.text('A Log   ·   B Show   ·   C Clear shown   ·   D Back', 32, 506, 20, t.dim, {});
   cv.text('Page ' + (page + 1) + '/' + pages + '   ·   rotary to scroll', W - 32, 506, 20, t.dim, { align: 'r' });
 }
 

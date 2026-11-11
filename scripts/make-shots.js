@@ -10,7 +10,7 @@ var ROOT = path.resolve(__dirname, '..');
 var WEB = path.join(ROOT, 'runtime', 'web');
 var OUT = path.join(ROOT, 'out', 'shots');
 
-var SCREENS = ['live', 'datalog', 'datalog-rec', 'channels', 'channels-p2', 'maps', 'maps-off', 'maps-confirm', 'mhd'];
+var SCREENS = ['live', 'live-bars', 'live-dials', 'datalog', 'datalog-rec', 'channels', 'channels-p2', 'maps', 'maps-off', 'maps-confirm', 'mhd'];
 
 (async function () {
   fs.mkdirSync(OUT, { recursive: true });

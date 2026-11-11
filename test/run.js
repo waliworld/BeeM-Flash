@@ -99,6 +99,26 @@ ok(!!Channels.get('wgdcP') && !!Channels.get('boostDeviation') && !!Channels.get
   near(b.m, 0.078125 * 0.001, 1e-12, 'boost hPa->bar unit conversion folded into scale');
   ok(b.signed === false, 'boost unsigned');
 })();
+
+// A2L MEASUREMENT parser (ASAM) -> address dataset rows
+(function () {
+  var a2l = require('../scripts/a2l_to_dataset');
+  var txt = [
+    '/begin COMPU_METHOD cm_boost', '""', 'RAT_FUNC', '"%6.4" "hPa"', 'COEFFS 0 128 0 0 0 3', '/end COMPU_METHOD',
+    '/begin MEASUREMENT Boost_abs', '"Boost pressure"', 'UWORD', 'cm_boost',
+    'ECU_ADDRESS 0x50001234', 'BYTE_ORDER MSB_LAST', '/end MEASUREMENT'
+  ].join('\n');
+  var rows = a2l.parse(txt);
+  eq(rows.length, 1, 'A2L: one measurement parsed');
+  var r = rows[0];
+  eq(r.identifier, '0x50001234', 'A2L: ECU_ADDRESS captured');
+  eq(r.data_type, 'u16', 'A2L: UWORD -> u16');
+  eq(r.endianness, 'little', 'A2L: MSB_LAST -> little-endian');
+  near(r.scale, 3 / 128, 1e-9, 'A2L: RAT_FUNC linear scale = f/b');
+  eq(r.unit, 'hPa', 'A2L: unit from COMPU_METHOD');
+  // UDS ReadMemoryByAddress frame
+  eq(uds.toHex(uds.buildReadMemoryByAddress(0x50001234, 2)), '23 24 50 00 12 34 00 02', 'UDS 0x23 frame (4-byte addr, 2-byte size)');
+})();
 (function () {
   var tmpl = dme.get('generic_template');
   ok(Object.keys(tmpl.reads).length > 30, 'template covers many diag channels');

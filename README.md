@@ -21,8 +21,10 @@ app, and it is built from scratch — see [`NOTICE.md`](NOTICE.md).
 
 ### Features
 
-- **Live dashboard** — RPM + boost radial gauges and six configurable stat
-  tiles, with amber/red warnings against per-channel thresholds.
+- **Live dashboard** — pick which channels to show (the Channels screen's
+  **Show** toggle, up to a configurable limit) and switch between lightweight
+  **Tiles / Bars / Dials** styles (no realtime graph). Amber/red warnings against
+  per-channel thresholds. Logged channels (**Log**) are chosen separately.
 - **Datalogging** — start/stop a session, pick channels, drop markers on a
   pull, self-describing CSV with units in the header, sessions listed on-screen,
   one-button export to USB. Metric or imperial.
@@ -95,7 +97,7 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the data flow.
 
 All application logic — the logging state machine and CSV, the UDS/ISO-14229
 codec, unit conversion, map-control gating, demo fallback, and every screen's
-rendering — is covered by `npm test` (83 assertions) and the headless
+rendering — is covered by `npm test` (90 assertions) and the headless
 `npm run sim`, and the screens are rendered to real pixels by `npm run shots`.
 
 Three things are, by their nature, completed on the actual unit and are clearly

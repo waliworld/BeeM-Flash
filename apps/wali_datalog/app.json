@@ -47,9 +47,9 @@
       "title": "Channels",
       "kind": "canvas",
       "buttons": [
-        ["BTN_A", "Toggle"],
-        ["BTN_B", "All"],
-        ["BTN_C", "None"],
+        ["BTN_A", "Log"],
+        ["BTN_B", "Show"],
+        ["BTN_C", "Clear"],
         ["BTN_D", "Back"]
       ]
     },
@@ -110,6 +110,20 @@
       "type": "choice",
       "options": [["metric", "Metric (°C, km/h, bar)"], ["imperial", "Imperial (°F, mph, psi)"]],
       "default": "metric"
+    },
+    {
+      "key": "style",
+      "label": "Live display style",
+      "type": "choice",
+      "options": [["tiles", "Tiles"], ["bars", "Bars"], ["dials", "Dials"]],
+      "default": "tiles"
+    },
+    {
+      "key": "maxtiles",
+      "label": "Max live channels",
+      "type": "choice",
+      "options": [[6, "6"], [8, "8"], [10, "10"], [12, "12"]],
+      "default": 8
     },
     {
       "key": "autostart",

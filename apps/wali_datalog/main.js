@@ -24,7 +24,8 @@ var surface = require('./src/ui/surface');
 var F = require('./src/format');
 
 var SCREEN_ORDER = ['live', 'datalog', 'channels', 'maps', 'mhd'];
-var DEFAULTS = { demo: 'auto', source: 'auto', platform: 'B58', rate: 10, units: 'metric', autostart: false, mapcontrol: false };
+var DEFAULTS = { demo: 'auto', source: 'auto', platform: 'B58', rate: 10, units: 'metric', style: 'tiles', maxtiles: 8, autostart: false, mapcontrol: false };
+var DISPLAY_DEFAULT = ['rpm', 'boost', 'iat', 'coolant', 'oil', 'timing', 'knock', 'speed'];
 
 function App() {}
 
@@ -64,6 +65,7 @@ App.prototype.start = function (ctx) {
     onError: function (msg) { if (self.ctx.log && self.ctx.log.error) self.ctx.log.error(msg); }
   });
   this.enabled = this._loadEnabled();
+  this.displayed = this._loadDisplayed();
   this.engine.configure({
     channels: this.enabled, rate: Number(this.getSetting('rate')), units: this.getSetting('units')
   });
@@ -134,6 +136,23 @@ App.prototype._saveEnabled = function () {
     }
   } catch (e) {}
 };
+
+App.prototype._loadDisplayed = function () {
+  var d = this._readKeyList('display.json');
+  if (d) return d.slice(0, this.maxTiles());
+  return DISPLAY_DEFAULT.filter(function (k) { return !!Channels.get(k); }).slice(0, this.maxTiles());
+};
+App.prototype._saveDisplayed = function () {
+  try {
+    if (this.storage && this.storage.open) {
+      var h = this.storage.open('display.json');
+      this.storage.append(h, JSON.stringify(this.displayed));
+      this.storage.close(h);
+    }
+  } catch (e) {}
+};
+App.prototype.maxTiles = function () { return Number(this.getSetting('maxtiles')) || 8; };
+App.prototype.style = function () { return this.getSetting('style') || 'tiles'; };
 
 // Load an imported per-tune PID profile (pidmap.json) if the user supplied one.
 // Returns a normalised profile or null (then DiagProvider uses the template).
@@ -207,10 +226,10 @@ App.prototype.onButton = function (btn) {
     if (btn === 'BTN_C') return this._export();
     if (btn === 'BTN_D') return this._show('live');
   } else if (s === 'channels') {
-    if (btn === 'BTN_A') return this._toggleChannel();
-    if (btn === 'BTN_B') return this._allChannels(true);
-    if (btn === 'BTN_C') return this._allChannels(false);
-    if (btn === 'BTN_D') { this._saveEnabled(); return this._show('live'); }
+    if (btn === 'BTN_A') return this._toggleLog();
+    if (btn === 'BTN_B') return this._toggleShow();
+    if (btn === 'BTN_C') return this._clearShown();
+    if (btn === 'BTN_D') { this._saveEnabled(); this._saveDisplayed(); return this._show('live'); }
   } else if (s === 'maps') {
     if (btn === 'BTN_A') return this._mapStep(-1);
     if (btn === 'BTN_B') return this._mapStep(1);
@@ -251,16 +270,21 @@ App.prototype._export = function () {
   }
 };
 
-App.prototype._toggleChannel = function () {
+App.prototype._toggleLog = function () {
   var key = Channels.all()[this.selection].key;
   var i = this.enabled.indexOf(key);
   if (i >= 0) this.enabled.splice(i, 1); else this.enabled.push(key);
   this._saveEnabled();
 };
-App.prototype._allChannels = function (on) {
-  this.enabled = on ? Channels.all().map(function (c) { return c.key; }) : [];
-  this._saveEnabled();
+App.prototype._toggleShow = function () {
+  var key = Channels.all()[this.selection].key;
+  var i = this.displayed.indexOf(key);
+  if (i >= 0) { this.displayed.splice(i, 1); }
+  else if (this.displayed.length >= this.maxTiles()) { this._flash('Display limit reached (' + this.maxTiles() + ') — remove one first'); return; }
+  else { this.displayed.push(key); }
+  this._saveDisplayed();
 };
+App.prototype._clearShown = function () { this.displayed = []; this._saveDisplayed(); };
 
 App.prototype._mapStep = function (dir) {
   var slots = this.map.maps;
@@ -335,6 +359,9 @@ App.prototype.buildView = function () {
     rec: rec,
     sessions: sessions,
     enabled: this.enabled,
+    displayed: this.displayed,
+    maxtiles: this.maxTiles(),
+    style: this.style(),
     selection: this.selection,
     maps: maps,
     mhd: { internet: !!this.ctx.internet, url: 'https://www.mhdtuning.com' }

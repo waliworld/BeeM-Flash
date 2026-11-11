@@ -46,6 +46,12 @@ talks to the vehicle over standard, publicly documented diagnostic protocols.
 - The user is solely responsible for the tune on their vehicle and for any map
   they select. This software is provided "as is", without warranty, per the MIT
   `LICENSE`.
+- **No ECU flashing.** This app does not write calibration/maps to the engine
+  controller, does not generate tunes, and does not automate or relay MHD's app
+  to flash maps. It provides live datalogging (read-only), map *switching* among
+  maps already flashed in the DME (gated, confirmed, precondition-checked), and
+  a read-only view of map definitions. Flashing a DME is irreversible and
+  safety-critical; it is intentionally out of scope.
 
 ## Third-party components
 

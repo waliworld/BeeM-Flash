@@ -12,6 +12,7 @@ var SID = {
   SECURITY: 0x27,
   TESTER_PRESENT: 0x3E,
   READ_DID: 0x22,
+  READ_MEM: 0x23, // ReadMemoryByAddress (read-only; used for A2L address measurements)
   DDDI: 0x2C, // DynamicallyDefineDataIdentifier (MHD live monitor uses 2C 88 01)
   ROUTINE: 0x31
 };
@@ -57,6 +58,18 @@ function fromHex(str) {
 
 function buildReadDataByIdentifier(did) {
   return [SID.READ_DID, hi(did), lo(did)];
+}
+
+// ReadMemoryByAddress (0x23) — read `size` bytes at `addr`. addrBytes/sizeBytes
+// set the addressAndLengthFormatIdentifier (default 4-byte addr, 2-byte size).
+// Read-only. The DME may gate this behind a diagnostic session / security.
+function buildReadMemoryByAddress(addr, size, addrBytes, sizeBytes) {
+  addrBytes = addrBytes || 4; sizeBytes = sizeBytes || 2;
+  var alfid = ((sizeBytes & 0x0f) << 4) | (addrBytes & 0x0f);
+  var out = [SID.READ_MEM, alfid];
+  for (var i = addrBytes - 1; i >= 0; i--) out.push((addr >>> (8 * i)) & 0xff);
+  for (var j = sizeBytes - 1; j >= 0; j--) out.push((size >>> (8 * j)) & 0xff);
+  return out;
 }
 
 function buildSessionControl(session) {
@@ -112,6 +125,8 @@ function parseResponse(requestSid, bytes) {
   if (requestSid === SID.READ_DID) {
     out.did = (bytes[1] << 8) | bytes[2];
     out.data = bytes.slice(3);
+  } else if (requestSid === SID.READ_MEM) {
+    out.data = bytes.slice(1); // 0x63 + raw memory bytes
   } else if (requestSid === SID.ROUTINE) {
     out.sub = bytes[1];
     out.rid = (bytes[2] << 8) | bytes[3];
@@ -157,6 +172,7 @@ module.exports = {
   toHex: toHex,
   fromHex: fromHex,
   buildReadDataByIdentifier: buildReadDataByIdentifier,
+  buildReadMemoryByAddress: buildReadMemoryByAddress,
   buildSessionControl: buildSessionControl,
   buildTesterPresent: buildTesterPresent,
   buildSecurityRequestSeed: buildSecurityRequestSeed,

@@ -3,7 +3,7 @@
 ## Automated checks (run anywhere)
 
 ```bash
-npm test        # 83 assertions, 0 dependencies
+npm test        # 90 assertions, 0 dependencies
 npm run sim     # headless end-to-end drive + render of every screen
 npm run shots   # renders every screen to real pixels (out/shots/*.png)
 ```
@@ -22,6 +22,9 @@ npm run shots   # renders every screen to real pixels (out/shots/*.png)
 - **Measurement importer** — maps a measurement table (English/German BMW/ISTA
   names, hex or decimal DIDs) to channel keys, groups shared DIDs into packed
   blocks, reports unmatched rows.
+- **A2L parser** — parses a MEASUREMENT + its RAT_FUNC COMPU_METHOD, deriving the
+  linear scale (f/b), data type (UWORD→u16), endianness (MSB_LAST→little) and
+  ECU address; plus the UDS ReadMemoryByAddress (`0x23`) frame.
 - **MHD live-monitor decode** — a synthetic `6C 88` + 36-byte little-endian reply
   decodes to the right channels/scaling (RPM 3000, LOAD 50 %, BOOST→1.00 bar,
   ENGINETEMP→90 °C, GEAR 3, SPEED 100, IAT 30 °C); a negative reply → null.

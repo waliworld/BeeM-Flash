@@ -48,13 +48,15 @@ function statTile(cv, t, x, y, w, h, o) {
   var lvl = o.level || 'ok';
   var accent = lvl === 'crit' ? t.crit : (lvl === 'warn' ? t.warn : (o.accent || t.accent));
   cv.fillRect(x, y + h - 5, w, 5, accent);
-  cv.text(o.label, x + 16, y + 28, 18, t.dim, { weight: 'bold' });
+  var small = h < 112;
+  var vs = o.big ? 54 : (small ? 32 : 44);
+  cv.text(o.label, x + 16, y + (small ? 24 : 28), small ? 15 : 18, t.dim, { weight: 'bold' });
   var valColor = lvl === 'crit' ? t.crit : (lvl === 'warn' ? t.warn : t.text);
   var vstr = o.value;
-  cv.text(vstr, x + 16, y + h - 26, o.big ? 54 : 44, valColor, { weight: 'bold' });
+  cv.text(vstr, x + 16, y + h - (small ? 16 : 24), vs, valColor, { weight: 'bold' });
   if (o.unit) {
-    var vw = cv.textWidth(vstr, o.big ? 54 : 44, 'bold');
-    cv.text(o.unit, x + 16 + vw + 10, y + h - 30, 20, t.dim, {});
+    var vw = cv.textWidth(vstr, vs, 'bold');
+    cv.text(o.unit, x + 16 + vw + 8, y + h - (small ? 18 : 28), small ? 15 : 20, t.dim, {});
   }
 }
 
