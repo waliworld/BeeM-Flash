@@ -36,8 +36,8 @@
       "title": "Datalog",
       "kind": "canvas",
       "buttons": [
-        ["BTN_A", "Start"],
-        ["BTN_B", "Stop"],
+        ["BTN_A", "Start/Stop"],
+        ["BTN_B", "Marker"],
         ["BTN_C", "Export"],
         ["BTN_D", "Live"]
       ]

@@ -18,6 +18,7 @@
 //
 var uds = require('./uds');
 var dme = require('./dme_profiles');
+var doipMod = require('./doip');
 
 function promisifySend(transport) {
   return function (bytes) {
@@ -38,6 +39,11 @@ function promisifySend(transport) {
 function makeCtxTransport(ctx) {
   if (ctx && ctx.diag && typeof ctx.diag.send === 'function') {
     return { supported: true, send: ctx.diag.send.bind(ctx.diag) };
+  }
+  // Read-only DoIP transport over the vehicle's diagnostic Ethernet, when the
+  // host provides a DoIP config ({host,port,targetAddr,...} or {socket}).
+  if (ctx && ctx.doip) {
+    return doipMod.makeDoipTransport(ctx.doip);
   }
   return { supported: false, send: function (_b, cb) { cb && cb(new Error('no diag transport')); } };
 }

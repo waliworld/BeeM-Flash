@@ -52,6 +52,12 @@ talks to the vehicle over standard, publicly documented diagnostic protocols.
   maps already flashed in the DME (gated, confirmed, precondition-checked), and
   a read-only view of map definitions. Flashing a DME is irreversible and
   safety-critical; it is intentionally out of scope.
+- **No ENET-over-WiFi bridge / no security-access unlock.** The app includes a
+  read-only DoIP client for its own live-data reads, but it does not expose the
+  vehicle's diagnostic network to external tools over WiFi (a "virtual ENET
+  adapter"/gateway), and it implements no seed/key SecurityAccess. Both are the
+  enabling layer for wireless ECU flashing and broad remote vehicle access, and
+  are intentionally out of scope.
 
 ## Third-party components
 

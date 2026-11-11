@@ -56,10 +56,28 @@ is intentionally not implemented, consistent with that source.
   from pinned sources **including BMW EDIABAS/SGBD binaries**. We do not run or
   vendor its output, because this project does not source BMW's licensed SGBD/
   EDIABAS files. Listed here for completeness.
-- `github.com/MBTune/mgctl` (Apache-2.0) — an MG1 control tool. Noted as a
-  reference for MG1 protocol work; no data taken.
+- `github.com/MBTune/mgctl` (Apache-2.0) — a diagnostic **and flash** utility for
+  the Bosch MG1 ECU (`write-cal` / WriteCalibration) with a **SeedKey /
+  SecurityAccess** plugin system to unlock the ECU for writing. Its
+  calibration-writing and seed/key material are **intentionally not integrated**:
+  this project does not flash ECUs or implement security-access unlocking.
+- `github.com/ohgeeceee/beemuu` (GPL-3.0-or-later) — a community BMW diagnostic
+  app (read/clear faults, live data, session logging over K+DCAN/ENET). It
+  confirms the read-only ENET model, but its GPL code is **not** copied into this
+  MIT project; referenced for context only.
 - `github.com/jtownson/xdfbinext` — XDF/bin tooling; noted for working with a
   user's own `.xdf`.
+
+## DoIP transport (`src/doip.js`)
+
+An original, read-only ISO 13400 (DoIP) client gives the datalogger a
+standards-based way to read live data from the DME over the vehicle's own
+diagnostic Ethernet, independent of MHD. It is **not** a gateway/bridge: it opens
+no external listener, forwards no third-party traffic, and contains no flashing,
+calibration-write, or seed/key code. A **virtual ENET-over-WiFi bridge** that
+would expose the vehicle's diagnostic network to external tools is deliberately
+**not** provided — it is the enabling layer for wireless ECU flashing and broad
+remote vehicle-network access.
 
 ## What this project does **not** include
 

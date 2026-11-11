@@ -221,8 +221,8 @@ App.prototype.onButton = function (btn) {
     if (btn === 'BTN_B') return this._show('maps');
     if (btn === 'BTN_C') return this._show('channels');
   } else if (s === 'datalog') {
-    if (btn === 'BTN_A') return this._startLog();
-    if (btn === 'BTN_B') return this._stopLog();
+    if (btn === 'BTN_A') return this._toggleRecord();
+    if (btn === 'BTN_B') return this.marker('mark');
     if (btn === 'BTN_C') return this._export();
     if (btn === 'BTN_D') return this._show('live');
   } else if (s === 'channels') {
@@ -257,6 +257,13 @@ App.prototype._startLog = function () {
 };
 App.prototype._stopLog = function () { this.engine.stop(); };
 App.prototype.marker = function (label) { this.engine.marker(label || 'mark'); };
+
+// One-tap start/stop: start a new session when idle/done, stop while logging.
+App.prototype._toggleRecord = function () {
+  if (this.engine.state === LogEngine.STATE.LOGGING) { this._stopLog(); return; }
+  if (this.engine.state === LogEngine.STATE.DONE || this.engine.state === LogEngine.STATE.ERROR) this.engine.reset();
+  this._startLog();
+};
 
 App.prototype._export = function () {
   var sess = this.engine.sessions();

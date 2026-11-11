@@ -3,7 +3,7 @@
 ## Automated checks (run anywhere)
 
 ```bash
-npm test        # 90 assertions, 0 dependencies
+npm test        # 95 assertions, 0 dependencies
 npm run sim     # headless end-to-end drive + render of every screen
 npm run shots   # renders every screen to real pixels (out/shots/*.png)
 ```
@@ -22,6 +22,9 @@ npm run shots   # renders every screen to real pixels (out/shots/*.png)
 - **Measurement importer** — maps a measurement table (English/German BMW/ISTA
   names, hex or decimal DIDs) to channel keys, groups shared DIDs into packed
   blocks, reports unmatched rows.
+- **DoIP (ISO 13400) read client** — routing-activation frame bytes; frame
+  parse round-trip; a full client exchange over a fake socket (activate → send →
+  unwrap the UDS reply). Read-only transport; no bridge/flash/seed-key.
 - **A2L parser** — parses a MEASUREMENT + its RAT_FUNC COMPU_METHOD, deriving the
   linear scale (f/b), data type (UWORD→u16), endianness (MSB_LAST→little) and
   ECU address; plus the UDS ReadMemoryByAddress (`0x23`) frame.

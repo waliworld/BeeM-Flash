@@ -165,6 +165,32 @@ ok(!!Channels.get('wgdcP') && !!Channels.get('boostDeviation') && !!Channels.get
   ok(MhdMonitor.decodeReply([0x7f, 0x2c, 0x31].concat(body), 'B58') === null, 'negative monitor reply -> null');
 })();
 
+// ---- DoIP (ISO 13400) read transport --------------------------------------
+(function () {
+  var doip = require(A + 'doip');
+  eq(uds.toHex(doip.buildRoutingActivation(0x0E00, 0x00)),
+    '02 fd 00 05 00 00 00 07 0e 00 00 00 00 00 00', 'DoIP routing-activation frame');
+  var dm = doip.buildDiagnosticMessage(0x0E00, 0x1000, [0x62, 0x41, 0x00, 0x07, 0xd0]);
+  var r = doip.parseFrames(dm);
+  eq(r.frames.length, 1, 'DoIP: one frame parsed'); eq(r.frames[0].type, doip.PT.DIAG, 'DoIP: diag payload type');
+  // client round-trip over a fake socket
+  var dataCb = null;
+  var sock = {
+    onData: function (fn) { dataCb = fn; },
+    write: function (b) {
+      var f = doip.parseFrames(b).frames[0];
+      if (f.type === doip.PT.ROUTE_REQ) dataCb(doip.header(doip.PT.ROUTE_RESP, [0x0e, 0x00, 0x10, 0x00, 0x10, 0, 0, 0, 0]));
+      else if (f.type === doip.PT.DIAG) dataCb(doip.buildDiagnosticMessage(0x1000, 0x0e00, [0x62, 0x41, 0x00, 0x07, 0xd0]));
+    },
+    close: function () {}
+  };
+  var tr = doip.makeDoipTransport({ socket: sock, targetAddr: 0x1000 });
+  var got = null;
+  tr.send([0x22, 0x41, 0x00], function (err, resp) { got = { err: err, resp: resp }; });
+  ok(got && !got.err, 'DoIP transport activates then returns a reply');
+  eq(uds.toHex(got.resp), '62 41 00 07 d0', 'DoIP transport unwraps the UDS reply');
+})();
+
 // ---- log engine -----------------------------------------------------------
 (function () {
   var mem = Store.memStorage();

@@ -163,7 +163,7 @@ function datalog(cv, t, view) {
       cv.line(800, yy + 12, 1540, yy + 12, t.line, 1);
     }
   }
-  cv.text('A Start   ·   B Stop   ·   C Export   ·   D Live', 32, 506, 20, t.dim, {});
+  cv.text('A Start/Stop   ·   B Marker   ·   C Export   ·   D Live', 32, 506, 20, t.dim, {});
 }
 
 // ------------------------------------------------------------- CHANNELS -----
