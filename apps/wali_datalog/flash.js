@@ -115,7 +115,7 @@ function flashCalibration(send, opts, onProgress) {
     if (!p.positive) throw new Error('RequestDownload rejected: ' + (p.nrcName || p.error));
     var lenFmt = (p.data[0] >> 4) & 0x0f, maxBlock = 0;
     for (var i = 0; i < lenFmt && 1 + i < p.data.length; i++) maxBlock = maxBlock * 256 + p.data[1 + i];
-    var chunk = (maxBlock > 2) ? (maxBlock - 2) : (opts.blockSize || 256);  // minus the 0x36 SID + counter
+    var chunk = (maxBlock > 2) ? (maxBlock - 2) : (opts.blockSize || 0x400);  // minus the 0x36 SID + counter; 0x400 = MG1 convention when the DME reports no max
     if (opts.blockSize) chunk = Math.min(chunk, opts.blockSize);
     if (chunk < 1) chunk = 1;
     return transferAll(chunk);

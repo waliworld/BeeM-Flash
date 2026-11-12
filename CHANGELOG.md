@@ -18,6 +18,21 @@ UI: one canvas screen with internal paging driven by four HMI bar buttons
 
 ## Beta 2 — v2.x.x
 
+### v2.8.1
+- **Flash-protocol research written up** (`docs/FLASH-PROTOCOL.md`) — studied the
+  open S58/MG1 flash tooling. **MBTune/mgctl** (Apache-2.0) independently confirms
+  the exact UDS flash sequence our `flash.js` already runs
+  (`session 0x02 → 0x27 → 0x34 → 0x36 loop → 0x37 → 0x31`), plus the D-CAN
+  addressing (`0x6F1`/`0x6F9`), `0x400` block size, DID/NRC lists, and a
+  CRC-32 + AES-CMAC-128 integrity model — all consistent with the app; it supplies
+  no real seed/key, addresses or keys, and requires a bench unlock (our scope).
+  **rftx-tuning** is all-rights-reserved with fabricated placeholder values, so its
+  code/numbers are **not** used — only its public "S58 needs a bench unlock"
+  statement is cited. Attributions added to `data/SOURCES.md`.
+- **Block-size default** — when the DME reports no `maxNumberOfBlockLength`, the
+  TransferData block now falls back to `0x400` (the MG1 convention) instead of 256.
+  No change when the DME reports its max (it almost always does).
+
 ### v2.8.0
 - **Connect label fix** — the acknowledge button now reads **ACCEPT** (was the
   cryptic "ACK"); navigation is via the top tabs, there is no Back button.

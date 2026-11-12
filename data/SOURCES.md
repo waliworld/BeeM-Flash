@@ -56,11 +56,20 @@ is intentionally not implemented, consistent with that source.
   from pinned sources **including BMW EDIABAS/SGBD binaries**. We do not run or
   vendor its output, because this project does not source BMW's licensed SGBD/
   EDIABAS files. Listed here for completeness.
-- `github.com/MBTune/mgctl` (Apache-2.0) — a diagnostic **and flash** utility for
-  the Bosch MG1 ECU (`write-cal` / WriteCalibration) with a **SeedKey /
-  SecurityAccess** plugin system to unlock the ECU for writing. Its
-  calibration-writing and seed/key material are **intentionally not integrated**:
-  this project does not flash ECUs or implement security-access unlocking.
+- `github.com/MBTune/mgctl` (Apache-2.0) — a diagnostic **and flash** scaffold for
+  the Bosch MG1 ECU. We reuse only its **design facts** (the UDS flash step order,
+  DID and NRC lists, session/SecurityAccess-level numbers, block size, and the
+  CRC-32 + AES-CMAC-128 integrity model), attributed in `docs/FLASH-PROTOCOL.md`;
+  they independently confirm the sequence our `flash.js` already implements. mgctl
+  ships **no** real seed/key, ECU addresses, CMAC key or checksum ranges, and its
+  bench-unlock path requires a virgin/known password (no crack) — consistent with
+  our unlocked-DME-only scope. No mgctl code is copied.
+- `github.com/rftx-tuning` `RFTX_SOFTWARE` (the `rftx-tuning.github.io/WEBSITE/`
+  project) — **all-rights-reserved (no license)**, and its MG1 memory map, seed/
+  key and serial framing are **fabricated placeholder values that do not work on a
+  real ECU**. Its code is **not** used and its numbers are **not** trusted. Only
+  its public statement that "S58 (MG1/MD1) requires a bench unlock before flashing"
+  is cited — it confirms our already-unlocked-DME scope.
 - `github.com/ohgeeceee/beemuu` (GPL-3.0-or-later) — a community BMW diagnostic
   app (read/clear faults, live data, session logging over K+DCAN/ENET). It
   confirms the read-only ENET model, but its GPL code is **not** copied into this
