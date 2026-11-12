@@ -76,7 +76,7 @@ function live(cv, t, view) {
   if (keys.length === 0) {
     cv.text('No display channels selected', W / 2, 240, 30, t.dim, { align: 'c' });
     cv.text('On Channels, press Show to add up to ' + (view.maxtiles || 8) + ' gauges.', W / 2, 282, 22, t.faint, { align: 'c' });
-    cv.text('A Datalog   ·   B Maps   ·   C Channels   ·   D Connect', 32, 506, 20, t.dim, {});
+    cv.text('A Datalog   \u00b7   B Maps   \u00b7   C Channels   \u00b7   D Connect', 32, 506, 20, t.dim, {});
     return;
   }
   var style = view.style || 'tiles';

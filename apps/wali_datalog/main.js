@@ -93,6 +93,7 @@ App.prototype.start = function (ctx) {
 
   this._surface = this._makeSurface();
   this._bindButtons();
+  this._relabel();
   this._startRuntime();
   return this;
 };
@@ -263,24 +264,43 @@ App.prototype._startRuntime = function () {
       try { self.tick(); } catch (e) { self._fail('sample', e); }
     }, periodMs);
   }
-  // Rendering: one ctx.loop per screen if available.
+  // Rendering: ONE loop for the single 'MAIN' canvas screen. It draws the
+  // current page (this.screen) and pushes it to the MAIN graphic cell. Switching
+  // page is just a redraw — no RHMI state change — which is reliable on the head
+  // unit (the old per-screen ui.open navigation cut buttons off and blanked).
   if (this.ctx.loop) {
-    SCREEN_ORDER.forEach(function (name) {
-      self.ctx.loop(name, 30, function () {
-        // Yield while the kit draws an overlay sheet (e.g. the settings sheet):
-        // drawing our own frame would fight it and blank the screen.
-        var d = self.ctx.display;
-        if (d && d.sheet) return null;
-        try {
-          self.render(self._surface, name);
-        } catch (e) {
-          self._fail('render ' + name, e);
-          try { self._errorCard(self._surface, self._lastError); } catch (e2) { return null; }
-        }
-        return self._present(name);
-      });
+    self.ctx.loop('MAIN', 30, function () {
+      // Yield while the kit draws an overlay sheet (e.g. the settings sheet):
+      // drawing our own frame would fight it and blank the screen.
+      var d = self.ctx.display;
+      if (d && d.sheet) return null;
+      try {
+        self.render(self._surface, self.screen);
+      } catch (e) {
+        self._fail('render ' + self.screen, e);
+        try { self._errorCard(self._surface, self._lastError); } catch (e2) { return null; }
+      }
+      return self._present();
     });
   }
+};
+
+// Per-page labels for the 4 HMI bar buttons; relabelled on every page switch so
+// the bar matches what the buttons do on the current page (ctx.ui.text).
+var PAGE_LABELS = {
+  live:     ['Datalog', 'Maps', 'Channels', 'Connect'],
+  datalog:  ['Rec', 'Marker', 'Export', 'Back'],
+  channels: ['Log', 'Show', 'Clear', 'Back'],
+  maps:     ['Prev', 'Next', 'Apply', 'Back'],
+  connect:  ['Ack', 'Enable', 'Scan', 'Back']
+};
+App.prototype._relabel = function () {
+  var ui = this.ctx.ui;
+  if (!ui || typeof ui.text !== 'function') return; // sim/preview: no HMI bar
+  var labels = PAGE_LABELS[this.screen] || PAGE_LABELS.live;
+  ['BTN_A', 'BTN_B', 'BTN_C', 'BTN_D'].forEach(function (b, i) {
+    trySafe(function () { ui.text(b, labels[i]); });
+  });
 };
 
 // Record a failure without crashing, and surface it on screen so it is
@@ -500,20 +520,17 @@ App.prototype._present = function (name) {
   // build.py names a canvas screen's image widget "<screen>_GFX" (e.g.
   // live_GFX, datalog_GFX), and ctx.ui.image(cell, canvas) pushes the frame.
   if (this.ctx.ui && this.ctx.ui.image && this._surface && this._surface.handle) {
-    return this.ctx.ui.image((name || this.screen) + '_GFX', this._surface.handle);
+    return this.ctx.ui.image('MAIN_GFX', this._surface.handle);
   }
   return null;
 };
 App.prototype._show = function (name) {
+  // Switch the current page. There is ONE RHMI canvas screen ('MAIN'); changing
+  // page is just a redraw of the next frame (no ui.open / state change), which
+  // is what makes navigation reliable on the head unit. Relabel the bar buttons.
   this.screen = name;
   this.confirm = false;
-  // DEVICE: switch the HMI to this screen's RHMI state. The kit's screen switch
-  // is ui.open(stateName) (kit/runtime/mgu.js) — there is no ctx.show. Without
-  // this, a button press changed only internal state and the head unit never
-  // navigated. The sim/preview render the current screen directly, so ui.open
-  // is simply absent there.
-  var ui = this.ctx.ui;
-  if (ui && typeof ui.open === 'function') trySafe(function () { ui.open(name); });
+  this._relabel();
 };
 App.prototype._mediaDir = function () {
   return this.ctx.mediaDir || '/media/usb'; // DEVICE: USB mount point

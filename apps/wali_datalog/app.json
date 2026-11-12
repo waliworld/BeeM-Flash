@@ -2,7 +2,7 @@
   "id": "wali_datalog",
   "title": "Wali Datalog",
   "description": "Live datalogging and map switching for tuned BMW vehicles on the MGU head unit. Reads engine data for logging; optionally requests a map switch on an already-tuned car. Independent app, read-only by default.",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "license": "MIT",
   "vendor": "TunedByWali",
   "loggingId": "WDLG",
@@ -32,8 +32,8 @@
   },
   "screens": [
     {
-      "name": "live",
-      "title": "Live",
+      "name": "MAIN",
+      "title": "Wali Datalog",
       "kind": "canvas",
       "buttons": [
         [
@@ -51,98 +51,6 @@
         [
           "BTN_D",
           "Connect"
-        ]
-      ]
-    },
-    {
-      "name": "datalog",
-      "title": "Datalog",
-      "kind": "canvas",
-      "buttons": [
-        [
-          "BTN_A",
-          "Start/Stop"
-        ],
-        [
-          "BTN_B",
-          "Marker"
-        ],
-        [
-          "BTN_C",
-          "Export"
-        ],
-        [
-          "BTN_D",
-          "Live"
-        ]
-      ]
-    },
-    {
-      "name": "channels",
-      "title": "Channels",
-      "kind": "canvas",
-      "buttons": [
-        [
-          "BTN_A",
-          "Log"
-        ],
-        [
-          "BTN_B",
-          "Show"
-        ],
-        [
-          "BTN_C",
-          "Clear"
-        ],
-        [
-          "BTN_D",
-          "Back"
-        ]
-      ]
-    },
-    {
-      "name": "maps",
-      "title": "Map Control",
-      "kind": "canvas",
-      "buttons": [
-        [
-          "BTN_A",
-          "Prev"
-        ],
-        [
-          "BTN_B",
-          "Next"
-        ],
-        [
-          "BTN_C",
-          "Apply"
-        ],
-        [
-          "BTN_D",
-          "Back"
-        ]
-      ]
-    },
-    {
-      "name": "connect",
-      "title": "Vehicle Connection",
-      "kind": "canvas",
-      "buttons": [
-        [
-          "BTN_A",
-          "Acknowledge"
-        ],
-        [
-          "BTN_B",
-          "Enable"
-        ],
-        [
-          "BTN_C",
-          "Scan"
-        ],
-        [
-          "BTN_D",
-          "Back"
         ]
       ]
     }
