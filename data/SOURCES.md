@@ -107,6 +107,28 @@ relevant only to an OBD-II source, not our UDS/DID or fast-block paths.
 openbimmer itself is a generic OBD-II app and contains no MG1-specific,
 flex-fuel, or port-injection data.
 
+## Stock calibration IDs — mgflasher-map-packs A2Ls (Apache-2.0)
+
+`data/stock_calibrations.json` and the bundled `apps/wali_datalog/stockdb.js`
+are the set of **stock DME calibration identifiers** for the MG1 engine families,
+extracted from the A2L headers (ECU type, `VERSION`, EPK) of the
+[mgflasher-team/mgflasher-map-packs](https://github.com/mgflasher-team/mgflasher-map-packs)
+A2Ls, which are **Apache-2.0** licensed. 913 A2Ls → 162 stock versions across:
+
+- `MG1CS003` — B58/B48 Gen1
+- `MG1CS201` — B58/B48 Gen2
+- `MG1CS049` / `MG1CS024` — S58
+
+Only the identifier strings are used (not any map/calibration data). The app
+compares the DME's reported calibration ID against this set to tell **stock from
+modified definitively**: a reported ID in the set is a recognised stock
+calibration; a known ECU type reporting an ID not in the set is not a known stock
+calibration (a tune, or newer software than this dataset). A tune that keeps the
+stock ID and changes only the maps cannot be distinguished by the ID alone — the
+app says so and shows the programming date to compare. Regenerate with
+`python3 -I scripts/build_stockdb.py <A2Ls_dir> data/stock_calibrations.json`
+then the stockdb.js generator (see that script's header).
+
 ## What this project does **not** include
 
 No BMW SGBD/EDIABAS files, no ISTA/INPA binaries, no proprietary tuning-application code or

@@ -18,6 +18,16 @@ UI: one canvas screen with internal paging driven by four HMI bar buttons
 
 ## Beta 2 — v2.x.x
 
+### v2.3.0
+- **Definitive tune detection** — bundled a database of **stock DME calibration
+  IDs** (162 versions across MG1CS003/MG1CS201/MG1CS049/MG1CS024, extracted from
+  the Apache-2.0 mgflasher-map-packs A2Ls). The INFO/CODES tune check now matches
+  the car's reported calibration ID against this set: a match is a recognised
+  **stock** calibration; a known DME reporting an ID not in the set is **modified**
+  (a tune, or newer SW). Vendor signatures (MHD/bootmod3/xHP/MG Flasher) still
+  flag a tune by name. Honest caveat kept: an ID-preserving tune can't be told
+  apart by ID alone. Stock IDs / signatures remain configurable to override.
+
 ### v2.2.0
 - **Renamed to BeeM-Flash** (brand, titles, log filenames; internal package id
   kept for install continuity).

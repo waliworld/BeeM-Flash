@@ -462,6 +462,26 @@ function makeFakeDiscoverySocket(respond) {
   // unknown (no list, no signature) -> honest null
   var t4 = ecuinfo.computeTune([item(0xF17C, 'SOME_CAL')], {});
   ok(t4.modified === null && /compare/i.test(t4.note), 'tune: unknown without a stock reference, reported honestly');
+
+  // ---- definitive matching against the bundled stock DB (from A2Ls) --------
+  var stockdb = require(A + 'stockdb');
+  ok(Object.keys(stockdb.ecus).length >= 3 && stockdb.ecus.MG1CS049 && stockdb.ecus.MG1CS201, 'stockdb: bundled with S58 + B58 Gen2 DMEs');
+  var s58ver = stockdb.ecus.MG1CS049.versions[0];       // a real stock S58 version
+  var s58tok = stockdb.ecus.MG1CS049.fileTokens[0];
+  // stock S58 calibration -> definitively stock
+  var t5 = ecuinfo.computeTune([item(0xF191, 'MG1CS049'), item(0xF17C, s58ver)], {});
+  ok(t5.modified === false && t5.matchedStock && t5.ecuType === 'MG1CS049', 'tune: stock S58 calibration matched -> looks stock');
+  ok(/stock/i.test(t5.note), 'tune: stock match note mentions stock');
+  // filename-token form also matches
+  var t6 = ecuinfo.computeTune([item(0xF191, 'MG1CS049'), item(0xF17C, s58tok)], {});
+  ok(t6.modified === false && t6.matchedStock, 'tune: stock version in filename-token form also matches');
+  // known DME, calibration not in the stock set -> definitively modified
+  var t7 = ecuinfo.computeTune([item(0xF191, 'MG1CS049'), item(0xF17C, 'TUNED_NOTSTOCK_01')], {});
+  ok(t7.modified === true && t7.ecuType === 'MG1CS049' && /not in the known-stock set/i.test(t7.note), 'tune: known DME with unknown calibration -> looks modified');
+  // B58 Gen2 stock version matches its ECU
+  var g2 = stockdb.ecus.MG1CS201.versions[0];
+  var t8 = ecuinfo.computeTune([item(0xF191, 'MG1CS201'), item(0xF17C, g2)], {});
+  ok(t8.modified === false && t8.matchedStock, 'tune: stock B58 Gen2 calibration matched -> looks stock');
 })();
 
 // error path: storage that throws on open -> engine error state

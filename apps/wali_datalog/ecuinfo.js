@@ -57,29 +57,79 @@ function decode(kind, bytes) {
   return a.ratio >= 0.5 ? a.text : toHex(bytes);
 }
 
-// Heuristically decide whether the DME looks tuned (and by what), from its
-// calibration ID / software number / programming date. This can NOT be certain —
-// it compares against the owner's configured stock IDs and known-tune signatures
-// and otherwise just surfaces the values to compare by hand.
-//   opts.stockCalIds : [ "…" ] calibration IDs the owner knows are stock
+// Stock calibration database (generated from the mgflasher-map-packs A2Ls).
+var stockdb = null; try { stockdb = require('./stockdb'); } catch (e) { stockdb = null; }
+function buildStockIndex(db) {
+  if (!db || !db.ecus) return null;
+  var all = {}, byEcu = {}, ecuTypes = [];
+  for (var ecu in db.ecus) {
+    if (!db.ecus.hasOwnProperty(ecu)) continue;
+    ecuTypes.push(ecu);
+    var set = {}, e = db.ecus[ecu], list = (e.versions || []).concat(e.fileTokens || []);
+    for (var i = 0; i < list.length; i++) { var u = String(list[i]).toUpperCase(); if (u.length >= 5) { set[u] = true; all[u] = true; } }
+    byEcu[ecu] = set;
+  }
+  return { all: all, byEcu: byEcu, ecuTypes: ecuTypes };
+}
+var STOCK = buildStockIndex(stockdb);
+
+// Decide whether the DME is running a stock calibration, from its reported
+// calibration ID / software / hardware numbers. This is DEFINITIVE where the
+// reported identifier matches the known-stock set (from BMW MG1 A2Ls): a match
+// means a recognised stock calibration; a known ECU type reporting a version NOT
+// in the set is not a known stock calibration (a tune, or newer SW than the
+// dataset). Honest caveat: a tune that keeps the stock ID and changes only the
+// map data cannot be told apart by the ID alone — compare the programming date.
+//   opts.stockCalIds    : [ "…" ] extra stock IDs the owner knows (override)
+//   opts.stockDb        : a replacement stock DB (same shape as stockdb.js)
 //   opts.tuneSignatures : { SUBSTR: name } substrings that mark a known tune
 function computeTune(items, opts) {
   opts = opts || {};
   function val(did) { for (var i = 0; i < items.length; i++) if (items[i].did === did && items[i].ok) return items[i].value; return null; }
-  var calId = val(0xF17C), sw = val(0xF194), prog = val(0xF199);
-  var hay = ((calId || '') + ' ' + (sw || '')).toUpperCase();
-  var sigs = opts.tuneSignatures || { 'MHD': 'MHD', 'BM3': 'bootmod3', 'BOOTMOD': 'bootmod3', 'XHP': 'xHP', 'MGFLASHER': 'MG Flasher', 'STG': 'a staged tune' };
+  var calId = val(0xF17C), sw = val(0xF194), hw = val(0xF191), prog = val(0xF199);
+  var reported = [calId, sw, hw].filter(Boolean).map(function (s) { return String(s).toUpperCase(); });
+  var hay = reported.join(' ');
+
+  // ECU type (e.g. MG1CS049) from the reported strings
+  var ecuType = null, mm = hay.match(/MG1CS\d{3}/);
+  if (mm) ecuType = mm[0];
+
+  // vendor signature (a strong positive for a tune)
+  var sigs = opts.tuneSignatures || { 'MHD': 'MHD', 'BOOTMOD': 'bootmod3', 'BM3': 'bootmod3', 'XHP': 'xHP', 'MG FLASHER': 'MG Flasher', 'MGFLASHER': 'MG Flasher' };
   var detected = null;
   for (var k in sigs) { if (sigs.hasOwnProperty(k) && sigs[k] && hay.indexOf(k) >= 0) { detected = sigs[k]; break; } }
-  var modified = null;
-  if (opts.stockCalIds && opts.stockCalIds.length && calId) modified = opts.stockCalIds.map(String).indexOf(String(calId)) < 0;
-  else if (detected) modified = true;
+
+  // match the reported identifier against the known-stock set
+  var idx = opts.stockDb ? buildStockIndex(opts.stockDb) : STOCK;
+  var matchedStock = null;
+  if (idx) {
+    var pool = (ecuType && idx.byEcu[ecuType]) ? idx.byEcu[ecuType] : idx.all;
+    for (var r = 0; r < reported.length && !matchedStock; r++) {
+      var v = reported[r];
+      for (var key in pool) { if (pool.hasOwnProperty(key) && (v === key || v.indexOf(key) >= 0)) { matchedStock = key; break; } }
+    }
+  }
+  var knownEcu = !!(idx && ecuType && idx.byEcu[ecuType]);
+
+  // owner-configured stock list (augments the DB)
+  var cfgStock = null;
+  if (opts.stockCalIds && opts.stockCalIds.length && calId) cfgStock = (opts.stockCalIds.map(String).indexOf(String(calId)) >= 0);
+
+  var modified;
+  if (detected) modified = true;
+  else if (matchedStock) modified = false;
+  else if (cfgStock === true) modified = false;
+  else if (cfgStock === false) modified = true;
+  else if (knownEcu) modified = true; // recognised DME, calibration not in the stock set
+  else modified = null;
+
   var note;
   if (detected) note = 'Signature match — looks like ' + detected + '. Verify against your own records.';
-  else if (modified === true) note = 'Calibration ID is not in your configured stock list — looks modified.';
-  else if (modified === false) note = 'Calibration ID matches your configured stock list — looks stock.';
+  else if (matchedStock) note = 'Matches a known stock ' + (ecuType || 'DME') + ' calibration (' + matchedStock + ') — looks stock. (A tune that keeps the stock ID and only changes maps cannot be told apart by ID alone; compare the programming date.)';
+  else if (cfgStock === false) note = 'Calibration ID is not in your configured stock list — looks modified.';
+  else if (knownEcu) note = 'ECU ' + ecuType + ' is reporting a calibration not in the known-stock set — looks modified (a tune, or newer software than this dataset).';
   else note = 'Compare the calibration ID / programming date to your stock reference to tell if the car is tuned.';
-  return { calId: calId, swNumber: sw, programmingDate: prog, detected: detected, modified: modified, note: note };
+  return { calId: calId, swNumber: sw, programmingDate: prog, ecuType: ecuType, detected: detected, modified: modified, matchedStock: matchedStock, note: note };
 }
 
 // read(send, opts) -> Promise<{ ok, items:[{did,label,value,ok,raw}], tune }>.
