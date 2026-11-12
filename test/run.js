@@ -572,17 +572,42 @@ Promise.resolve()
       ok(app.diag.supported && app.monitor.supported, 'app: after a successful scan, a real transport is wired in');
       eq(app.enet.vehicle.host, '169.254.1.1', 'app: discovered vehicle host stored');
 
-      app.onButton('BTN_B'); // Disable
-      ok(!app.diag.supported && !app.monitor.supported, 'app: disabling tears the transport back out');
+      // ---- Codes page wired to the connected vehicle -----------------------
+      var EcuSim = require('./ecusim').EcuSim;
+      var dmeSim = new EcuSim({ dtcs: [{ bytes: [0x12, 0x34, 0x68], status: 0x08 }, { bytes: [0x45, 0x67, 0x00], status: 0x04 }] });
+      var egsSim = new EcuSim({ dtcs: [{ bytes: [0xC1, 0x23, 0x00], status: 0x08 }] });
+      var modMap = {}; modMap[0x1000] = dmeSim; modMap[0x1800] = egsSim;
+      ctx.diagSocket = function () { return dmeSim.doipSocket({ modules: modMap }); };
+      ctx.spec = ctx.spec || {}; ctx.spec.config = { modules: [{ name: 'DME', address: 0x1000 }, { name: 'EGS', address: 0x1800 }] };
+      app._show('diag');
+      eq(app.screen, 'diag', 'app: Live → D opens the Diag hub');
+      app.onButton('BTN_B'); // Codes
+      eq(app.screen, 'codes', 'app: Diag → B opens the Codes page');
+      return app._codesScan().then(function () {
+        ok(app.codes.result && app.codes.result.totalDtcs === 3, 'app: Codes scan reads 3 codes across modules');
+        ok(/3 codes across 2\/2/.test(app.codes.msg), 'app: Codes status line summarizes the scan');
+        // Clear is gated: first press only arms the confirmation.
+        return app._codesClear();
+      }).then(function () {
+        ok(app.codes.confirmClear === true && dmeSim.cleared === 0, 'app: first Clear press arms confirmation, erases nothing');
+        return app._codesClear(); // confirmed
+      }).then(function () {
+        ok(dmeSim.cleared === 1 && egsSim.cleared === 1, 'app: confirmed Clear erases each module');
+        ok(app.codes.confirmClear === false, 'app: confirmation resets after clearing');
 
-      app.stop(); // release timers so the test process can exit cleanly
+        app._show('connect');
+        app.onButton('BTN_B'); // Disable
+        ok(!app.diag.supported && !app.monitor.supported, 'app: disabling tears the transport back out');
 
-      // A fresh App instance (same storage) must NOT auto-reconnect.
-      var app2 = new main.App();
-      app2.start(ctx);
-      ok(app2.enet.acknowledged === true, 'app: acknowledgment is remembered on restart');
-      ok(app2.enet.enabled === false, 'app: connection is NOT enabled on restart -- requires a fresh Enable');
-      app2.stop();
+        app.stop(); // release timers so the test process can exit cleanly
+
+        // A fresh App instance (same storage) must NOT auto-reconnect.
+        var app2 = new main.App();
+        app2.start(ctx);
+        ok(app2.enet.acknowledged === true, 'app: acknowledgment is remembered on restart');
+        ok(app2.enet.enabled === false, 'app: connection is NOT enabled on restart -- requires a fresh Enable');
+        app2.stop();
+      });
     });
   })
   .then(function () {
@@ -750,6 +775,75 @@ Promise.resolve()
         ok(res.ok === true && res.confirmed === true, 'flash: works end-to-end over the ENET/DoIP gateway');
         var same = sim3.flashed && sim3.flashed.length === cal2.length && sim3.flashed.every(function (b, k) { return b === cal2[k]; });
         ok(same, 'flash: DoIP-delivered calibration bytes match');
+        gw.close();
+      });
+    });
+  })
+  .then(function () {
+    // ---- fault codes: read (0x19) + clear (0x14), per module and whole-car ---
+    var dtc = require(A + 'dtc');
+    var modules = require(A + 'modules');
+    var EcuSim = require('./ecusim').EcuSim;
+
+    // codec
+    eq(dtc.dtcCode(0x12, 0x34), 'P1234', 'dtc: SAE code decode P1234');
+    eq(dtc.dtcCode(0x41, 0x23), 'C0123', 'dtc: C-prefix code decode');
+    eq(dtc.dtcCode(0xC1, 0x23), 'U0123', 'dtc: U-prefix code decode (top two bits = 11)');
+    var st = dtc.decodeStatus(0x08);
+    ok(st.confirmed && !st.pending && st.active.join(',') === 'confirmed', 'dtc: status bit decode (confirmed)');
+    var recs = dtc.parseRecords([0x12, 0x34, 0x68, 0x08, 0x45, 0x67, 0x00, 0x04]);
+    ok(recs.length === 2 && recs[0].code === 'P1234' && recs[0].failureType === 0x68 && recs[1].status.pending, 'dtc: parseRecords two codes');
+
+    // module catalog: defaults are honestly marked unverified + configurable
+    ok(modules.list({}).length >= 4 && modules.list({}).every(function (m) { return m.verified === false; }), 'dtc: default module map present and marked unverified');
+    var custom = modules.list({ modules: [{ name: 'DME', address: '0x1000', verified: true }] });
+    ok(custom.length === 1 && custom[0].address === 0x1000 && custom[0].verified === true, 'dtc: config.modules overrides defaults');
+
+    // read codes from one module
+    var sim = new EcuSim({ dtcs: [{ bytes: [0x12, 0x34, 0x68], status: 0x08 }, { bytes: [0x45, 0x67, 0x00], status: 0x0A }] });
+    return dtc.readDtcs(sim.transport(), {}).then(function (r) {
+      ok(r.ok && r.dtcs.length === 2 && r.dtcs[0].code === 'P1234', 'dtc: read two codes from a module');
+      // clear refuses without acknowledgment
+      return dtc.clearDtcs(sim.transport(), {});
+    }).then(function (r2) {
+      ok(r2.ok === false && /confirmation required/i.test(r2.message), 'dtc: clear refuses without confirmation');
+      // clear with acknowledgment, verified by re-read
+      return dtc.clearDtcs(sim.transport(), { acknowledged: true });
+    }).then(function (r3) {
+      ok(r3.ok === true && r3.confirmed === true && sim.cleared === 1, 'dtc: clear + re-read confirms empty');
+      // an active fault that comes straight back is reported honestly
+      var busy = new EcuSim({ dtcs: [{ bytes: [0x22, 0x11, 0x00], status: 0x09 }] });
+      var origClear = busy.dtcs;
+      busy.handle = (function (base) { return function (req) { // clear, but the fault re-sets instantly
+        var resp = base.call(busy, req); if (req[0] === uds.SID.CLEAR_DTC) busy.dtcs = origClear; return resp; }; })(EcuSim.prototype.handle);
+      return dtc.clearDtcs(busy.transport(), { acknowledged: true });
+    }).then(function (r4) {
+      ok(r4.ok === true && r4.confirmed === false && /returned immediately|active fault/i.test(r4.message), 'dtc: active fault after clear reported honestly');
+    }).then(function () {
+      // ---- whole-vehicle scan over the ENET/DoIP gateway, many modules --------
+      var doip = require(A + 'doip');
+      var dmeSim = new EcuSim({ dtcs: [{ bytes: [0x12, 0x34, 0x68], status: 0x08 }, { bytes: [0x45, 0x67, 0x00], status: 0x08 }] });
+      var egsSim = new EcuSim({ dtcs: [{ bytes: [0xC1, 0x23, 0x00], status: 0x08 }] });
+      var modMap = {}; modMap[0x1000] = dmeSim; modMap[0x1800] = egsSim; // 0x2900 absent
+      var gw = new doip.DoipGateway({ socket: dmeSim.doipSocket({ modules: modMap }), targetAddr: 0x1000 });
+      var modList = [
+        { key: 'dme', name: 'DME', address: 0x1000 },
+        { key: 'egs', name: 'EGS', address: 0x1800 },
+        { key: 'dsc', name: 'DSC', address: 0x2900 } // not present -> should time out, not hang
+      ];
+      var seen = [];
+      return gw.activate().then(function () {
+        return dtc.scanModules(gw.sendFor(60), modList, {}, function (m) { seen.push(m.key); });
+      }).then(function (res) {
+        ok(res.totalDtcs === 3, 'dtc: whole-vehicle scan aggregates codes across modules (2 DME + 1 EGS)');
+        ok(res.reached === 2 && res.scanned === 3, 'dtc: absent module times out, scan still completes');
+        ok(seen.join(',') === 'dme,egs,dsc', 'dtc: scan reports progress per module');
+        var dsc = res.modules.filter(function (x) { return x.module.key === 'dsc'; })[0];
+        ok(dsc && dsc.ok === false, 'dtc: unreachable module flagged, not failed silently');
+        // clear across the reachable modules
+        return dtc.clearModules(gw.sendFor(60), modList, { acknowledged: true });
+      }).then(function (cr) {
+        ok(cr.cleared === 2 && dmeSim.cleared === 1 && egsSim.cleared === 1, 'dtc: whole-vehicle clear erases each reachable module');
         gw.close();
       });
     });

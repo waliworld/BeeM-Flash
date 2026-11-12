@@ -322,7 +322,7 @@ function connect(cv, t, view) {
   D.panel(cv, t, 32, 56, 940, 330, { title: 'BEFORE YOU CONNECT' });
   var lines = [
     'Opens a network connection to your vehicle’s diagnostic bus (ENET / DoIP) to read live data.',
-    'Read-only, always: this app never writes to the engine or any other module — no flashing, no coding.',
+    'This connection is read-only: live data and fault-code reading. Writes (clear codes, map switch, flashing) are separate, explicitly-confirmed actions.',
     'Use only a cable or adapter you trust, on a vehicle you own or are authorized to access.',
     'Keep the vehicle stationary while connecting or disconnecting hardware.',
     'Disconnect if anything seems unexpected. You are responsible for how this connection is used.'
@@ -363,6 +363,80 @@ function connect(cv, t, view) {
   cv.text('A Acknowledge   ·   B ' + btnB + '   ·   C Scan   ·   D Back', 32, 506, 20, t.dim, {});
 }
 
+// --------------------------------------------------------------- DIAG -------
+// A small hub for vehicle-diagnostic actions: live-data Connect, Fault Codes,
+// and (set up off-car) Calibration Flash.
+function diag(cv, t, view) {
+  cv.clear(t.bg);
+  ribbon(cv, t, view, 'Diagnostics');
+  enetBadge(cv, t, view);
+
+  var cards = [
+    { x: 32, title: 'CONNECT', key: 'A', lines: ['Live-data link to the car over', 'ENET / DoIP. Read-only. Find the', 'vehicle and enable the connection.'] },
+    { x: 552, title: 'FAULT CODES', key: 'B', lines: ['Read stored fault codes (DTCs)', 'from every module, and clear them.', 'Reading is read-only; clearing asks', 'you to confirm first.'] },
+    { x: 1072, title: 'CALIBRATION FLASH', key: 'C', lines: ['Write a calibration section to a car', 'you have already flashed. Set up', 'off-car with your own BIN +', 'descriptor — see docs/FLASHING.md.'] }
+  ];
+  for (var i = 0; i < cards.length; i++) {
+    var c = cards[i];
+    D.panel(cv, t, c.x, 92, 496, 356, { title: c.title });
+    cv.text(c.key, c.x + 24, 150, 44, t.accent || t.good, { weight: 'bold' });
+    var ly = 210;
+    for (var j = 0; j < c.lines.length; j++) { cv.text(c.lines[j], c.x + 24, ly, 20, t.dim, {}); ly += 30; }
+  }
+  cv.text('A Connect   ·   B Codes   ·   C Flash (off-car setup)   ·   D Back', 32, 506, 20, t.dim, {});
+}
+
+// --------------------------------------------------------------- CODES ------
+// Whole-vehicle fault-code reader/clearer. Shows one row per module scanned,
+// with the decoded codes. Clearing erases fault memory and is confirmed first.
+function codes(cv, t, view) {
+  cv.clear(t.bg);
+  ribbon(cv, t, view, 'Fault Codes');
+  enetBadge(cv, t, view);
+  var c = view.codes || {};
+
+  D.badge(cv, t, W - 520, 44, (c.scope === 'dme' ? 'ENGINE ONLY' : 'ALL MODULES') + ' (' + (c.moduleCount || 0) + ')', t.faint, t.text);
+
+  // Status / progress line
+  cv.text(c.msg || 'Press Scan to read fault codes from the vehicle.', 32, 78, 22,
+    c.confirmClear ? t.warn : t.text, c.confirmClear ? { weight: 'bold' } : {});
+
+  if (c.confirmClear) D.badge(cv, t, 32, 92, 'CONFIRM: this ERASES fault memory', t.warn, '#07121a');
+
+  D.panel(cv, t, 32, 128, 1536, 352, { title: 'MODULES' });
+  var res = c.result;
+  if (!res || !res.modules || !res.modules.length) {
+    cv.text(c.scanning ? 'Scanning…' : 'No scan yet.', 56, 200, 24, t.dim, {});
+    cv.text('Codes are read over the connected ENET/DoIP link. Addresses are configurable per vehicle.', 56, 238, 18, t.faint, {});
+  } else {
+    var y = 190, rowH = 36, maxRows = 7, shown = 0;
+    for (var i = 0; i < res.modules.length && shown < maxRows; i++) {
+      var m = res.modules[i], name = (m.module && m.module.name) || 'module';
+      var statusTxt, col;
+      if (!m.ok) { statusTxt = 'no response'; col = t.faint; }
+      else if (m.dtcs.length === 0) { statusTxt = 'no codes'; col = t.good; }
+      else { statusTxt = m.dtcs.length + ' code' + (m.dtcs.length === 1 ? '' : 's'); col = t.warn; }
+      cv.text(name, 56, y, 22, t.text, { weight: 'bold' });
+      cv.text(statusTxt, 430, y, 22, col, {});
+      // first few codes inline
+      if (m.ok && m.dtcs.length) {
+        var codeStrs = [];
+        for (var k = 0; k < m.dtcs.length && k < 5; k++) {
+          var d = m.dtcs[k];
+          codeStrs.push(d.code + (d.status && d.status.confirmed ? '' : '?'));
+        }
+        var extra = m.dtcs.length > 5 ? ('  +' + (m.dtcs.length - 5) + ' more') : '';
+        cv.text(codeStrs.join('  ') + extra, 620, y, 20, t.dim, {});
+      }
+      y += rowH; shown++;
+    }
+    if (res.modules.length > maxRows) cv.text('… ' + (res.modules.length - maxRows) + ' more modules', 56, y, 18, t.faint, {});
+    cv.text('“?” marks a non-confirmed (pending) code. Total: ' + res.totalDtcs + ' across ' + res.reached + '/' + res.scanned + ' modules.', 56, 456, 18, t.faint, {});
+  }
+
+  cv.text('A Scan   ·   B Clear   ·   C Scope   ·   D Back', 32, 506, 20, t.dim, {});
+}
+
 module.exports = {
   W: W, H: H,
   live: live,
@@ -370,8 +444,10 @@ module.exports = {
   channels: channels,
   maps: maps,
   connect: connect,
+  diag: diag,
+  codes: codes,
   cval: cval,
   byName: function (name) {
-    return { live: live, datalog: datalog, channels: channels, maps: maps, connect: connect }[name] || live;
+    return { live: live, datalog: datalog, channels: channels, maps: maps, connect: connect, diag: diag, codes: codes }[name] || live;
   }
 };

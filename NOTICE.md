@@ -4,10 +4,10 @@
 
 **Wali Datalog** is an independent, open-source application for the BMW **MGU**
 head unit (iDrive 7 and iDrive 8). It reads live vehicle data for datalogging,
-requests a tune **map switch** on a car already tuned by its owner, and provides
-an open ENET/DoIP diagnostic toolkit — a pluggable SecurityAccess (seed/key)
-framework and a calibration-section flasher — for an owner working on their own
-vehicle. It is written from scratch, for the benefit of the open-source
+reads and clears fault codes (DTCs) across the car's modules, requests a tune
+**map switch** on a car already tuned by its owner, and provides an open
+ENET/DoIP diagnostic toolkit — a pluggable SecurityAccess (seed/key) framework
+and a calibration-section flasher — for an owner working on their own vehicle. It is written from scratch, for the benefit of the open-source
 community. No manufacturer keys, algorithms, calibrations, or SDK are bundled.
 
 It is built the way a third-party client is built for a platform (the "RideTube

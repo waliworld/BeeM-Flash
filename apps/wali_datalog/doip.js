@@ -105,6 +105,27 @@ DoipClient.prototype.send = function (uds, cb) {
   } else doSend();
 };
 
+// Send to a SPECIFIC target ECU (logical address) over the already-activated
+// link, without changing the client's default target. Used by the whole-vehicle
+// code scan, which addresses each module behind the same DoIP gateway.
+DoipClient.prototype.sendTo = function (tgt, uds, cb, timeoutMs) {
+  var self = this, done = false, timer = null;
+  function finish(err, resp) {
+    if (done) return; done = true;
+    if (timer && typeof clearTimeout === 'function') clearTimeout(timer);
+    if (self.pending) self.pending = null; // don't let a late frame resolve the next request
+    cb(err, resp);
+  }
+  function doSend() {
+    self.pending = function (err, resp) { finish(err, resp); };
+    if (timeoutMs && typeof setTimeout === 'function') timer = setTimeout(function () { finish(new Error('timeout (no response from 0x' + tgt.toString(16) + ')')); }, timeoutMs);
+    self.socket.write(buildDiagnosticMessage(self.src, tgt, uds));
+  }
+  if (!this.activated) {
+    this.activate(function (err) { if (err) { finish(err); return; } self.activated = true; doSend(); });
+  } else doSend();
+};
+
 // ---- UDP vehicle discovery (ISO 13400 Vehicle Identification) -------------
 //
 // Real ENET adapters find the car by broadcasting a Vehicle Identification
@@ -251,6 +272,22 @@ DoipGateway.prototype.activate = function () {
     if (!self.client) { reject(new Error('no DoIP transport')); return; }
     self.client.activate(function (err) { if (err) { reject(err); return; } self.client.activated = true; resolve(true); });
   });
+};
+// sendTo(address, udsBytes, timeoutMs?) -> Promise<respBytes>: address a specific
+// module. A timeout lets a whole-vehicle scan skip a module that doesn't answer
+// instead of hanging.
+DoipGateway.prototype.sendTo = function (tgt, bytes, timeoutMs) {
+  var self = this, to = (timeoutMs == null) ? self._opts.requestTimeoutMs : timeoutMs;
+  return new Promise(function (resolve, reject) {
+    if (!self.client) { reject(new Error('no DoIP transport')); return; }
+    self.client.sendTo(tgt, bytes, function (err, resp) { if (err) reject(err); else resolve(resp); }, to);
+  });
+};
+// sendFor(timeoutMs?) -> fn(module) -> send(bytes)->Promise bound to that
+// module's address. Feeds dtc.scanModules / dtc.clearModules directly.
+DoipGateway.prototype.sendFor = function (timeoutMs) {
+  var self = this;
+  return function (m) { return function (bytes) { return self.sendTo(m.address, bytes, timeoutMs); }; };
 };
 DoipGateway.prototype.session = function (type, opts) { return require('./seedkey').session(this.send, type, opts); };
 DoipGateway.prototype.unlock = function (level, algo, opts) { return require('./seedkey').unlock(this.send, level, algo, opts); };

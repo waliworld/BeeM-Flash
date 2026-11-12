@@ -121,6 +121,33 @@
       app.enet.setVehicle({ vin: 'WBA00000000000001', host: '169.254.1.1', logicalAddress: 0x1000 });
       app.render(cv, 'connect');
       cap = 'CONNECT — connected (read-only)';
+    } else if (name === 'diag') {
+      app = makeApp(); drive(app, 6);
+      app.enet.acknowledge(); app.enet.setEnabled(true);
+      app.enet.setVehicle({ vin: 'WBA00000000000001', host: '169.254.1.1', logicalAddress: 0x1000 });
+      app.render(cv, 'diag');
+      cap = 'DIAGNOSTICS hub — Connect, Fault Codes, Calibration Flash';
+    } else if (name === 'codes') {
+      app = makeApp(); drive(app, 6); app.render(cv, 'codes');
+      cap = 'FAULT CODES — before a scan';
+    } else if (name === 'codes-result') {
+      app = makeApp(); drive(app, 6);
+      app.codes.result = { scanned: 4, reached: 3, totalDtcs: 4, modules: [
+        { module: { name: 'DME / DDE (engine)' }, ok: true, dtcs: [
+          { code: 'P0300', status: { confirmed: true } }, { code: 'P052A', status: { confirmed: false } } ] },
+        { module: { name: 'EGS (transmission)' }, ok: true, dtcs: [ { code: 'P17BA', status: { confirmed: true } } ] },
+        { module: { name: 'DSC (stability / brakes)' }, ok: true, dtcs: [ { code: 'C0501', status: { confirmed: true } } ] },
+        { module: { name: 'EPS (steering)' }, ok: false, dtcs: [] }
+      ] };
+      app.codes.msg = '4 codes across 3/4 modules';
+      app.render(cv, 'codes');
+      cap = 'FAULT CODES — whole-vehicle scan result';
+    } else if (name === 'codes-confirm') {
+      app = makeApp(); drive(app, 6);
+      app.codes.confirmClear = true;
+      app.codes.msg = 'Press Clear again to ERASE fault memory on all reached modules.';
+      app.render(cv, 'codes');
+      cap = 'FAULT CODES — clear confirmation (erases fault memory)';
     } else {
       app = makeApp(); app.render(cv, 'live');
     }

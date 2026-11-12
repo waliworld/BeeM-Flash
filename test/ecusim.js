@@ -40,6 +40,10 @@ function EcuSim(opts) {
   this.download = null;                           // active download { addr, size, received[], counter }
   this.flashed = null;                            // the bytes written by the last completed download
   this.resetType = null;                          // last ECU reset subfunction seen
+  // ---- fault codes (DTCs) ----
+  // Each DTC is { bytes: [b1,b2,b3], status: 0xNN }. clearAll() empties them.
+  this.dtcs = opts.dtcs || [];                    // stored fault codes
+  this.cleared = 0;                               // how many times a clear succeeded
 }
 
 EcuSim.prototype.handle = function (req) {
@@ -74,6 +78,25 @@ EcuSim.prototype.handle = function (req) {
   }
 
   if (sid === uds.SID.ECU_RESET) { this.resetType = req[1]; this.download = null; return [0x51, req[1]]; }
+
+  // ReadDTCInformation (0x19): reportDTCByStatusMask / reportSupportedDTC.
+  if (sid === uds.SID.READ_DTC) {
+    var dsub = req[1], avail = 0xFF;
+    if (dsub === 0x02 || dsub === 0x0A) {
+      var mask = (dsub === 0x02) ? (req[2] & 0xff) : 0xFF;
+      var body = [0x59, dsub, avail];
+      for (var di = 0; di < this.dtcs.length; di++) {
+        var d = this.dtcs[di], st = d.status & 0xff;
+        if (dsub === 0x0A || (st & mask) !== 0) body = body.concat(d.bytes.slice(0, 3)).concat([st]);
+      }
+      return body;
+    }
+    if (dsub === 0x01) { return [0x59, dsub, avail, 0x00, this.dtcs.length & 0xff]; } // count
+    return [0x7F, 0x19, 0x12]; // subFunctionNotSupported
+  }
+
+  // ClearDiagnosticInformation (0x14): erase fault memory for the group.
+  if (sid === uds.SID.CLEAR_DTC) { this.dtcs = []; this.cleared++; return [0x54]; }
 
   // RequestDownload (0x34): begin a write. Optionally gated behind unlock / a
   // programming session — the standard preconditions a real DME enforces.
@@ -129,6 +152,7 @@ EcuSim.prototype.doipSocket = function (opts) {
   var self = this, dataCb = null;
   opts = opts || {};
   var tester = opts.sourceAddr || 0x0E00, ecu = opts.targetAddr || 0x1000;
+  var modules = opts.modules || null;              // { address(number): EcuSim } for a multi-module car
   var doip = require('../apps/wali_datalog/doip');
   function deliver(bytes) { if (dataCb) dataCb(bytes); }
   return {
@@ -140,9 +164,14 @@ EcuSim.prototype.doipSocket = function (opts) {
           deliver(doip.header(doip.PT.ROUTE_RESP,
             [(tester >> 8) & 0xff, tester & 0xff, (ecu >> 8) & 0xff, ecu & 0xff, 0x10, 0, 0, 0, 0]));
         } else if (f.type === doip.PT.DIAG) {
-          var reqUds = f.payload.slice(4);           // src(2), tgt(2), uds...
-          var respUds = self.handle(reqUds);
-          var addr = [(ecu >> 8) & 0xff, ecu & 0xff, (tester >> 8) & 0xff, tester & 0xff];
+          var tgt = (f.payload[2] << 8) | f.payload[3]; // the addressed module
+          var reqUds = f.payload.slice(4);              // src(2), tgt(2), uds...
+          // With a module map, an address not in it is an absent module: stay
+          // silent (the client's request times out), just like a real car.
+          var target = modules ? (Object.prototype.hasOwnProperty.call(modules, tgt) ? modules[tgt] : null) : self;
+          if (!target) return;
+          var respUds = target.handle(reqUds);
+          var addr = [(tgt >> 8) & 0xff, tgt & 0xff, (tester >> 8) & 0xff, tester & 0xff];
           deliver(doip.header(doip.PT.DIAG_ACK, addr.concat([0x00])));  // positive ack
           deliver(doip.header(doip.PT.DIAG, addr.concat(respUds)));      // the UDS reply
         }

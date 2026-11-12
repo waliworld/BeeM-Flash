@@ -54,6 +54,12 @@ app, and it is built from scratch — see [`NOTICE.md`](NOTICE.md).
 - **Map control (opt-in)** — switch tune maps via the DME diagnostic job,
   guarded by on-screen confirmation and "stationary + engine idle" preconditions.
   **Off by default.**
+- **Fault codes (whole vehicle)** — a **Diag → Codes** page that reads stored
+  fault codes (DTCs) from every module over ENET/DoIP and, with a two-step
+  confirm, clears them. Reading is read-only; clearing erases fault memory only
+  (never the tune). Decodes to SAE codes (`P0300`…), marks pending codes, scans
+  all modules or engine-only, and times out absent modules instead of hanging.
+  Module addresses are configurable per vehicle. See [`docs/FAULT-CODES.md`](docs/FAULT-CODES.md).
 - **Open ENET/DoIP diagnostic toolkit** — an open DoIP/ENET transport, a
   **pluggable SecurityAccess (seed/key)** framework whose key algorithm you
   supply for your own ECU (no manufacturer keys bundled), and an **"all-in" test

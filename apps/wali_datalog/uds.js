@@ -10,6 +10,8 @@
 var SID = {
   SESSION: 0x10,
   ECU_RESET: 0x11,
+  CLEAR_DTC: 0x14, // ClearDiagnosticInformation (clears fault memory): see dtc.js
+  READ_DTC: 0x19,  // ReadDTCInformation (read fault codes): see dtc.js
   SECURITY: 0x27,
   TESTER_PRESENT: 0x3E,
   READ_DID: 0x22,
@@ -19,6 +21,14 @@ var SID = {
   REQUEST_DOWNLOAD: 0x34, // calibration flashing (write): see flash.js
   TRANSFER_DATA: 0x36,
   TRANSFER_EXIT: 0x37
+};
+
+// ReadDTCInformation subfunctions (ISO 14229 §11.3).
+var DTC_SUB = {
+  BY_STATUS_MASK: 0x02,   // reportDTCByStatusMask (the usual "read codes")
+  SUPPORTED: 0x0A,        // reportSupportedDTC (every DTC the ECU knows)
+  SNAPSHOT_IDS: 0x03,     // reportDTCSnapshotIdentification
+  COUNT: 0x01             // reportNumberOfDTCByStatusMask
 };
 
 var ROUTINE_SUB = { START: 0x01, STOP: 0x02, RESULT: 0x03 };
@@ -94,6 +104,24 @@ function buildSecuritySendKey(level, keyBytes) {
 
 function buildRoutineControl(sub, rid, data) {
   return [SID.ROUTINE, u8(sub), hi(rid), lo(rid)].concat(data || []);
+}
+
+// ReadDTCInformation (0x19): read fault codes. Default subfunction 0x02
+// (reportDTCByStatusMask) with statusMask 0xFF (all stored codes).
+function buildReadDtc(sub, statusMask) {
+  sub = (sub == null) ? 0x02 : sub;
+  if (sub === DTC_SUB.BY_STATUS_MASK || sub === DTC_SUB.COUNT || sub === DTC_SUB.SUPPORTED) {
+    return [SID.READ_DTC, sub, statusMask == null ? 0xFF : (statusMask & 0xff)];
+  }
+  return [SID.READ_DTC, sub];
+}
+
+// ClearDiagnosticInformation (0x14): clear fault memory for a DTC group.
+// group 0xFFFFFF = all groups (the usual "clear all codes"). This is a WRITE
+// (it erases the ECU's fault memory); it is gated behind confirmation in the UI.
+function buildClearDtc(group) {
+  var g = (group == null) ? 0xFFFFFF : group;
+  return [SID.CLEAR_DTC, (g >> 16) & 0xff, (g >> 8) & 0xff, g & 0xff];
 }
 
 // Fast block read: DynamicallyDefineDataIdentifier 0x2C 0x88 0x01.
@@ -181,6 +209,10 @@ function parseResponse(requestSid, bytes) {
     out.sub = bytes[1];
     out.rid = (bytes[2] << 8) | bytes[3];
     out.data = bytes.slice(4);
+  } else if (requestSid === SID.READ_DTC) {
+    out.sub = bytes[1];                 // reportType echo
+    out.statusAvailabilityMask = bytes[2];
+    out.data = bytes.slice(3);          // DTC records (parsed in dtc.js)
   } else if (requestSid === SID.DDDI) {
     out.sub = bytes[1];        // 0x88
     out.data = bytes.slice(2); // packed monitor body
@@ -218,7 +250,10 @@ function scaleFromSpec(data, spec) {
 module.exports = {
   SID: SID,
   ROUTINE_SUB: ROUTINE_SUB,
+  DTC_SUB: DTC_SUB,
   NRC: NRC,
+  buildReadDtc: buildReadDtc,
+  buildClearDtc: buildClearDtc,
   toHex: toHex,
   fromHex: fromHex,
   buildReadDataByIdentifier: buildReadDataByIdentifier,

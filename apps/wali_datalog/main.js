@@ -20,6 +20,8 @@ var doip = require('./doip');
 var Channels = require('./channels');
 var storageMod = require('./storage');
 var dme = require('./dme_profiles');
+var dtc = require('./dtc');
+var modules = require('./modules');
 var theme = require('./theme');
 var screens = require('./screens');
 var surface = require('./surface');
@@ -87,6 +89,8 @@ App.prototype.start = function (ctx) {
   this.selection = 0;
   this.latest = { values: {}, demo: false, live: false };
   this.confirm = false;
+  // Fault-code (DTC) page state.
+  this.codes = { scope: 'all', scanning: false, result: null, msg: '', confirmClear: false, clearing: false, lastClear: null };
 
   // react to settings changes live
   if (this.ctx.settings && this.ctx.settings.onChange) {
@@ -297,11 +301,13 @@ App.prototype._startRuntime = function () {
 // Per-page labels for the 4 HMI bar buttons; relabelled on every page switch so
 // the bar matches what the buttons do on the current page (ctx.ui.text).
 var PAGE_LABELS = {
-  live:     ['Datalog', 'Maps', 'Channels', 'Connect'],
+  live:     ['Datalog', 'Maps', 'Channels', 'Diag'],
   datalog:  ['Rec', 'Marker', 'Export', 'Back'],
   channels: ['Log', 'Show', 'Clear', 'Back'],
   maps:     ['Prev', 'Next', 'Apply', 'Back'],
-  connect:  ['Ack', 'Enable', 'Scan', 'Back']
+  diag:     ['Connect', 'Codes', 'Flash', 'Back'],
+  connect:  ['Ack', 'Enable', 'Scan', 'Back'],
+  codes:    ['Scan', 'Clear', 'Scope', 'Back']
 };
 App.prototype._relabel = function () {
   var ui = this.ctx.ui;
@@ -362,7 +368,12 @@ App.prototype.onButton = function (btn) {
     if (btn === 'BTN_A') return this._show('datalog');
     if (btn === 'BTN_B') return this._show('maps');
     if (btn === 'BTN_C') return this._show('channels');
-    if (btn === 'BTN_D') return this._show('connect');
+    if (btn === 'BTN_D') return this._show('diag');
+  } else if (s === 'diag') {
+    if (btn === 'BTN_A') return this._show('connect');
+    if (btn === 'BTN_B') return this._show('codes');
+    if (btn === 'BTN_C') return this._flash('Calibration flashing is set up off-car (descriptor + BIN) — see docs/FLASHING.md.');
+    if (btn === 'BTN_D') return this._show('live');
   } else if (s === 'datalog') {
     if (btn === 'BTN_A') return this._toggleRecord();
     if (btn === 'BTN_B') return this.marker('mark');
@@ -382,7 +393,12 @@ App.prototype.onButton = function (btn) {
     if (btn === 'BTN_A') return this._enetAck();
     if (btn === 'BTN_B') return this._enetToggleEnable();
     if (btn === 'BTN_C') return this._enetScan();
-    if (btn === 'BTN_D') return this._show('live');
+    if (btn === 'BTN_D') return this._show('diag');
+  } else if (s === 'codes') {
+    if (btn === 'BTN_A') return this._codesScan();
+    if (btn === 'BTN_B') return this._codesClear();
+    if (btn === 'BTN_C') return this._codesToggleScope();
+    if (btn === 'BTN_D') { if (this.codes.confirmClear) { this.codes.confirmClear = false; return; } return this._show('diag'); }
   }
 };
 
@@ -462,6 +478,70 @@ App.prototype._flash = function (msg) {
   if (this.ctx.log && this.ctx.log.info) this.ctx.log.info(msg);
 };
 
+// ---- fault codes (DTC) read/clear --------------------------------------
+// Builds a DoIP gateway to the connected vehicle. Reads are read-only; clearing
+// erases fault memory and is gated behind a two-step confirm on the Codes page.
+// A TCP DoIP socket to the car is device-specific (doip.nodeSocket); a host/sim
+// can inject one via ctx.diagSocket for off-car testing.
+App.prototype._makeGateway = function () {
+  var st = this.enet.status();
+  if (!(st.connected && st.vehicle && st.vehicle.host)) return null;
+  var tgt = st.vehicle.logicalAddress || 0x1000;
+  if (this.ctx.diagSocket) return new doip.DoipGateway({ socket: this.ctx.diagSocket(), targetAddr: tgt, requestTimeoutMs: 1500 });
+  return new doip.DoipGateway({ host: st.vehicle.host, port: 13400, targetAddr: tgt, requestTimeoutMs: 1500 });
+};
+App.prototype._codeModules = function () {
+  var list = modules.list(this._config());
+  if (this.codes.scope === 'dme') {
+    var dmeOnly = list.filter(function (m) { return m.primary || m.key === 'dme'; });
+    return dmeOnly.length ? dmeOnly : list.slice(0, 1);
+  }
+  return list;
+};
+App.prototype._codesToggleScope = function () {
+  this.codes.scope = (this.codes.scope === 'all') ? 'dme' : 'all';
+  this.codes.result = null; this.codes.msg = '';
+};
+App.prototype._codesScan = function () {
+  var self = this;
+  if (this.codes.scanning) return Promise.resolve();
+  var gw = this._makeGateway();
+  if (!gw) { this.codes.msg = 'Connect to the vehicle first (Diag → Connect).'; return Promise.resolve(); }
+  this.codes.scanning = true; this.codes.confirmClear = false; this.codes.msg = 'Scanning modules…';
+  var mods = this._codeModules();
+  return gw.activate().then(function () {
+    return dtc.scanModules(gw.sendFor(1500), mods, {}, function (m, i, n) { self.codes.msg = 'Reading ' + m.name + ' (' + i + '/' + n + ')…'; });
+  }).then(function (res) {
+    self.codes.result = res;
+    self.codes.msg = res.totalDtcs + ' code' + (res.totalDtcs === 1 ? '' : 's') + ' across ' + res.reached + '/' + res.scanned + ' module' + (res.scanned === 1 ? '' : 's');
+  }).catch(function (e) {
+    self.codes.msg = 'Scan failed: ' + ((e && e.message) || e);
+  }).then(function () {
+    self.codes.scanning = false; try { gw.close(); } catch (x) {}
+  });
+};
+App.prototype._codesClear = function () {
+  var self = this;
+  if (this.codes.scanning || this.codes.clearing) return Promise.resolve();
+  if (!this.codes.confirmClear) { this.codes.confirmClear = true; this.codes.msg = 'Press Clear again to ERASE fault memory on all reached modules.'; return Promise.resolve(); }
+  this.codes.confirmClear = false;
+  var gw = this._makeGateway();
+  if (!gw) { this.codes.msg = 'Connect to the vehicle first (Diag → Connect).'; return Promise.resolve(); }
+  this.codes.clearing = true; this.codes.msg = 'Clearing codes…';
+  var mods = this._codeModules();
+  return gw.activate().then(function () {
+    return dtc.clearModules(gw.sendFor(1500), mods, { acknowledged: true }, function (m, i, n) { self.codes.msg = 'Clearing ' + m.name + ' (' + i + '/' + n + ')…'; });
+  }).then(function (cr) {
+    self.codes.lastClear = cr;
+    self.codes.msg = 'Cleared ' + cr.cleared + '/' + cr.attempted + ' module' + (cr.attempted === 1 ? '' : 's') + '. Re-scan to confirm.';
+    self.codes.result = null;
+  }).catch(function (e) {
+    self.codes.msg = 'Clear failed: ' + ((e && e.message) || e);
+  }).then(function () {
+    self.codes.clearing = false; try { gw.close(); } catch (x) {}
+  });
+};
+
 // ---- view model + render ------------------------------------------------
 App.prototype.buildView = function () {
   var eng = this.engine;
@@ -511,6 +591,15 @@ App.prototype.buildView = function () {
     selection: this.selection,
     maps: maps,
     enet: this.enet.status(),
+    codes: {
+      scope: this.codes.scope,
+      scanning: this.codes.scanning,
+      clearing: this.codes.clearing,
+      confirmClear: this.codes.confirmClear,
+      msg: this.codes.msg,
+      result: this.codes.result,
+      moduleCount: this._codeModules().length
+    },
     webUrl: this._config().webUrl || ''
   };
 };
