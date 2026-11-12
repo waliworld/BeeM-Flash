@@ -1,28 +1,142 @@
 {
   "label": "EXAMPLE packed-block profile (not calibrated)",
   "verified": false,
-
-  "_doc": "Copy this to the head unit as the app's pidmap.json to map the extended channels to your DME's measurement blocks. Several channels may share one `did` at different `off` (bytes) — that is a packed block, read once per cycle at high rate. engineering = raw*m + b; `len` bytes big-endian (le:true for little-endian); `signed:true` for two's-complement. The did/off/len/m/b below are PLACEHOLDERS: fill them from your tune's measurement definitions, set verified:true, and the channels go live. Unknown channel keys are ignored. See docs/SIGNALS-AND-DIDS.md.",
-
+  "_doc": "Copy this to the head unit as the app's pidmap.json to map the extended channels to your DME's measurement blocks. Several channels may share one `did` at different `off` (bytes) \u2014 that is a packed block, read once per cycle at high rate. engineering = raw*m + b; `len` bytes big-endian (le:true for little-endian); `signed:true` for two's-complement. The did/off/len/m/b below are PLACEHOLDERS: fill them from your tune's measurement definitions, set verified:true, and the channels go live. Unknown channel keys are ignored. See docs/SIGNALS-AND-DIDS.md.",
   "reads": {
-    "boost":        { "did": 16640, "off": 0,  "len": 2, "m": 0.001, "b": -1 },
-    "boostTarget":  { "did": 16640, "off": 2,  "len": 2, "m": 0.001, "b": -1 },
-    "iat":          { "did": 16640, "off": 4,  "len": 2, "m": 0.1,   "b": -40, "signed": true },
-    "timing":       { "did": 16640, "off": 6,  "len": 1, "m": 0.5,   "b": -24, "signed": true },
-    "knock":        { "did": 16640, "off": 7,  "len": 1, "m": 0.1 },
-    "load":         { "did": 16640, "off": 8,  "len": 2, "m": 0.01 },
-    "lambda":       { "did": 16640, "off": 10, "len": 2, "m": 0.0001 },
-    "lambdaTarget": { "did": 16640, "off": 12, "len": 2, "m": 0.0001 },
-
-    "railPressure": { "did": 16641, "off": 0,  "len": 2, "m": 0.1 },
-    "wastegate":    { "did": 16641, "off": 2,  "len": 1, "m": 0.5 },
-    "ethanol":      { "did": 16641, "off": 3,  "len": 1, "m": 0.5 },
-
-    "timingCyl1":   { "did": 16642, "off": 0,  "len": 1, "m": 0.5, "b": -24, "signed": true },
-    "timingCyl2":   { "did": 16642, "off": 1,  "len": 1, "m": 0.5, "b": -24, "signed": true },
-    "timingCyl3":   { "did": 16642, "off": 2,  "len": 1, "m": 0.5, "b": -24, "signed": true },
-    "timingCyl4":   { "did": 16642, "off": 3,  "len": 1, "m": 0.5, "b": -24, "signed": true },
-    "timingCyl5":   { "did": 16642, "off": 4,  "len": 1, "m": 0.5, "b": -24, "signed": true },
-    "timingCyl6":   { "did": 16642, "off": 5,  "len": 1, "m": 0.5, "b": -24, "signed": true }
+    "boost": {
+      "did": 16640,
+      "off": 0,
+      "len": 2,
+      "m": 0.001,
+      "b": -1
+    },
+    "boostTarget": {
+      "did": 16640,
+      "off": 2,
+      "len": 2,
+      "m": 0.001,
+      "b": -1
+    },
+    "iat": {
+      "did": 16640,
+      "off": 4,
+      "len": 2,
+      "m": 0.1,
+      "b": -40,
+      "signed": true
+    },
+    "timing": {
+      "did": 16640,
+      "off": 6,
+      "len": 1,
+      "m": 0.5,
+      "b": -24,
+      "signed": true
+    },
+    "knock": {
+      "did": 16640,
+      "off": 7,
+      "len": 1,
+      "m": 0.1
+    },
+    "load": {
+      "did": 16640,
+      "off": 8,
+      "len": 2,
+      "m": 0.01
+    },
+    "lambda": {
+      "did": 16640,
+      "off": 10,
+      "len": 2,
+      "m": 0.0001
+    },
+    "lambdaTarget": {
+      "did": 16640,
+      "off": 12,
+      "len": 2,
+      "m": 0.0001
+    },
+    "railPressure": {
+      "did": 16641,
+      "off": 0,
+      "len": 2,
+      "m": 0.1
+    },
+    "wastegate": {
+      "did": 16641,
+      "off": 2,
+      "len": 1,
+      "m": 0.5
+    },
+    "ethanol": {
+      "did": 16641,
+      "off": 3,
+      "len": 1,
+      "m": 0.5
+    },
+    "timingCyl1": {
+      "did": 16642,
+      "off": 0,
+      "len": 1,
+      "m": 0.5,
+      "b": -24,
+      "signed": true
+    },
+    "timingCyl2": {
+      "did": 16642,
+      "off": 1,
+      "len": 1,
+      "m": 0.5,
+      "b": -24,
+      "signed": true
+    },
+    "timingCyl3": {
+      "did": 16642,
+      "off": 2,
+      "len": 1,
+      "m": 0.5,
+      "b": -24,
+      "signed": true
+    },
+    "timingCyl4": {
+      "did": 16642,
+      "off": 3,
+      "len": 1,
+      "m": 0.5,
+      "b": -24,
+      "signed": true
+    },
+    "timingCyl5": {
+      "did": 16642,
+      "off": 4,
+      "len": 1,
+      "m": 0.5,
+      "b": -24,
+      "signed": true
+    },
+    "timingCyl6": {
+      "did": 16642,
+      "off": 5,
+      "len": 1,
+      "m": 0.5,
+      "b": -24,
+      "signed": true
+    },
+    "mhdplus_boost": {
+      "_doc": "A CUSTOM PID: an unknown key with display metadata (label/unit) registers a new channel, so tune-specific measurements (e.g. MHD+ boost) are logged and shown. did/off/len/m/b as for any read.",
+      "did": 18945,
+      "off": 0,
+      "len": 2,
+      "m": 0.001,
+      "b": -1,
+      "label": "MHD+ Boost",
+      "unit": "bar",
+      "min": -1,
+      "max": 4,
+      "dp": 2,
+      "cat": "Custom",
+      "verified": false
+    }
   }
 }

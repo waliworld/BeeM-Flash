@@ -170,10 +170,11 @@ App.prototype.style = function () { return this.getSetting('style') || 'tiles'; 
 // Returns a normalised profile or null (then DiagProvider uses the template).
 App.prototype._loadPidProfile = function () {
   try {
+    Channels.unregisterCustom(); // drop any custom PIDs from a previous load
     if (this.storage && this.storage.read) {
       var txt = this.storage.read('pidmap.json');
       if (txt && txt.length) {
-        var prof = dme.fromJson(JSON.parse(txt));
+        var prof = dme.fromJson(JSON.parse(txt)); // registers custom PIDs with metadata
         if (this.ctx.log && this.ctx.log.info) this.ctx.log.info('Loaded PID profile: ' + prof.label);
         return prof;
       }

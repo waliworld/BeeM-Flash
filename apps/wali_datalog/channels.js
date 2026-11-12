@@ -155,6 +155,45 @@ function categories() {
   return out;
 }
 
+// Register a custom channel at runtime — e.g. a tune-specific "MHD+" PID
+// (MHD+ boost and the like) defined in a user's pidmap.json. def:
+//   { key, label?, unit?, iunit?, toImp?, cat?, min?, max?, dp?, warn?, crit?, read? }
+// read defaults to a diagnostic read of the key. Re-registering a key updates it.
+function register(def) {
+  if (!def || !def.key) return null;
+  var ch = {
+    key: def.key,
+    label: def.label || def.key,
+    unit: def.unit || '',
+    iunit: def.iunit,
+    toImp: typeof def.toImp === 'function' ? def.toImp : undefined,
+    cat: def.cat || 'Custom',
+    read: def.read || diag(def.key),
+    min: typeof def.min === 'number' ? def.min : 0,
+    max: typeof def.max === 'number' ? def.max : 100,
+    dp: typeof def.dp === 'number' ? def.dp : 2,
+    warn: typeof def.warn === 'number' ? def.warn : undefined,
+    crit: typeof def.crit === 'number' ? def.crit : undefined,
+    def: !!def.def,
+    custom: true
+  };
+  if (BY_KEY[ch.key]) {
+    var idx = CHANNELS.indexOf(BY_KEY[ch.key]);
+    if (idx >= 0) CHANNELS[idx] = ch; else CHANNELS.push(ch);
+  } else {
+    CHANNELS.push(ch);
+  }
+  BY_KEY[ch.key] = ch;
+  return ch;
+}
+
+// Remove all custom channels (called before (re)loading a profile; and in tests).
+function unregisterCustom() {
+  CHANNELS = CHANNELS.filter(function (c) { return !c.custom; });
+  BY_KEY = {};
+  for (var n = 0; n < CHANNELS.length; n++) BY_KEY[CHANNELS[n].key] = CHANNELS[n];
+}
+
 function toUnits(ch, metricValue, units) {
   if (units === 'imperial' && ch && typeof ch.toImp === 'function') return ch.toImp(metricValue);
   return metricValue;
@@ -170,5 +209,7 @@ module.exports = {
   defaults: defaults,
   categories: categories,
   toUnits: toUnits,
-  unitLabel: unitLabel
+  unitLabel: unitLabel,
+  register: register,
+  unregisterCustom: unregisterCustom
 };

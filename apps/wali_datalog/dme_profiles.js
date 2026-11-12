@@ -90,7 +90,19 @@ function fromJson(obj) {
     var k = keys[i];
     var r = obj.reads[k];
     if (!r || typeof r.did !== 'number') throw new Error('profile: ' + k + ' needs a numeric did');
-    if (!Channels.get(k)) continue; // ignore unknown channels rather than fail
+    if (!Channels.get(k)) {
+      // A custom PID: an unknown key that carries display metadata registers a
+      // new channel, so a tune's custom measurements (e.g. "MHD+ boost") can be
+      // logged and shown. Without metadata an unknown key is still ignored.
+      if (r.label || r.unit || r.custom) {
+        Channels.register({
+          key: k, label: r.label || k, unit: r.unit || '', iunit: r.iunit,
+          cat: r.cat || 'Custom', min: r.min, max: r.max, dp: r.dp, warn: r.warn, crit: r.crit
+        });
+      } else {
+        continue;
+      }
+    }
     reads[k] = {
       did: r.did | 0,
       off: r.off | 0,

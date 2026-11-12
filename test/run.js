@@ -89,6 +89,25 @@ function near(a, b, eps, msg) { ok(Math.abs(a - b) <= eps, msg + ' (got ' + a + 
   ok(typeof seedkey.makeAlgo(function (s) { return s; }) === 'function', 'makeAlgo passes a function spec through');
 })();
 
+// ---- custom PID channels (tune-specific "MHD+" PIDs, e.g. MHD+ boost) -------
+(function () {
+  Channels.unregisterCustom();
+  var before = Channels.all().length;
+  var prof = dme.fromJson({ label: 'tune', reads: {
+    mhdplus_boost: { did: 0x4A01, off: 0, len: 2, m: 0.001, b: -1, label: 'MHD+ Boost', unit: 'bar', min: -1, max: 4, dp: 2 },
+    nometa_key: { did: 0x4A02 }
+  } });
+  var ch = Channels.get('mhdplus_boost');
+  ok(!!ch && ch.label === 'MHD+ Boost' && ch.unit === 'bar', 'custom PID registered from pidmap metadata');
+  eq(ch.cat, 'Custom', 'custom PID categorised as Custom');
+  ok(ch.read.kind === 'diag' && ch.read.key === 'mhdplus_boost', 'custom PID reads via diagnostics');
+  ok(!!prof.reads.mhdplus_boost && prof.reads.mhdplus_boost.did === 0x4A01, 'custom PID DID kept in the built profile');
+  ok(!Channels.get('nometa_key') && !prof.reads.nometa_key, 'unknown key without metadata is ignored');
+  eq(Channels.all().length, before + 1, 'catalogue grew by one custom channel');
+  Channels.unregisterCustom();
+  ok(!Channels.get('mhdplus_boost') && Channels.all().length === before, 'unregisterCustom removes custom channels');
+})();
+
 // ---- format ---------------------------------------------------------------
 eq(F.csvRow(['a', 'b,c', 'd"e']), 'a,"b,c","d""e"', 'csv escaping');
 eq(F.mmss(65000), '01:05', 'mmss');
