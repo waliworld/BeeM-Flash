@@ -18,8 +18,9 @@ var LAMBO = {
   text: '#f6f6f4',      // bold near-white
   dim: '#9a9a97',       // secondary
   faint: '#5c5c5a',     // tertiary / disabled
-  accent: '#ffd400',    // Giallo yellow — brand / active / primary
-  accentDim: '#3a3200',  // yellow at rest (inactive accent fill)
+  accent: '#ffe600',    // bright Giallo yellow — brand / active / primary (punchy on black)
+  accentHi: '#fff45a',  // highlight / hover sheen
+  accentDim: '#4a4300',  // yellow at rest (inactive accent fill)
   ink: '#0a0a0a',       // text drawn ON yellow
   good: '#8bd450',      // confirmed / ok (yellow-green, used sparingly)
   warn: '#ff9f0a',      // warning

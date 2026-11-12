@@ -105,6 +105,26 @@
     else if (name === 'flash-ready') { app = withEnet(makeApp()); app.flash.armed = true; app.flash.descriptor = SAMPLE_DESC; app.tab = 'flash'; app.render(cv); cap = 'FLASH — calibration ready'; }
     else if (name === 'flash-confirm') { app = withEnet(makeApp()); app.flash.armed = true; app.flash.descriptor = SAMPLE_DESC; app.flash.confirm = true; app.tab = 'flash'; app.render(cv); cap = 'FLASH — confirm write'; }
     else if (name === 'flash-running') { app = withEnet(makeApp()); app.flash.armed = true; app.flash.descriptor = SAMPLE_DESC; app.flash.running = true; app.flash.progress = 62; app.flash.step = 'transfer 62%'; app.tab = 'flash'; app.render(cv); cap = 'FLASH — writing'; }
+    else if (name === 'log-run') {
+      app = makeApp(); var nr = 1700000000000; app.engine.clock = function () { return nr; };
+      app._startLog(); for (var ri = 0; ri < 400; ri++) { nr += 50; app.tick(nr); } app._stopLog();
+      app.tab = 'log'; app.render(cv); cap = 'LOG — with dyno pull estimate';
+    }
+    else if (name === 'info') {
+      app = withEnet(makeApp());
+      app.info.items = [
+        { did: 0xF190, label: 'VIN', value: 'WBA12345678901234', ok: true },
+        { did: 0xF187, label: 'Part number', value: '8795432', ok: true },
+        { did: 0xF191, label: 'Hardware number', value: 'DME_MG1CS003', ok: true },
+        { did: 0xF194, label: 'Software number', value: '00008051', ok: true },
+        { did: 0xF195, label: 'Software version', value: 'I001-20', ok: true },
+        { did: 0xF18C, label: 'ECU serial', value: 'not available', ok: false },
+        { did: 0xF18B, label: 'Manufacturing date', value: '2021-04-18', ok: true },
+        { did: 0xF17C, label: 'Calibration ID', value: 'CAL_B58_STG2', ok: true }
+      ];
+      app.info.msg = '7 of 10 identifiers read';
+      app.tab = 'info'; app.render(cv); cap = 'INFO — ECU identification (read-only)';
+    }
     else if (name === 'setup') { app = makeApp(); drive(app, 6); app.setupSel = 1; app.tab = 'setup'; app.render(cv); cap = 'SETUP — in-app settings'; }
     else { app = makeApp(); app.tab = 'live'; app.render(cv); }
     document.getElementById('cap').textContent = cap;

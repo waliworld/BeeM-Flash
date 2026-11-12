@@ -163,38 +163,66 @@ function live(cv, t, view, R) {
 }
 
 // ------------------------------------------------------------- DATALOG ------
+function peakOf(summary, key, which) {
+  for (var i = 0; i < (summary || []).length; i++) if (summary[i].key === key) return summary[i][which];
+  return NaN;
+}
 function log(cv, t, view, R) {
   var rec = view.rec || {}, st = rec.state || 'idle';
-  var pw = 560;
+  var pw = 470;
   D.panel(cv, t, R.x, R.y, pw, R.h, { accent: true, accentColor: st === 'logging' ? t.rec : t.accent });
   var word = 'READY', col = t.accent, sub = 'Tap START to record a session';
   if (st === 'logging') { word = '● REC'; col = t.rec; sub = 'Recording ' + rec.enabledCount + ' ch @ ' + rec.rate + ' Hz'; }
   else if (st === 'saving') { word = 'SAVING…'; col = t.warn; sub = 'Flushing to storage'; }
   else if (st === 'done') { word = 'SAVED'; col = t.good; sub = rec.file || ''; }
   else if (st === 'error') { word = 'ERROR'; col = t.crit; sub = rec.error || 'Logging failed'; }
-  cv.text(word, R.x + 28, R.y + 86, 64, col, { weight: 'bold' });
-  cv.text(sub, R.x + 28, R.y + 124, 20, t.dim, {});
+  cv.text(word, R.x + 28, R.y + 80, 58, col, { weight: 'bold' });
+  cv.text(sub, R.x + 28, R.y + 116, 18, t.dim, {});
   var stats = [['DURATION', F.mmss(rec.durationMs)], ['SAMPLES', String(rec.samples || 0)],
     ['RATE', (rec.rateActual ? rec.rateActual.toFixed(1) : '0.0') + ' Hz'], ['SIZE', F.humanBytes(rec.bytes || 0)],
     ['MARKERS', String(rec.markers || 0)], ['CHANNELS', String(rec.enabledCount || 0)]];
   for (var i = 0; i < stats.length; i++) {
-    var cc = i % 3, rr = Math.floor(i / 3), x = R.x + 28 + cc * 176, y = R.y + 176 + rr * 64;
-    cv.text(stats[i][0], x, y, 15, t.faint, { weight: 'bold' });
-    cv.text(stats[i][1], x, y + 30, 26, t.text, { weight: 'bold' });
+    var cc = i % 3, rr = Math.floor(i / 3), x = R.x + 28 + cc * 146, y = R.y + 164 + rr * 66;
+    cv.text(stats[i][0], x, y, 14, t.faint, { weight: 'bold' });
+    cv.text(stats[i][1], x, y + 28, 24, t.text, { weight: 'bold' });
   }
-  // sessions
-  var lx = R.x + pw + 16, lw = R.x + R.w - lx;
+
+  // middle: last pull (estimated) + session peaks
+  var mx = R.x + pw + 16, mw = 560, mh = R.h;
+  D.panel(cv, t, mx, R.y, mw, mh, { title: 'LAST PULL (ESTIMATE)' });
+  var run = rec.run;
+  if (run) {
+    cv.text(F.fixed(run.peakPowerHp, 0), mx + 24, R.y + 108, 72, t.accent, { weight: 'bold' });
+    var hw = cv.textWidth(F.fixed(run.peakPowerHp, 0), 72, 'bold');
+    cv.text('whp', mx + 24 + hw + 10, R.y + 108, 26, t.dim, {});
+    cv.text('@ ' + F.fixed(run.peakPowerRpm, 0) + ' rpm   ·   ~' + F.fixed(run.peakPowerCrankHp, 0) + ' crank hp', mx + 24, R.y + 140, 18, t.dim, {});
+    var rr2 = [['PEAK BOOST', (F.isNum(run.peakBoost) ? F.fixed(run.peakBoost, 2) + ' bar' : '--')],
+      ['PULL', F.fixed(run.durationMs / 1000, 1) + ' s'],
+      ['100–200', run.t100_200 != null ? F.fixed(run.t100_200 / 1000, 2) + ' s' : '--']];
+    for (var k = 0; k < rr2.length; k++) {
+      var rx = mx + 24 + k * 178;
+      cv.text(rr2[k][0], rx, R.y + 182, 14, t.faint, { weight: 'bold' });
+      cv.text(rr2[k][1], rx, R.y + 210, 22, t.text, { weight: 'bold' });
+    }
+    cv.text('Acceleration-based estimate — not a dyno. Set mass/drag in config.', mx + 24, R.y + mh - 18, 15, t.faint, {});
+  } else {
+    cv.text('No full-throttle pull captured yet.', mx + 24, R.y + 96, 22, t.dim, {});
+    cv.text('Record a log, then do a clean WOT pull — the peak power estimate,', mx + 24, R.y + 128, 17, t.faint, {});
+    cv.text('peak boost and 100–200 time are captured automatically.', mx + 24, R.y + 150, 17, t.faint, {});
+  }
+  // right: recent logs
+  var lx = mx + mw + 16, lw = R.x + R.w - lx;
   D.panel(cv, t, lx, R.y, lw, R.h, { title: 'RECENT LOGS' });
   var sess = view.sessions || [];
   if (sess.length === 0) {
-    cv.text('No logs yet.', lx + 24, R.y + 90, 24, t.dim, {});
-    cv.text('Recorded sessions appear here and export to USB.', lx + 24, R.y + 124, 18, t.faint, {});
+    cv.text('No logs yet.', lx + 24, R.y + 86, 22, t.dim, {});
+    cv.text('Sessions export to USB with a summary footer.', lx + 20, R.y + 118, 16, t.faint, {});
   } else {
     for (var s = 0; s < Math.min(sess.length, 6); s++) {
-      var yy = R.y + 72 + s * 40;
-      cv.text(sess[s].name, lx + 24, yy, 19, t.text, {});
-      cv.text(F.humanBytes(sess[s].size), lx + lw - 20, yy, 19, t.dim, { align: 'r' });
-      cv.fillRect(lx + 24, yy + 11, lw - 44, 1, t.line);
+      var yy = R.y + 70 + s * 38;
+      cv.text(sess[s].name, lx + 20, yy, 17, t.text, {});
+      cv.text(F.humanBytes(sess[s].size), lx + lw - 18, yy, 17, t.dim, { align: 'r' });
+      cv.fillRect(lx + 20, yy + 10, lw - 38, 1, t.line);
     }
   }
 }
@@ -405,15 +433,40 @@ function setup(cv, t, view, R) {
   }
 }
 
+// ---------------------------------------------------------------- INFO -----
+// Read-only ECU identification / calibration. Two columns of label : value.
+function info(cv, t, view, R) {
+  var f = view.info || {};
+  cv.text('READ-ONLY', R.x, R.y - 8, 18, t.faint, { weight: 'bold' });
+  cv.text(f.msg || 'Tap READ to query the DME’s identification + calibration IDs.', R.x + R.w, R.y - 8, 18, t.dim, { align: 'r' });
+  D.panel(cv, t, R.x, R.y, R.w, R.h, { title: 'ECU IDENTIFICATION', accent: true });
+  var items = f.items;
+  if (!items || !items.length) {
+    cv.text(f.reading ? 'Reading…' : 'No data yet.', R.x + 28, R.y + 82, 24, t.dim, {});
+    cv.text('Standard 22 F1xx identification DIDs (VIN, hardware/software numbers, serial,', R.x + 28, R.y + 116, 18, t.faint, {});
+    cv.text('calibration ID…). Read-only; your DME may expose a subset. Configurable per vehicle.', R.x + 28, R.y + 140, 18, t.faint, {});
+    return;
+  }
+  var cols = 2, cw = (R.w - 40) / cols, perCol = Math.ceil(items.length / cols);
+  for (var i = 0; i < items.length; i++) {
+    var col = Math.floor(i / perCol), row = i % perCol;
+    var x = R.x + 28 + col * cw, y = R.y + 70 + row * 42;
+    var it = items[i];
+    cv.text(it.label.toUpperCase(), x, y, 15, t.faint, { weight: 'bold' });
+    cv.text(it.value, x + 230, y, 20, it.ok ? t.text : t.faint, { weight: it.ok ? 'bold' : 'normal' });
+    cv.fillRect(x, y + 12, cw - 24, 1, t.line);
+  }
+}
+
 function content(name) {
-  return { live: live, log: log, channels: channels, maps: maps, connect: connect, codes: codes, flash: flash, setup: setup }[name] || live;
+  return { live: live, log: log, channels: channels, maps: maps, connect: connect, codes: codes, info: info, flash: flash, setup: setup }[name] || live;
 }
 
 module.exports = {
   W: W, H: H, CONTENT: CONTENT, BAR: BAR,
   tabRects: tabRects, barRects: barRects,
   chrome: chrome, content: content,
-  live: live, log: log, channels: channels, maps: maps, connect: connect, codes: codes, flash: flash, setup: setup,
+  live: live, log: log, channels: channels, maps: maps, connect: connect, codes: codes, info: info, flash: flash, setup: setup,
   cval: cval,
   byName: content
 };

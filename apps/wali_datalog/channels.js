@@ -115,6 +115,22 @@ var BASE = [
   { key: 'diInjIdc', label: 'Direct inj duty', unit: '%', cat: 'Port Inj', read: diag('diInjIdc'), min: 0, max: 100, dp: 1, dguess: { len: 1, m: 0.5 }, def: false },
   { key: 'fuelMassTotal', label: 'Fuel mass (total)', unit: 'mg', cat: 'Port Inj', read: diag('fuelMassTotal'), min: 0, max: 120, dp: 1, dguess: { len: 2, m: 0.01 }, def: false },
 
+  // ---- Port injection (Reflex+ / secondary PI systems) -------------------
+  // For a car with a secondary port-injection kit the owner supplies the real
+  // DIDs/scaling via pidmap.json; these are the standard channels such a kit logs.
+  { key: 'portRailPressure', label: 'Port rail pressure', unit: 'bar', iunit: 'psi', toImp: F.barToPsi, cat: 'Port Inj', read: diag('portRailPressure'), min: 0, max: 10, dp: 2, dguess: { len: 2, m: 0.01 }, def: false },
+  { key: 'portRailTarget', label: 'Port rail (target)', unit: 'bar', iunit: 'psi', toImp: F.barToPsi, cat: 'Port Inj', read: diag('portRailTarget'), min: 0, max: 10, dp: 2, dguess: { len: 2, m: 0.01 }, def: false },
+  { key: 'portInjTarget', label: 'Port inj duty (tgt)', unit: '%', cat: 'Port Inj', read: diag('portInjTarget'), min: 0, max: 100, dp: 1, dguess: { len: 1, m: 0.5 }, def: false },
+  { key: 'portInjSplit', label: 'Port fuel split', unit: '%', cat: 'Port Inj', read: diag('portInjSplit'), min: 0, max: 100, dp: 1, dguess: { len: 1, m: 0.5 }, def: false },
+  { key: 'portInjActive', label: 'Port inj active', unit: '', cat: 'Port Inj', read: diag('portInjActive'), min: 0, max: 1, dp: 0, dguess: { len: 1 }, def: false },
+  { key: 'portFuelMass', label: 'Port fuel mass', unit: 'mg', cat: 'Port Inj', read: diag('portFuelMass'), min: 0, max: 120, dp: 1, dguess: { len: 2, m: 0.01 }, def: false },
+  { key: 'diFuelMass', label: 'Direct fuel mass', unit: 'mg', cat: 'Port Inj', read: diag('diFuelMass'), min: 0, max: 120, dp: 1, dguess: { len: 2, m: 0.01 }, def: false },
+
+  // ---- Flex fuel ---------------------------------------------------------
+  { key: 'ethanolTarget', label: 'Ethanol (target)', unit: '%', cat: 'Fuel', read: diag('ethanolTarget'), min: 0, max: 100, dp: 0, dguess: { len: 1, m: 0.5 }, def: false },
+  { key: 'flexFactor', label: 'Flex-fuel factor', unit: '', cat: 'Fuel', read: diag('flexFactor'), min: 0, max: 2, dp: 2, dguess: { len: 2, m: 0.001 }, def: false },
+  { key: 'fuelTemp', label: 'Fuel temp', unit: '°C', iunit: '°F', toImp: F.cToF, cat: 'Fuel', read: diag('fuelTemp'), min: -20, max: 120, dp: 0, dguess: { len: 1, m: 1, b: -40, signed: true }, def: false },
+
   // ---- Ignition (knock adaptation) ---------------------------------------
   { key: 'knockAdapt', label: 'Knock adapt delta', unit: '°', cat: 'Ignition', read: diag('knockAdapt'), min: -5, max: 5, dp: 1, dguess: { len: 1, m: 0.1, b: -12, signed: true }, def: true },
 

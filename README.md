@@ -36,10 +36,19 @@ app, and it is built from scratch — see [`NOTICE.md`](NOTICE.md).
   on-screen, one-button export to USB. Metric or imperial. Live data can come
   from the fast UDS block read, enhanced PIDs, A2L address reads, bus signals, or a
   read-only **DoIP** client over the car's own diagnostic Ethernet.
-- **Full extended tuner class channel set** — ~92 channels (boost actual/target/deviation,
+- **Full extended tuner class channel set** — 100+ channels (boost actual/target/deviation,
   compressor model, WGDC P/I/D, MAF req, per-cylinder ignition timing and knock,
-  lambda actual/target + trims, HPFP/LPFP, port-injection, VANOS, torque, EGT,
-  flex-fuel, G-forces, …), read the efficient **packed measurement-block** way.
+  lambda actual/target + trims, HPFP/LPFP, **flex-fuel** (ethanol/target/flex-factor/fuel temp),
+  **Reflex+ secondary port injection** (port rail pressure, port injector duty/split,
+  port/direct fuel mass, PI-active), VANOS, torque, EGT, G-forces, …), read the
+  efficient **packed measurement-block** way.
+- **Dyno pull capture + session summary** — the logger auto-detects a full-throttle
+  pull and reports peak boost, an acceleration-based **power estimate** (wheel +
+  crank hp; mass/drag configurable — an estimate, not a dyno) and a 100–200 time
+  on the LOG tab; every CSV gets a per-channel min/max/avg footer.
+- **Read-only ECU info** — an **INFO** tab reads the DME's identification and
+  calibration IDs (VIN, hardware/software numbers, serial, date, calibration ID)
+  over standard UDS DIDs. Read-only, configurable per vehicle.
   The per-tune PID address map is imported as `pidmap.json` (see
   `profiles/template.json`) so every channel goes live on your
   DME without touching code.

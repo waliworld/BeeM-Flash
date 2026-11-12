@@ -92,6 +92,21 @@ No remote or companion interface exists yet (none is built by this project); the
 gate is designed so that if one is added later, it still has to go through this
 same acknowledge-then-enable state rather than a silent auto-connect.
 
+## openbimmer (MIT) — identification DIDs + boost-PID reference
+
+The read-only ECU **INFO** page uses the standard ISO 14229 identification DIDs
+(`22 F190` VIN, `F191/F194/F195` hardware/software numbers, `F18C` serial,
+`F18B` date, `F17C` calibration ID). This 22 F1xx roadmap and the BMW F/G-series
+D-CAN addressing (DME `0x12`, `6F1`/`6xx` extended addressing) were cross-checked
+against the MIT-licensed [openbimmer](https://github.com/openbimmer/openbimmer)
+project's `docs/bmw-control-units.md`. We reimplement from the protocol facts;
+no code is copied. openbimmer also documents a useful gotcha we note in the
+datalogging docs: on high-boost cars the standard OBD-II manifold-pressure PID
+`0x0B` saturates at 255 kPa, so boost should be taken from PID `0x70`/`0x87` —
+relevant only to an OBD-II source, not our UDS/DID or fast-block paths.
+openbimmer itself is a generic OBD-II app and contains no MG1-specific,
+flex-fuel, or port-injection data.
+
 ## What this project does **not** include
 
 No BMW SGBD/EDIABAS files, no ISTA/INPA binaries, no proprietary tuning-application code or

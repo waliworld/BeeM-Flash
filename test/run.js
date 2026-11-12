@@ -382,8 +382,11 @@ function makeFakeDiscoverySocket(respond) {
   eq(eng.state, 'done', 'state done');
   eq(eng.stats.samples, 5, 'sample count');
   eq(eng.stats.markers, 1, 'marker count');
-  var lines = mem.read(eng.file).trim().split('\n');
+  var allLines = mem.read(eng.file).trim().split('\n');
+  // data rows are everything before the commented summary footer
+  var lines = allLines.filter(function (l) { return l.indexOf('#') !== 0 && l.trim() !== ''; });
   eq(lines.length, 6, 'header + 5 rows');
+  ok(allLines.some(function (l) { return /session summary/.test(l); }), 'summary footer written');
   ok(lines[0].indexOf('afr[:1]') >= 0, 'derived afr column present');
   ok(lines[3].split(',')[2] === 'm', 'marker lands on row 3');
   // derived afr = lambda*14.7
@@ -391,6 +394,53 @@ function makeFakeDiscoverySocket(respond) {
   near(parseFloat(lines[1].split(',')[afrCol]), 0.85 * 14.7, 0.05, 'afr value');
   // config preserved across start()
   ok(lines[0].indexOf('rpm') >= 0 && lines[0].indexOf('speed') < 0, 'configure preserved through start');
+})();
+
+// ---- session summary + dyno run capture (#23) ------------------------------
+(function () {
+  var mem = Store.memStorage();
+  var tk = 0;
+  var eng = new LogEngine({ storage: mem, clock: function () { return (tk += 100); } });
+  eng.configure({ channels: ['rpm', 'boost'], rate: 10 });
+  eng.start();
+  for (var i = 0; i < 10; i++) eng.sample({ rpm: 3000 + i * 100, boost: 1 + i * 0.1 });
+  var sum = eng.getSummary();
+  var rpm = sum.filter(function (x) { return x.key === 'rpm'; })[0];
+  ok(rpm && rpm.n === 10 && rpm.min === 3000 && rpm.max === 3900, 'summary: per-channel min/max/avg tracked');
+  near(rpm.avg, 3450, 1, 'summary: average correct');
+  eng.stop();
+  ok(/session summary/.test(mem.read(eng.file)), 'summary: footer appended to CSV');
+})();
+
+(function () {
+  var RunCapture = require(A + 'runcapture');
+  var rc = new RunCapture({ massKg: 1600 });
+  var t = 0, v = 20;
+  for (var i = 0; i < 60; i++) { t += 100; v = Math.min(v + 3.5, 250); rc.feed({ pedal: 100, rpm: 3000 + i * 60, speed: v, boost: 2.1, gLong: 0.6 }, t); }
+  for (var j = 0; j < 6; j++) { t += 100; v = Math.max(0, v - 3); rc.feed({ pedal: 0, rpm: 4000, speed: v, boost: 0.2, gLong: -0.4 }, t); }
+  var run = rc.last();
+  ok(run && run.peakPowerHp > 0, 'runcapture: captures a pull with a positive power estimate');
+  ok(run.peakPowerCrankHp > run.peakPowerHp, 'runcapture: crank estimate above wheel estimate');
+  near(run.peakBoost, 2.1, 1e-6, 'runcapture: records peak boost');
+  ok(run.durationMs >= 800 && run.peakPowerRpm > 0, 'runcapture: run duration + peak rpm recorded');
+  // no pull without WOT
+  var rc2 = new RunCapture(); var tt = 0;
+  for (var k = 0; k < 40; k++) { tt += 100; rc2.feed({ pedal: 20, rpm: 2000, speed: 40 + k * 0.1, boost: 0.3 }, tt); }
+  ok(rc2.last() === null, 'runcapture: no pull captured when off-throttle');
+})();
+
+(function () {
+  var Demo = require(A + 'demo');
+  var d = new Demo(), s = null;
+  for (var i = 0; i < 400; i++) s = d.sample(1700000000000 + i * 50);
+  ['ethanol', 'ethanolTarget', 'flexFactor', 'fuelTemp', 'portRailPressure', 'portRailTarget',
+    'portInjTarget', 'portInjSplit', 'portInjActive', 'portFuelMass', 'diFuelMass'].forEach(function (k) {
+    ok(typeof s[k] === 'number' && isFinite(s[k]), 'demo: ' + k + ' produced for the datalogger');
+  });
+  // flex-fuel + port-injection channels exist in the catalogue
+  ['ethanol', 'flexFactor', 'fuelTemp', 'portRailPressure', 'portInjSplit', 'portInjActive'].forEach(function (k) {
+    ok(!!Channels.get(k), 'channels: ' + k + ' in the catalogue');
+  });
 })();
 
 // error path: storage that throws on open -> engine error state
@@ -879,6 +929,26 @@ Promise.resolve()
         ok(cr.cleared === 2 && dmeSim.cleared === 1 && egsSim.cleared === 1, 'dtc: whole-vehicle clear erases each reachable module');
         gw.close();
       });
+    });
+  })
+  .then(function () {
+    // ---- read-only ECU identification / calibration info (#21) -------------
+    var ecuinfo = require(A + 'ecuinfo');
+    var EcuSim = require('./ecusim').EcuSim;
+    function ascii(s) { return s.split('').map(function (c) { return c.charCodeAt(0); }); }
+    var didMap = {}; didMap[0xF190] = ascii('WBA12345678901234'); didMap[0xF194] = ascii('7920000-1.2.3'); didMap[0xF17C] = ascii('CAL_B58_X1');
+    var sim = new EcuSim({ dids: didMap });
+    return ecuinfo.read(sim.transport()).then(function (res) {
+      ok(res.ok, 'ecuinfo: read completes');
+      var vin = res.items.filter(function (x) { return x.did === 0xF190; })[0];
+      ok(vin && vin.ok && vin.value === 'WBA12345678901234', 'ecuinfo: VIN decoded as ASCII');
+      var cal = res.items.filter(function (x) { return x.did === 0xF17C; })[0];
+      ok(cal && cal.ok && cal.value === 'CAL_B58_X1', 'ecuinfo: calibration ID decoded');
+      var missing = res.items.filter(function (x) { return x.did === 0xF18C; })[0];
+      ok(missing && !missing.ok && /not available/.test(missing.value), 'ecuinfo: absent DID shown as not available');
+      // read-only: ecuinfo issues only 0x22 requests
+      var onlyReads = sim.log.every(function (r) { return r[0] === uds.SID.READ_DID; });
+      ok(onlyReads, 'ecuinfo: only ReadDataByIdentifier (0x22) issued — read-only');
     });
   })
   .then(report)

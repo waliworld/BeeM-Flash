@@ -16,8 +16,25 @@ flasher (library + descriptor), and the whole-vehicle fault-code reader/clearer.
 UI: one canvas screen with internal paging driven by four HMI bar buttons
 (A/B/C/D).
 
-## Beta 2 — v2.x.x  (in progress)
+## Beta 2 — v2.x.x
 
+### v2.1.0
+- **Brighter theme accent** — the Giallo yellow is punchier (`#ffe600`) for a
+  cleaner pop on black.
+- **Flex-fuel + Reflex+ port-injection channels** — ethanol target, flex-fuel
+  factor, fuel temp; port rail pressure/target, port injector duty target, port
+  fuel split, port-injection-active flag, port/direct fuel mass. The demo feed
+  produces them so the datalogger logs them off-car; real values come from your
+  pidmap.
+- **Dyno pull capture + session summaries (#23)** — the logger auto-detects a
+  WOT pull and reports peak boost, an acceleration-based power estimate (wheel +
+  crank, mass/drag configurable), peak-power rpm and a 100–200 time, shown on the
+  LOG tab; every session's CSV gets a per-channel min/max/avg summary footer.
+- **Read-only ECU INFO tab (#21)** — reads the standard `22 F1xx` identification
+  DIDs (VIN, hardware/software numbers, serial, date, calibration ID) over UDS;
+  read-only, DID list configurable per vehicle.
+
+### v2.0.0
 - **New UI shell.** Tabs along the top, in-tab controls along the bottom; the
   confusing A/B/C/D hardware-button bar is hidden in favour of on-screen,
   touchable controls (with the hardware buttons still mapped to the bottom row

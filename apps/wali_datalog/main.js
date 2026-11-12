@@ -22,6 +22,7 @@ var storageMod = require('./storage');
 var dme = require('./dme_profiles');
 var dtc = require('./dtc');
 var modules = require('./modules');
+var ecuinfo = require('./ecuinfo');
 var flash = require('./flash');
 var flashrun = require('./flashrun');
 var theme = require('./theme');
@@ -34,9 +35,9 @@ var TABS = [
   { key: 'live', label: 'LIVE' }, { key: 'log', label: 'LOG' },
   { key: 'channels', label: 'CHANNELS' }, { key: 'maps', label: 'MAPS' },
   { key: 'connect', label: 'CONNECT' }, { key: 'codes', label: 'CODES' },
-  { key: 'flash', label: 'FLASH' }, { key: 'setup', label: 'SETUP' }
+  { key: 'info', label: 'INFO' }, { key: 'flash', label: 'FLASH' }, { key: 'setup', label: 'SETUP' }
 ];
-var SCREEN_ORDER = ['live', 'log', 'channels', 'maps', 'connect', 'codes', 'flash', 'setup'];
+var SCREEN_ORDER = ['live', 'log', 'channels', 'maps', 'connect', 'codes', 'info', 'flash', 'setup'];
 var DEFAULTS = { demo: 'auto', source: 'auto', platform: 'B58', rate: 10, units: 'metric', style: 'tiles', maxtiles: 8, autostart: false, mapcontrol: 'off' };
 var DISPLAY_DEFAULT = ['rpm', 'boost', 'iat', 'coolant', 'oil', 'timing', 'knock', 'speed'];
 
@@ -93,6 +94,7 @@ App.prototype.start = function (ctx) {
   // ---- log engine -------------------------------------------------------
   this.engine = new LogEngine({
     storage: this.storage,
+    vehicle: this._config().vehicle || {}, // { massKg, cda, crr, drivetrain } for pull power estimates
     onError: function (msg) { if (self.ctx.log && self.ctx.log.error) self.ctx.log.error(msg); }
   });
   this.enabled = this._loadEnabled();
@@ -119,6 +121,8 @@ App.prototype.start = function (ctx) {
   // Calibration-flash page state. The engine is OFF by default; nothing can be
   // written until the user turns it ON and then confirms a flash.
   this.flash = { armed: false, descriptor: null, opts: null, status: '', confirm: false, running: false, progress: 0, step: '', result: null };
+  // Read-only ECU identification / calibration info page.
+  this.info = { reading: false, items: null, msg: '' };
 
   // react to settings changes live
   if (this.ctx.settings && this.ctx.settings.onChange) {
@@ -429,6 +433,9 @@ App.prototype._actions = function () {
     { label: this.codes.confirmClear ? 'CONFIRM' : 'CLEAR', danger: true, fn: function () { self._codesClear(); } },
     { label: this.codes.scope === 'dme' ? 'ALL' : 'ENGINE', fn: function () { self._codesToggleScope(); } }
   ];
+  if (s === 'info') return [
+    { label: 'READ', disabled: this.info.reading, fn: function () { self._infoRead(); } }
+  ];
   if (s === 'flash') {
     var ready = this.flash.armed && this.flash.descriptor && !this.flash.running;
     return [
@@ -614,6 +621,27 @@ App.prototype._codesClear = function () {
   });
 };
 
+// ---- ECU info (INFO tab) — read-only identification / calibration ------
+App.prototype._infoRead = function () {
+  var self = this;
+  if (this.info.reading) return Promise.resolve();
+  var gw = this._makeGateway();
+  if (!gw) { this.info.msg = 'Connect to the vehicle first (CONNECT tab).'; return Promise.resolve(); }
+  this.info.reading = true; this.info.msg = 'Reading identification…';
+  var dids = (this._config().infoDids) || undefined; // per-vehicle override
+  return gw.activate().then(function () {
+    return ecuinfo.read(function (b) { return gw.send(b); }, { dids: dids }, function (d, i, n) { self.info.msg = 'Reading ' + d.label + ' (' + i + '/' + n + ')…'; });
+  }).then(function (res) {
+    self.info.items = res.items || [];
+    var got = self.info.items.filter(function (x) { return x.ok; }).length;
+    self.info.msg = got + ' of ' + self.info.items.length + ' identifiers read';
+  }).catch(function (e) {
+    self.info.msg = 'Read failed: ' + ((e && e.message) || e);
+  }).then(function () {
+    self.info.reading = false; try { gw.close(); } catch (x) {}
+  });
+};
+
 // ---- settings (SETUP tab) ----------------------------------------------
 App.prototype._setupMove = function (d) {
   var n = SETTINGS_SCHEMA.length;
@@ -707,7 +735,9 @@ App.prototype.buildView = function () {
     file: eng.file,
     error: eng.errorMsg,
     enabledCount: this.enabled.length,
-    rate: Number(this.getSetting('rate'))
+    rate: Number(this.getSetting('rate')),
+    summary: this.engine.getSummary(),
+    run: this.engine.lastRun()
   };
   var sessions = this.engine.sessions().map(function (n) {
     var size = 0;
@@ -755,6 +785,7 @@ App.prototype.buildView = function () {
       progress: this.flash.progress, step: this.flash.step, status: this.flash.status,
       descriptor: this.flash.descriptor, result: this.flash.result
     },
+    info: { reading: this.info.reading, items: this.info.items, msg: this.info.msg },
     setup: this._setupItems(), setupSel: this.setupSel,
     tab: this.tab, tabs: TABS, actions: this._actions(),
     webUrl: this._config().webUrl || ''

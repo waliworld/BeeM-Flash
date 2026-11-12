@@ -151,6 +151,19 @@ Demo.prototype.step = function (dt) {
   out.portInjIpw = clamp(this.throttle > 50 ? load * 0.02 : 0, 0, 20);
   out.diInjIdc = clamp(load * 0.35, 0, 100);
   out.fuelMassTotal = clamp(load * 0.4, 0, 120);
+
+  // Reflex+ / secondary port-injection channels (demo; real values come from a pidmap).
+  out.portRailPressure = clamp(5.0 + load * 0.004, 4.5, 7.0);
+  out.portRailTarget = 5.2;
+  out.portInjTarget = clamp(this.throttle > 50 ? load * 0.32 : 0, 0, 100);
+  out.portInjSplit = clamp(this.throttle > 60 ? 25 + load * 0.12 : 0, 0, 60);
+  out.portInjActive = this.throttle > 50 ? 1 : 0;
+  out.portFuelMass = clamp(out.fuelMassTotal * out.portInjSplit / 100, 0, 120);
+  out.diFuelMass = clamp(out.fuelMassTotal - out.portFuelMass, 0, 120);
+  // Flex fuel (demo blend ~E10).
+  out.ethanolTarget = 10;
+  out.flexFactor = clamp(1 + (out.ethanol / 100) * 0.6, 0.9, 2);
+  out.fuelTemp = clamp(30 + load * 0.05, 18, 80);
   out.knockAdapt = clamp(-knock * 0.5 + 0.3 * Math.sin(this.t), -5, 5);
   out.throttleReq = clamp(this.throttle + 2, 0, 100);
   out.torqueLimiter = 0;

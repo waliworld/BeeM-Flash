@@ -10,6 +10,7 @@
 // States: idle -> logging -> saving -> done ; any write failure -> error.
 //
 var Channels = require('./channels');
+var RunCapture = require('./runcapture');
 var F = require('./format');
 
 var STATE = {
@@ -31,6 +32,8 @@ function LogEngine(opts) {
   this.onError = opts.onError || noop;
   this.flushEveryMs = opts.flushEveryMs || 1000;
   this.flushEveryRows = opts.flushEveryRows || 50;
+  this.vehicle = opts.vehicle || {}; // { massKg, cda, crr, drivetrain } for run power estimates
+  this.runCapture = new RunCapture(this.vehicle);
   this._resetConfig();
   this._resetSession();
 }
@@ -55,6 +58,8 @@ LogEngine.prototype._resetSession = function () {
   this.stats = { samples: 0, bytes: 0, durationMs: 0, rate: 0, markers: 0 };
   this.errorMsg = '';
   this.last = {}; // last resolved metric values, for the live UI
+  this.summary = {}; // per-channel min/max/sum/n over the session (metric values)
+  if (this.runCapture) this.runCapture.reset();
 };
 
 LogEngine.prototype.configure = function (cfg) {
@@ -129,6 +134,15 @@ LogEngine.prototype.sample = function (metric) {
   var marker = this.markerPending;
   if (marker) { this.markerPending = ''; this.stats.markers++; }
 
+  // per-channel running min/max/avg (metric units) + dyno pull capture
+  for (var si = 0; si < this.enabled.length; si++) {
+    var sk = this.enabled[si], sv = resolved[sk];
+    if (!F.isNum(sv)) continue;
+    var ac = this.summary[sk] || (this.summary[sk] = { min: sv, max: sv, sum: 0, n: 0 });
+    if (sv < ac.min) ac.min = sv; if (sv > ac.max) ac.max = sv; ac.sum += sv; ac.n++;
+  }
+  try { this.runCapture.feed(metric, now); } catch (e) {}
+
   var row = [now - this.startMs, F.iso(now), marker];
   for (var i = 0; i < this.enabled.length; i++) {
     var ch = Channels.get(this.enabled[i]);
@@ -162,10 +176,46 @@ LogEngine.prototype._flush = function () {
   }
 };
 
+// Per-channel session summary (metric units): [{ key, label, unit, min, max, avg, n }].
+LogEngine.prototype.getSummary = function () {
+  var out = [];
+  for (var i = 0; i < this.enabled.length; i++) {
+    var key = this.enabled[i], a = this.summary[key], ch = Channels.get(key);
+    if (!a || !ch || !a.n) continue;
+    out.push({ key: key, label: ch.label, unit: ch.unit || '', min: a.min, max: a.max, avg: a.sum / a.n, n: a.n, dp: ch.dp });
+  }
+  return out;
+};
+LogEngine.prototype.lastRun = function () { return this.runCapture ? this.runCapture.last() : null; };
+LogEngine.prototype.runs = function () { return this.runCapture ? this.runCapture.runs.slice() : []; };
+
+// Append a human-readable summary footer (commented) to the CSV.
+LogEngine.prototype._writeSummary = function () {
+  if (!this.handle) return;
+  var lines = ['', '# --- session summary ---',
+    '# channel,min,max,avg'];
+  var s = this.getSummary();
+  for (var i = 0; i < s.length; i++) {
+    lines.push('# ' + s[i].key + ',' + F.fixed(s[i].min, s[i].dp) + ',' + F.fixed(s[i].max, s[i].dp) + ',' + F.fixed(s[i].avg, s[i].dp));
+  }
+  var r = this.lastRun();
+  if (r) {
+    lines.push('# --- last pull (estimated) ---');
+    lines.push('# duration_s,' + F.fixed(r.durationMs / 1000, 1));
+    lines.push('# peak_boost_bar,' + (F.isNum(r.peakBoost) ? F.fixed(r.peakBoost, 2) : ''));
+    lines.push('# est_peak_power_whp,' + F.fixed(r.peakPowerHp, 0) + ',at_rpm,' + F.fixed(r.peakPowerRpm, 0));
+    lines.push('# est_peak_power_crank_hp,' + F.fixed(r.peakPowerCrankHp, 0));
+    if (r.t100_200 != null) lines.push('# 100-200kmh_s,' + F.fixed(r.t100_200 / 1000, 2));
+    lines.push('# NOTE: power is an acceleration-based estimate, not a dyno figure.');
+  }
+  try { this.storage.append(this.handle, lines.join('\n') + '\n'); } catch (e) {}
+};
+
 LogEngine.prototype.stop = function () {
   if (this.state !== STATE.LOGGING) return false;
   this._setState(STATE.SAVING);
   this._flush();
+  this._writeSummary();
   try {
     if (this.handle) this.storage.close(this.handle);
   } catch (e) {
