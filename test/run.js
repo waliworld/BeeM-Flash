@@ -75,6 +75,20 @@ function near(a, b, eps, msg) { ok(Math.abs(a - b) <= eps, msg + ' (got ' + a + 
   ok(out.live === true, 'diag live values mark the sample live');
 })();
 
+// ---- seedkey.makeAlgo: declarative, configurable key algorithms ------------
+(function () {
+  var seedkey = require(A + 'seedkey');
+  eq(seedkey.makeAlgo({ type: 'add', value: 1 })([1, 2, 3]).join(','), '2,3,4', 'makeAlgo add +1');
+  eq(seedkey.makeAlgo({ type: 'sub', value: 1 })([2, 3, 4]).join(','), '1,2,3', 'makeAlgo sub');
+  eq(seedkey.makeAlgo({ type: 'xor', value: 0xFF })([0x01]).join(','), String(0xFE), 'makeAlgo xor const');
+  eq(seedkey.makeAlgo({ type: 'xorkey', key: [0xF0, 0x0F] })([0x11, 0x22]).join(','), (0x11 ^ 0xF0) + ',' + (0x22 ^ 0x0F), 'makeAlgo xorkey (repeating)');
+  eq(seedkey.makeAlgo({ type: 'reverse' })([1, 2, 3]).join(','), '3,2,1', 'makeAlgo reverse');
+  eq(seedkey.makeAlgo({ type: 'const', key: [9, 9] })([1, 2, 3]).join(','), '9,9', 'makeAlgo const');
+  eq(seedkey.makeAlgo({ type: 'pipe', steps: [{ type: 'add', value: 1 }, { type: 'reverse' }] })([1, 2, 3]).join(','), '4,3,2', 'makeAlgo pipe (add then reverse)');
+  ok(seedkey.makeAlgo(null) === null, 'makeAlgo null spec -> null');
+  ok(typeof seedkey.makeAlgo(function (s) { return s; }) === 'function', 'makeAlgo passes a function spec through');
+})();
+
 // ---- format ---------------------------------------------------------------
 eq(F.csvRow(['a', 'b,c', 'd"e']), 'a,"b,c","d""e"', 'csv escaping');
 eq(F.mmss(65000), '01:05', 'mmss');
@@ -580,6 +594,15 @@ Promise.resolve()
     }).then(function (s) {
       ok(s.ok === true, 'doip gateway: diagnostic session over DoIP');
       gw.close();
+    });
+  })
+  .then(function () {
+    // unlock using a makeAlgo-configured algorithm (no code) over the test ECU
+    var seedkey = require(A + 'seedkey');
+    var EcuSim = require('./ecusim').EcuSim;
+    var algo = seedkey.makeAlgo({ type: 'add', value: 1 }); // matches the ECU default (plusOne)
+    return seedkey.unlock(new EcuSim().transport(), 0x11, algo).then(function (r) {
+      ok(r.unlocked === true, 'seedkey: unlock with a makeAlgo({add:1}) configured algorithm');
     });
   })
   .then(report)

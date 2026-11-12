@@ -78,10 +78,43 @@ function unlock(send, level, algo, opts) {
   });
 }
 
+// Build a key algorithm from a declarative spec, so a seed/key scheme can be
+// CONFIGURED without writing code — the community/vehicle owner supplies the spec
+// for their own ECU. These are generic byte transforms only; no manufacturer
+// algorithm is bundled. A function spec is passed through unchanged.
+//   { type: 'identity' }
+//   { type: 'add'|'sub'|'xor'|'and'|'or', value: n }   per-byte with a constant
+//   { type: 'xorkey', key: [..] }                       per-byte xor with a repeating key
+//   { type: 'not' } | { type: 'reverse' } | { type: 'const', key: [..] }
+//   { type: 'pipe', steps: [spec, ...] }                apply the steps in sequence
+function makeAlgo(spec) {
+  if (typeof spec === 'function') return spec;
+  if (!spec || typeof spec !== 'object') return null;
+  function perByte(fn) {
+    return function (seed) { return seed.map(function (b, i) { return fn(b & 0xff, i) & 0xff; }); };
+  }
+  switch (spec.type) {
+    case 'identity': return function (seed) { return seed.slice(); };
+    case 'add': return perByte(function (b) { return b + (spec.value | 0); });
+    case 'sub': return perByte(function (b) { return b - (spec.value | 0); });
+    case 'and': return perByte(function (b) { return b & (spec.value | 0); });
+    case 'or':  return perByte(function (b) { return b | (spec.value | 0); });
+    case 'xor': return perByte(function (b) { return b ^ (spec.value | 0); });
+    case 'not': return perByte(function (b) { return ~b; });
+    case 'xorkey': var k = (spec.key && spec.key.length) ? spec.key : [0]; return perByte(function (b, i) { return b ^ (k[i % k.length] & 0xff); });
+    case 'reverse': return function (seed) { return seed.slice().reverse(); };
+    case 'const': return function () { return (spec.key || []).slice(); };
+    case 'pipe': var steps = (spec.steps || []).map(makeAlgo).filter(Boolean);
+      return function (seed, level, params) { return steps.reduce(function (s, fn) { return fn(s, level, params); }, seed.slice()); };
+    default: return null;
+  }
+}
+
 module.exports = {
   unlock: unlock,
   session: session,
   testerPresent: testerPresent,
   sendAwait: sendAwait,
-  allZero: allZero
+  allZero: allZero,
+  makeAlgo: makeAlgo
 };

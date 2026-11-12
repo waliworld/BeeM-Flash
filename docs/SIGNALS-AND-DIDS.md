@@ -223,3 +223,19 @@ is required for the job at your session level, leave it unset.
 
 > Map writes remain gated regardless: off by default, confirmed on screen, and
 > refused unless the car is stationary with the engine at idle.
+
+## Logging the extended (tuner / "MHD+") PID set
+
+The channel catalogue (`channels.js`) covers the extended PID set a tuned B58/S58
+exposes — the same class of values other tools (including MHD's "MHD+") log:
+boost actual/target/deviation, wastegate duty/position, mass flow, rail/LPFP
+pressure, per-cylinder timing and knock, air-charge load, and more. For stock
+cars the car-tested `bmw_obd` profile reads the standard DME DIDs over UDS; for a
+specific tune, import that tune's measurement map as `pidmap.json`
+(`dme_profiles.fromJson`, see `profiles/template.json`) and the tune-specific
+channels go live. The app is an independent client — it reads these PIDs itself
+and is not affiliated with, or made for, any tuning vendor.
+
+To open an external tuning site from the head unit (e.g. to sign in or manage a
+tune), set `config.webUrl` in `app.json` to that site; an "Open site" link then
+shows on the Live page.

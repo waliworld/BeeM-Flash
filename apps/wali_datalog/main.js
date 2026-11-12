@@ -94,6 +94,10 @@ App.prototype.start = function (ctx) {
   this._surface = this._makeSurface();
   this._bindButtons();
   this._relabel();
+  // DEVICE: touch — the web link on the Live page (guarded; absent in sim).
+  if (this.ctx.onTap) {
+    trySafe(function () { self.ctx.onTap(function (x, y) { try { self._onTap(x, y); } catch (e) { self._fail('tap', e); } }); });
+  }
   this._startRuntime();
   return this;
 };
@@ -500,8 +504,28 @@ App.prototype.buildView = function () {
     style: this.style(),
     selection: this.selection,
     maps: maps,
-    enet: this.enet.status()
+    enet: this.enet.status(),
+    webUrl: this._config().webUrl || ''
   };
+};
+
+// app.json "config" at runtime (car_vitals-style). The user sets config.webUrl
+// to any external tuning site they use; empty hides the link.
+App.prototype._config = function () { return (this.ctx.spec && this.ctx.spec.config) || {}; };
+
+// Web link hit region (bottom-right of the Live page), shared with screens.js.
+var WEB_REGION = { x: 1420, y: 486, w: 160, h: 30 };
+App.prototype._openWeb = function () {
+  var url = this._config().webUrl;
+  if (!url) return;
+  if (this.ctx.openUrl) trySafe(function () { this.ctx.openUrl(url); }.bind(this)); // DEVICE: unit browser/uplink
+  else this._flash('Open ' + url + ' in a connected browser');
+};
+App.prototype._onTap = function (x, y) {
+  if (this.screen === 'live' && this._config().webUrl &&
+      x >= WEB_REGION.x && x <= WEB_REGION.x + WEB_REGION.w && y >= WEB_REGION.y && y <= WEB_REGION.y + WEB_REGION.h) {
+    return this._openWeb();
+  }
 };
 
 App.prototype.render = function (cv, screenName) {

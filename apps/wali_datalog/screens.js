@@ -117,6 +117,10 @@ function live(cv, t, view) {
     }
   }
   cv.text('A Datalog   ·   B Maps   ·   C Channels   ·   D Connect', 32, 506, 20, t.dim, {});
+  if (view.webUrl) {
+    cv.roundRect(1420, 486, 160, 30, 8, t.panel || '#13202b');
+    cv.text('↗ Open site', 1500, 507, 18, t.accent || '#49c7ff', { align: 'c' });
+  }
 }
 
 // Small top-right indicator of the vehicle connection state, shown on Live.
