@@ -434,9 +434,15 @@ function flash(cv, t, view, R) {
   var rows = [['Address', d.addressHex || '—'], ['Size', (d.size || 0) + ' bytes'], ['Security', d.security || 'none'],
     ['Erase', d.erase || 'none'], ['Verify', d.verify || 'none']];
   for (var i = 0; i < rows.length; i++) {
-    var yy = py + 66 + i * 26;
+    var yy = py + 60 + i * 24;
     cv.text(rows[i][0].toUpperCase(), R.x + 24, yy, 15, t.faint, { weight: 'bold' });
     cv.text(rows[i][1], R.x + 200, yy, 19, t.text, {});
+  }
+  // image fingerprint — is this calibration a known stock / MHD+ image?
+  if (d.fingerprint) {
+    var fk = d.fingerprint.kind, fcol = (fk === 'stock') ? t.text : (fk === 'mhdplus' ? t.accent : t.dim);
+    cv.text('IMAGE', R.x + 24, py + 184, 15, t.faint, { weight: 'bold' });
+    cv.text(d.fingerprint.text, R.x + 200, py + 184, 19, fcol, { weight: fk ? 'bold' : 'normal' });
   }
   if (f.result) cv.text(f.result.message, R.x + 24, py + ph - 12, 18, f.result.ok ? (f.result.confirmed ? t.good : t.accent) : t.crit, { weight: 'bold' });
   else cv.text('Tap FLASH, then confirm. Charged battery, stable connection, do not interrupt.', R.x + 24, py + ph - 12, 18, t.crit, {});

@@ -482,6 +482,45 @@ function makeFakeDiscoverySocket(respond) {
   var g2 = stockdb.ecus.MG1CS201.versions[0];
   var t8 = ecuinfo.computeTune([item(0xF191, 'MG1CS201'), item(0xF17C, g2)], {});
   ok(t8.modified === false && t8.matchedStock, 'tune: stock B58 Gen2 calibration matched -> looks stock');
+
+  // numeric stock software ID (from the bin fingerprints) also matches stock
+  var binverify = require(A + 'binverify');
+  var numId = binverify.stockIds.MG1CS201 && binverify.stockIds.MG1CS201[0];
+  if (numId) {
+    var t9 = ecuinfo.computeTune([item(0xF191, 'MG1CS201'), item(0xF194, '0000' + numId.slice(4))], {});
+    var t9b = ecuinfo.computeTune([item(0xF191, 'MG1CS201'), item(0xF194, numId)], {});
+    ok(t9b.modified === false && t9b.matchedStock === numId, 'tune: numeric stock software ID matched -> looks stock');
+  }
+})();
+
+// ---- bin fingerprint verification (close the ID-preserving-tune gap) --------
+(function () {
+  var binverify = require(A + 'binverify');
+  var stockbins = require(A + 'stockbins');
+  // SHA-256 correctness, both the crypto fast path and the pure-JS fallback.
+  var abc = [0x61, 0x62, 0x63]; // "abc"
+  var want = 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad';
+  eq(binverify.sha256(abc), want, 'binverify: sha256("abc") (primary path)');
+  eq(binverify._sha256js(abc), want, 'binverify: sha256("abc") (pure-JS fallback)');
+  // empty input vector
+  eq(binverify._sha256js([]), 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'binverify: sha256("") pure-JS');
+  // fingerprint DB present with stock + MHD+ images
+  var shas = Object.keys(stockbins.bySha);
+  ok(shas.length >= 100, 'stockbins: fingerprint DB bundled');
+  var hasStock = shas.some(function (s) { return stockbins.bySha[s].k === 'stock'; });
+  var hasMhd = shas.some(function (s) { return stockbins.bySha[s].k === 'mhdplus'; });
+  ok(hasStock && hasMhd, 'stockbins: has both stock and MHD+ fingerprints');
+  // a known stock hash resolves to a stock image; a known MHD+ hash to mhdplus
+  var stockSha = shas.filter(function (s) { return stockbins.bySha[s].k === 'stock'; })[0];
+  var mhdSha = shas.filter(function (s) { return stockbins.bySha[s].k === 'mhdplus'; })[0];
+  var vs = binverify.verifyHash(stockSha);
+  ok(vs.match && vs.kind === 'stock' && /^[0-9A-F]+$/.test(vs.id), 'binverify: stock fingerprint -> STOCK image');
+  ok(/STOCK image/.test(binverify.describe(vs)), 'binverify: describe() names the stock image');
+  var vm = binverify.verifyHash(mhdSha);
+  ok(vm.match && vm.kind === 'mhdplus', 'binverify: MHD+ base fingerprint -> MHD+ detected');
+  // an unknown image (bytes not in the DB) -> no match, honest hex
+  var vr = binverify.verify([1, 2, 3, 4, 5]);
+  ok(vr.match === false && /^[0-9a-f]{64}$/.test(vr.sha256), 'binverify: unknown image -> no match, reports its hash');
 })();
 
 // error path: storage that throws on open -> engine error state

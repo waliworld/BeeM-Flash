@@ -72,6 +72,19 @@ function buildStockIndex(db) {
   return { all: all, byEcu: byEcu, ecuTypes: ecuTypes };
 }
 var STOCK = buildStockIndex(stockdb);
+// Augment the ID set with the numeric stock calibration IDs parsed from the
+// stock bin fingerprints (the "00005D55…" software form the DME often reports).
+(function () {
+  var sb = null; try { sb = require('./stockbins'); } catch (e) { sb = null; }
+  if (!STOCK || !sb || !sb.stockIds) return;
+  for (var ecu in sb.stockIds) {
+    if (!sb.stockIds.hasOwnProperty(ecu)) continue;
+    var set = STOCK.byEcu[ecu] || (STOCK.byEcu[ecu] = {});
+    if (STOCK.ecuTypes.indexOf(ecu) < 0) STOCK.ecuTypes.push(ecu);
+    var ids = sb.stockIds[ecu];
+    for (var i = 0; i < ids.length; i++) { var u = String(ids[i]).toUpperCase(); set[u] = true; STOCK.all[u] = true; }
+  }
+})();
 
 // Decide whether the DME is running a stock calibration, from its reported
 // calibration ID / software / hardware numbers. This is DEFINITIVE where the

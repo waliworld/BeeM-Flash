@@ -15,6 +15,7 @@
 // flash.flashCalibration (with acknowledged still false — the UI confirms).
 //
 var flash = require('./flash');
+var binverify = require('./binverify');
 
 function parseHex(s) {
   var h = String(s).replace(/[^0-9a-fA-F]/g, ''), out = [];
@@ -37,12 +38,17 @@ function loadDescriptor(storage) {
   var norm = flash.normalizeDescriptor(desc, data);
   if (norm.error) return { ok: false, error: norm.error, status: norm.error };
   var o = norm.opts;
+  // Fingerprint the calibration being loaded, so the UI can say whether you are
+  // about to flash a known STOCK image, a known MHD+ base, or an unknown/custom
+  // calibration. (Most useful when the data is a full DME image.)
+  var fp = null; try { fp = binverify.verify(data); } catch (e) { fp = null; }
   var info = {
     addressHex: '0x' + Math.floor(o.address).toString(16).toUpperCase(),
     size: o.size || data.length,
     security: (o.securityLevel != null) ? ('level 0x' + o.securityLevel.toString(16) + (o.keyFn ? ' + key' : '')) : 'none',
     erase: (o.eraseRid != null) ? ('routine 0x' + o.eraseRid.toString(16)) : 'none',
-    verify: (o.checkRid != null) ? ('routine 0x' + o.checkRid.toString(16)) : 'none'
+    verify: (o.checkRid != null) ? ('routine 0x' + o.checkRid.toString(16)) : 'none',
+    fingerprint: fp ? { kind: fp.kind, id: fp.id, match: fp.match, text: binverify.describe(fp) } : null
   };
   return { ok: true, descriptor: info, opts: o };
 }

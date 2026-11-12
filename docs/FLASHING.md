@@ -123,6 +123,23 @@ Beta 2 adds a gated **Flash** tab over this engine:
 The engine remains callable directly as a library (below) for off-car and
 scripted use; the tab is just the gated on-car front end over the same code.
 
+## Image verification (stock / MHD+ fingerprints)
+
+When a calibration is loaded, BeeM-Flash SHA-256-hashes it and checks it against a
+bundled set of known MG1 DME image fingerprints (`stockbins.js`, from the
+community BMW-XDFs collection — fingerprints only, no firmware redistributed):
+
+- **STOCK image** — the bytes exactly match a known stock image.
+- **MHD+ base** — the bytes match a known MHD+ custom-code base.
+- **not a known stock / MHD+ image** — a custom or newer calibration.
+
+This is what makes the tune check definitive even when a tune **keeps the stock
+calibration ID**: the ID reads "stock" but the image hash does not match, so the
+Flash tab shows it is not a stock image. The same `binverify` check can be run on
+a calibration you have read out of the car to confirm, byte-for-byte, whether the
+car is running stock. (Fingerprints cover full DME images; a partial calibration
+section won't match a full-image hash.)
+
 ## Before you flash — a checklist
 
 - **Right section, right address.** A calibration written to the wrong address,

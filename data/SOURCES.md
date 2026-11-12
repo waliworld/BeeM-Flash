@@ -129,6 +129,24 @@ app says so and shows the programming date to compare. Regenerate with
 `python3 -I scripts/build_stockdb.py <A2Ls_dir> data/stock_calibrations.json`
 then the stockdb.js generator (see that script's header).
 
+## Stock / MHD+ image fingerprints — dmacpro91/BMW-XDFs
+
+`data/stock_bins.json` and the bundled `apps/wali_datalog/stockbins.js` are
+**SHA-256 fingerprints** of known MG1 DME images taken from the community
+[dmacpro91/BMW-XDFs](https://github.com/dmacpro91/BMW-XDFs) collection: the stock
+images (`*_original.bin`) and the MHD+ custom-code bases (`*_MapSwitchBase.bin`),
+for B58 Gen1/Gen2 and S58 (156 images → 79 stock + 77 MHD+).
+
+**No binary bytes are redistributed.** The bins are BMW firmware; this project
+stores only their hashes, sizes and the public calibration IDs. The fingerprints
+let BeeM-Flash verify a calibration is **byte-for-byte stock**, or positively
+identify an **MHD+ base**, which closes the gap left by the ID-only check: a tune
+that keeps the stock calibration ID but changes the map data has a different
+hash, so the ID reads "stock" while the fingerprint shows it is not. Regenerate
+with `python3 -I scripts/build_binfingerprints.py <bins_root> data/stock_bins.json`
+then the stockbins.js generator. The numeric stock software IDs parsed from these
+filenames also augment the A2L-derived stock-ID set used by the tune check.
+
 ## What this project does **not** include
 
 No BMW SGBD/EDIABAS files, no ISTA/INPA binaries, no proprietary tuning-application code or

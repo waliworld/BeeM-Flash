@@ -75,7 +75,7 @@
     { module: { name: 'EGS (transmission)' }, ok: true, dtcs: [ { code: 'P17BA', status: { confirmed: true } } ] },
     { module: { name: 'DSC (stability / brakes)' }, ok: true, dtcs: [ { code: 'C0501', status: { confirmed: true } } ] },
     { module: { name: 'EPS (steering)' }, ok: false, dtcs: [] } ] };
-  var SAMPLE_DESC = { addressHex: '0xA0010000', size: 65536, security: 'level 0x11 + key', erase: 'routine 0xFF00', verify: 'routine 0xFF01' };
+  var SAMPLE_DESC = { addressHex: '0xA0010000', size: 65536, security: 'level 0x11 + key', erase: 'routine 0xFF00', verify: 'routine 0xFF01', fingerprint: { kind: 'stock', id: '00005C64143C05', match: true, text: 'STOCK image (00005C64143C05)' } };
   var SAMPLE_TUNE = { calId: 'CAL_MHD_STG2', programmingDate: '2023-09-01', detected: 'MHD', modified: true, note: 'Signature match — looks like MHD.' };
   function readInfo(app) { app.info.done = true; app.info.tune = SAMPLE_TUNE; return app; }
 

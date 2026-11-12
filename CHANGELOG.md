@@ -18,6 +18,17 @@ UI: one canvas screen with internal paging driven by four HMI bar buttons
 
 ## Beta 2 — v2.x.x
 
+### v2.4.0
+- **Binary-level tune verification** — bundled **SHA-256 fingerprints** of 156
+  known MG1 DME images (79 stock + 77 MHD+ bases, from the community
+  dmacpro91/BMW-XDFs collection; fingerprints only, no firmware redistributed).
+  A new `binverify` module hashes a calibration image and reports whether it is a
+  **byte-for-byte stock** image, a **known MHD+ base**, or unknown — which closes
+  the gap the ID-only check left: a tune that keeps the stock calibration ID but
+  changes the maps has a different hash. The Flash tab now shows, for the loaded
+  calibration, whether it's a known stock/MHD+ image. The numeric stock software
+  IDs from these bins also strengthen the ID-level tune check.
+
 ### v2.3.0
 - **Definitive tune detection** — bundled a database of **stock DME calibration
   IDs** (162 versions across MG1CS003/MG1CS201/MG1CS049/MG1CS024, extracted from
