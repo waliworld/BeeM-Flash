@@ -24,6 +24,18 @@ var CDS = 'de.bmw.infotainment.vehicle.CDS';
 var V2 = 'de.bmw.infotainment.vehicle.Vehicle2';
 var PEDAL = 'de.bmw.powertrain.AcceleratorPedal';
 var VI = 'de.bmw.infrastructure.VehicleInformation';
+var CDS2 = 'de.bmw.infotainment.vehicle.CDS2';
+var ENV = 'de.bmw.infrastructure.EnvironmentalInformation';
+var G0 = 9.80665; // standard gravity, for m/s^2 -> g
+
+// Gear: decode DataPowerTrain2.statusGearSelectionDrive to a numeric gear
+// (D1..D9 -> 1..9; P / N / R / N-or-P -> 0). Mirrors live_data's selection().
+function gearDecode(struct) {
+  var x = struct.statusGearSelectionDrive;
+  var n = (typeof x === 'number') ? x
+    : (({ N: 1, R: 2, P: 3, NP: 4 })[x] || (/^_\d$/.test(String(x)) ? 4 + Number(String(x).slice(1)) : 0));
+  return (n >= 5 && n <= 13) ? n - 4 : 0;
+}
 
 var MAP = {
   // id            iface   field                      member                               m          b     flags
@@ -31,9 +43,13 @@ var MAP = {
   vehicleSpeed: { iface: V2,    field: 'statusCarSpeed2',      member: 'speedVehicleCentreOfGravity',    m: 0.015625, b: 0,   invalid: [65535], verified: true },  // km/h
   coolantTemp:  { iface: CDS,   field: 'statusEngineTemperature', member: 'temperatureEngineDrive',      m: 1,        b: -48, invalid: [255],   verified: true },  // °C
   oilTemp:      { iface: CDS,   field: 'statusEngineTemperature', member: 'temperatureEngineOilDrive',   m: 1,        b: -48, invalid: [255],   verified: true },  // °C (shares the field struct with coolant)
-  // Ready but not yet car-confirmed (kept verified:false so they read as "--" until confirmed):
-  accelPedal:   { iface: PEDAL, field: 'AngleAcceleratorPedal', member: 'actualValueAngleAcceleratorPedal', m: 0.025, b: 0, lim: [-2, 102], verified: false }, // %
-  gear:         { iface: VI,    field: 'DataPowerTrain2',      member: 'actualGear', enum: null, verified: false } // gear: needs the DataPowerTrain2 selection decode (P/R/N/D1..D8 -> number)
+  // Driveline / chassis / environment — car-tested bus values from the reference apps:
+  gear:         { iface: VI,    field: 'DataPowerTrain2',      decode: gearDecode, verified: true },        // numeric gear (D1..D9 -> 1..9)
+  ambientTemp:  { iface: ENV,   field: 'ExteriorTemperature',  member: 'temperatureExterior', m: 0.5, b: -40, invalid: [255], verified: true }, // °C
+  gLong:        { iface: CDS2,  field: 'statusLongitudinalAccelerationMassCenter', member: 'longitudinalAccelerationCentreOfGravity', m: 0.002 / G0, b: -65 / G0, invalid: [65535], verified: true }, // g
+  gLat:         { iface: CDS2,  field: 'statusLateralAccelerationMassCenter',      member: 'lateralAccelerationCentreOfGravity',       m: 0.002 / G0, b: -65 / G0, invalid: [65535], verified: true }, // g
+  // Ready but not yet car-confirmed (kept verified:false so it reads "--" until confirmed):
+  accelPedal:   { iface: PEDAL, field: 'AngleAcceleratorPedal', member: 'actualValueAngleAcceleratorPedal', m: 0.025, b: 0, lim: [-2, 102], verified: false } // %
 };
 
 function get(sig) { return MAP[sig] || null; }
@@ -59,6 +75,7 @@ function watchGroups() {
 function readValue(sig, struct) {
   var b = MAP[sig];
   if (!b || !struct || typeof struct !== 'object') return NaN;
+  if (b.decode) { var dv = b.decode(struct); return (typeof dv === 'number' && isFinite(dv)) ? dv : NaN; }
   var raw = struct[b.member];
   if (typeof raw === 'string' && /^-?\d+$/.test(raw)) raw = Number(raw);
   if (raw === undefined || raw === null) return NaN;

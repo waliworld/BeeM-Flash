@@ -40,7 +40,7 @@ var BASE = [
   { key: 'putp', label: 'Pre-throttle press.', unit: 'bar', iunit: 'psi', toImp: F.barToPsi, cat: 'Air/Boost', read: diag('putp'), min: 0, max: 4, dp: 2, dguess: { len: 2, m: 0.001 }, def: false },
   { key: 'baro', label: 'Barometric press.', unit: 'bar', iunit: 'psi', toImp: F.barToPsi, cat: 'Air/Boost', read: diag('baro'), min: 0, max: 1.2, dp: 2, dguess: { len: 2, m: 0.001 }, def: false },
   { key: 'iat', label: 'Charge air temp', unit: '°C', iunit: '°F', toImp: F.cToF, cat: 'Air/Boost', read: diag('iat'), min: -20, max: 90, dp: 0, warn: 60, crit: 75, dguess: { len: 1, m: 1, b: -40 }, def: true },
-  { key: 'ambientT', label: 'Ambient air temp', unit: '°C', iunit: '°F', toImp: F.cToF, cat: 'Air/Boost', read: diag('ambientT'), min: -40, max: 60, dp: 0, dguess: { len: 1, m: 1, b: -40, signed: true }, def: false },
+  { key: 'ambientT', label: 'Ambient air temp', unit: '°C', iunit: '°F', toImp: F.cToF, cat: 'Air/Boost', read: bus('ambientTemp'), min: -40, max: 60, dp: 0, def: false },
   { key: 'maf', label: 'MAF actual', unit: 'kg/h', cat: 'Air/Boost', read: diag('maf'), min: 0, max: 1200, dp: 0, dguess: { len: 2, m: 0.1 }, def: false },
   { key: 'mafSpec', label: 'MAF specified', unit: 'kg/h', cat: 'Air/Boost', read: diag('mafSpec'), min: 0, max: 1200, dp: 0, dguess: { len: 2, m: 0.1 }, def: false },
   { key: 'wastegate', label: 'Wastegate duty', unit: '%', cat: 'Air/Boost', read: diag('wastegate'), min: 0, max: 100, dp: 0, dguess: { len: 1, m: 0.5 }, def: false },
@@ -89,8 +89,8 @@ var BASE = [
   { key: 'valvetronic', label: 'Valvetronic lift', unit: 'mm', cat: 'Cams', read: diag('valvetronic'), min: 0, max: 10, dp: 2, dguess: { len: 2, m: 0.01 }, def: false },
 
   // ---- Dynamics ----------------------------------------------------------
-  { key: 'gLong', label: 'Longitudinal G', unit: 'g', cat: 'Dynamics', read: diag('gLong'), min: -2, max: 2, dp: 2, dguess: { len: 2, m: 0.001, b: -2, signed: true }, def: false },
-  { key: 'gLat', label: 'Lateral G', unit: 'g', cat: 'Dynamics', read: diag('gLat'), min: -2, max: 2, dp: 2, dguess: { len: 2, m: 0.001, b: -2, signed: true }, def: false },
+  { key: 'gLong', label: 'Longitudinal G', unit: 'g', cat: 'Dynamics', read: bus('gLong'), min: -2, max: 2, dp: 2, def: false },
+  { key: 'gLat', label: 'Lateral G', unit: 'g', cat: 'Dynamics', read: bus('gLat'), min: -2, max: 2, dp: 2, def: false },
 
   // ---- Extended boost / wastegate control (B58, extended tuner class) ----
   { key: 'boostDeviation', label: 'Boost deviation', unit: 'bar', iunit: 'psi', toImp: F.barToPsi, cat: 'Air/Boost', read: diag('boostDeviation'), min: -1, max: 1, dp: 2, dguess: { len: 2, m: 0.001, b: -1, signed: true }, def: true },

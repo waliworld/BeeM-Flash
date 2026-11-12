@@ -54,6 +54,24 @@ function near(a, b, eps, msg) { ok(Math.abs(a - b) <= eps, msg + ' (got ' + a + 
   eq(g['de.bmw.infotainment.vehicle.CDS'].fields.statusEngineTemperature.sort().join(','), 'coolantTemp,oilTemp', 'coolant+oil grouped on one field');
 })();
 
+// ---- gear decode + G-force + ambient bus signals (car-tested) --------------
+(function () {
+  // gear: D1..D9 -> 1..9; P/N/R -> 0 (DataPowerTrain2.statusGearSelectionDrive)
+  eq(signalmap.readValue('gear', { statusGearSelectionDrive: 5 }), 1, 'gear D1 (raw 5) -> 1');
+  eq(signalmap.readValue('gear', { statusGearSelectionDrive: 12 }), 8, 'gear D8 (raw 12) -> 8');
+  eq(signalmap.readValue('gear', { statusGearSelectionDrive: 3 }), 0, 'gear P (raw 3) -> 0');
+  eq(signalmap.readValue('gear', { statusGearSelectionDrive: 'R' }), 0, 'gear R (string) -> 0');
+  eq(signalmap.readValue('gear', { statusGearSelectionDrive: '_6' }), 6, 'gear "_6" -> D6 -> 6');
+  ok(signalmap.MAP.gear.verified && signalmap.MAP.gLong.verified && signalmap.MAP.ambientTemp.verified, 'gear/gLong/ambient verified');
+  // ambient: raw 120 * 0.5 - 40 = 20 C; sentinel 255 -> NaN
+  near(signalmap.readValue('ambientTemp', { temperatureExterior: 120 }), 20, 1e-9, 'ambient raw 120 -> 20 C');
+  ok(isNaN(signalmap.readValue('ambientTemp', { temperatureExterior: 255 })), 'ambient 255 sentinel -> NaN');
+  // G-force: value = (raw*0.002 - 65) / 9.80665 g; raw 32500 -> 0 g (centre)
+  near(signalmap.readValue('gLong', { longitudinalAccelerationCentreOfGravity: 32500 }), 0, 1e-6, 'gLong centre -> 0 g');
+  near(signalmap.readValue('gLong', { longitudinalAccelerationCentreOfGravity: 37403 }), 1, 1e-2, 'gLong +1 g');
+  near(signalmap.readValue('gLat', { lateralAccelerationCentreOfGravity: 32500 }), 0, 1e-6, 'gLat centre -> 0 g');
+})();
+
 // ---- bmw_obd DME profile (car-tested DIDs) + relative-boost derivation ------
 (function () {
   var p = dme.get('bmw_obd');
