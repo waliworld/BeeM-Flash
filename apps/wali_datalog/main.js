@@ -86,7 +86,9 @@ App.prototype.start = function (ctx) {
 
   // react to settings changes live
   if (this.ctx.settings && this.ctx.settings.onChange) {
-    this.ctx.settings.onChange(function () { self._applySettings(); });
+    this.ctx.settings.onChange(function () {
+      try { self._applySettings(); } catch (e) { self._fail('settings', e); }
+    });
   }
 
   this._surface = this._makeSurface();
@@ -254,16 +256,51 @@ App.prototype._startRuntime = function () {
   var rate = Number(this.getSetting('rate')) || 10;
   var periodMs = Math.max(10, Math.round(1000 / rate));
   if (typeof setInterval === 'function' && !this.ctx._noTimers) {
-    this._sampler = setInterval(function () { self.tick(); }, periodMs);
+    // Guard the sampler: an unhandled throw in a timer callback crashes the
+    // whole Node process (the app goes permanently blank). Never let it.
+    this._sampler = setInterval(function () {
+      try { self.tick(); } catch (e) { self._fail('sample', e); }
+    }, periodMs);
   }
   // Rendering: one ctx.loop per screen if available.
   if (this.ctx.loop) {
     SCREEN_ORDER.forEach(function (name) {
       self.ctx.loop(name, 30, function () {
-        self.render(self._surface, name);
+        // Yield while the kit draws an overlay sheet (e.g. the settings sheet):
+        // drawing our own frame would fight it and blank the screen.
+        var d = self.ctx.display;
+        if (d && d.sheet) return null;
+        try {
+          self.render(self._surface, name);
+        } catch (e) {
+          self._fail('render ' + name, e);
+          try { self._errorCard(self._surface, self._lastError); } catch (e2) { return null; }
+        }
         return self._present(name);
       });
     });
+  }
+};
+
+// Record a failure without crashing, and surface it on screen so it is
+// diagnosable on the car instead of a silent blank.
+App.prototype._fail = function (where, err) {
+  var msg = (err && err.message) ? err.message : String(err);
+  this._lastError = where + ': ' + msg;
+  if (this.ctx.log && this.ctx.log.error) { try { this.ctx.log.error('[wali] ' + this._lastError); } catch (e) {} }
+};
+
+// Draw a visible error card (used when a frame throws) so the app never shows a
+// blank screen: the user can read the message and report it.
+App.prototype._errorCard = function (cv, msg) {
+  if (!cv) return;
+  var t = this.t || {};
+  cv.clear(t.bg || '#0b0f14');
+  cv.text('Wali Datalog hit an error', 40, 60, 30, t.text || '#dde', { weight: 'bold' });
+  cv.text('The app kept running; please screenshot this.', 40, 104, 22, t.dim || '#9ab');
+  var lines = String(msg || 'unknown').match(/.{1,70}/g) || [''];
+  for (var i = 0; i < lines.length && i < 8; i++) {
+    cv.text(lines[i], 40, 150 + i * 30, 22, t.warn || '#f2a33c');
   }
 };
 
@@ -521,6 +558,15 @@ var app = new App();
 var mgu = null;
 try { mgu = require('./kit/' + 'mgu'); } catch (e) { mgu = null; }
 if (mgu && mgu.run) {
+  // Last-resort safety net: a stray throw/rejection must not kill the app
+  // process on the head unit (which leaves a permanently blank screen). Keep it
+  // alive and record the error so the next frame shows it.
+  if (typeof process !== 'undefined' && process.on) {
+    try {
+      process.on('uncaughtException', function (e) { try { app._fail('uncaught', e); } catch (x) {} });
+      process.on('unhandledRejection', function (e) { try { app._fail('rejection', e); } catch (x) {} });
+    } catch (e) { /* ignore */ }
+  }
   mgu.run({ start: function (ctx) { return app.start(ctx); } });
 }
 module.exports = { App: App, app: app, SCREEN_ORDER: SCREEN_ORDER };
