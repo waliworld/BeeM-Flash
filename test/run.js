@@ -445,21 +445,49 @@ function fakeDiag(positive) {
 // ---- async section + report ----------------------------------------------
 Promise.resolve()
   .then(function () {
+    // honest commit: no read-back configured -> accepted but NOT confirmed
     var on = new MapControl({ enabled: true });
-    return on.commit(2, { speed: 0, rpm: 800 }, fakeDiag(true)).then(function (res) {
-      ok(res.ok, 'commit succeeds with valid preconditions + positive DME');
+    return on.commit(2, { speed: 0, rpm: 800 }, fakeDiag(true), true).then(function (res) {
+      ok(res.ok && res.confirmed === false, 'commit: accepted but unconfirmed without read-back');
+      ok(/requested/i.test(res.message), 'commit: message says "requested" (no overclaim)');
+      ok(on.selected === null, 'commit: active map stays unknown when unconfirmed');
+    });
+  })
+  .then(function () {
+    // read-back CONFIRMS the requested map -> confirmed, active set
+    var on = new MapControl({ enabled: true, config: { statusDid: 0x4B00 } });
+    var diag = fakeDiag(true); diag.readDid = function () { return Promise.resolve({ positive: true, data: [2] }); };
+    return on.commit(2, { speed: 0, rpm: 800 }, diag, true).then(function (res) {
+      ok(res.ok && res.confirmed === true, 'commit: read-back confirms the switch');
+      ok(on.selected === 2, 'commit: active map set only after confirmation');
+    });
+  })
+  .then(function () {
+    // read-back MISMATCH -> not confirmed, active stays unknown
+    var on = new MapControl({ enabled: true, config: { statusDid: 0x4B00 } });
+    var diag = fakeDiag(true); diag.readDid = function () { return Promise.resolve({ positive: true, data: [0] }); };
+    return on.commit(2, { speed: 0, rpm: 800 }, diag, true).then(function (res) {
+      ok(res.ok && res.confirmed === false, 'commit: read-back mismatch -> unconfirmed');
+      ok(on.selected === null, 'commit: active stays unknown on mismatch');
     });
   })
   .then(function () {
     var on = new MapControl({ enabled: true });
-    return on.commit(2, { speed: 0, rpm: 800 }, fakeDiag(false)).then(function (res) {
-      ok(!res.ok && /conditionsNotCorrect|rejected/i.test(res.message), 'commit reports DME rejection');
+    return on.commit(2, { speed: 0, rpm: 800 }, fakeDiag(false), true).then(function (res) {
+      ok(!res.ok && /rejected/i.test(res.message), 'commit reports DME rejection');
     });
   })
   .then(function () {
     var on = new MapControl({ enabled: true });
-    return on.commit(1, { speed: 50, rpm: 800 }, fakeDiag(true)).then(function (res) {
-      ok(!res.ok, 'commit refuses when preconditions fail (never calls DME)');
+    return on.commit(1, { speed: 50, rpm: 800 }, fakeDiag(true), true).then(function (res) {
+      ok(!res.ok, 'commit refuses when moving (never calls DME)');
+    });
+  })
+  .then(function () {
+    // demo/stale data (live=false) is refused
+    var on = new MapControl({ enabled: true });
+    return on.commit(2, { speed: 0, rpm: 800 }, fakeDiag(true), false).then(function (res) {
+      ok(!res.ok && /live/i.test(res.message), 'commit refuses demo/stale data');
     });
   })
   .then(function () {

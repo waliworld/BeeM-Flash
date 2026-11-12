@@ -26,7 +26,7 @@ var surface = require('./surface');
 var F = require('./format');
 
 var SCREEN_ORDER = ['live', 'datalog', 'channels', 'maps', 'connect'];
-var DEFAULTS = { demo: 'auto', source: 'auto', platform: 'B58', rate: 10, units: 'metric', style: 'tiles', maxtiles: 8, autostart: false, mapcontrol: false };
+var DEFAULTS = { demo: 'auto', source: 'auto', platform: 'B58', rate: 10, units: 'metric', style: 'tiles', maxtiles: 8, autostart: false, mapcontrol: 'off' };
 var DISPLAY_DEFAULT = ['rpm', 'boost', 'iat', 'coolant', 'oil', 'timing', 'knock', 'speed'];
 
 function App() {}
@@ -76,7 +76,11 @@ App.prototype.start = function (ctx) {
   });
 
   // ---- map control ------------------------------------------------------
-  this.map = new MapControl({ enabled: !!this.getSetting('mapcontrol') });
+  this.map = new MapControl({
+    enabled: this._armed(),
+    config: this._config().mapControl,
+    keyFn: this._mapKeyFn()
+  });
 
   // ---- ui state ---------------------------------------------------------
   this.screen = 'live';
@@ -104,7 +108,7 @@ App.prototype.start = function (ctx) {
 
 // Reconfigure from settings without dropping an active recording.
 App.prototype._applySettings = function () {
-  this.map.setEnabled(!!this.getSetting('mapcontrol'));
+  this.map.setEnabled(this._armed());
   if (this.engine.state !== LogEngine.STATE.LOGGING) {
     this.engine.configure({
       channels: this.enabled, rate: Number(this.getSetting('rate')), units: this.getSetting('units')
@@ -444,12 +448,12 @@ App.prototype._mapStep = function (dir) {
 };
 App.prototype._mapApply = function () {
   var self = this;
-  var prep = this.map.prepare(this.map.requested, this.latest.values);
+  var prep = this.map.prepare(this.map.requested, this.latest.values, this.latest.live);
   if (!prep.ok) { this._flash(prep.reasons[0] || 'Cannot switch'); return; }
   if (!this.confirm) { this.confirm = true; return; }
   this.confirm = false;
-  this.map.commit(this.map.requested, this.latest.values, this.diag).then(function (res) {
-    self._mapMsg = res.message; self._mapOk = res.ok;
+  this.map.commit(this.map.requested, this.latest.values, this.diag, this.latest.live).then(function (res) {
+    self._mapMsg = res.message; self._mapOk = res.ok; self._mapConfirmed = !!res.confirmed;
   });
 };
 
@@ -481,7 +485,7 @@ App.prototype.buildView = function () {
     return { name: n, size: size };
   }, this);
 
-  var prep = this.map.prepare(this.map.requested, this.latest.values);
+  var prep = this.map.prepare(this.map.requested, this.latest.values, this.latest.live);
   var maps = {
     enabled: this.map.enabled,
     slots: this.map.maps,
@@ -490,6 +494,7 @@ App.prototype.buildView = function () {
     confirm: this.confirm,
     lastMsg: this._mapMsg,
     lastOk: this._mapOk,
+    confirmed: this._mapConfirmed,
     pre: { speedOk: prep.speedOk, idleOk: prep.idleOk, reasons: prep.reasons }
   };
 
@@ -513,6 +518,20 @@ App.prototype.buildView = function () {
 // app.json "config" at runtime (car_vitals-style). The user sets config.webUrl
 // to any external tuning site they use; empty hides the link.
 App.prototype._config = function () { return (this.ctx.spec && this.ctx.spec.config) || {}; };
+
+// Map control is ARMED only on the explicit "armed" choice (safe default: off).
+App.prototype._armed = function () {
+  var v = this.getSetting('mapcontrol');
+  return v === 'armed' || v === true || v === 'on';
+};
+// The SecurityAccess key algorithm for map control, if the ECU needs one and the
+// user configured it (config.mapControl.securityAlgo, a seedkey makeAlgo spec).
+// No manufacturer algorithm is bundled.
+App.prototype._mapKeyFn = function () {
+  var mc = this._config().mapControl || {};
+  if (!mc.securityAlgo) return null;
+  try { return require('./seedkey').makeAlgo(mc.securityAlgo); } catch (e) { return null; }
+};
 
 // Web link hit region (bottom-right of the Live page), shared with screens.js.
 var WEB_REGION = { x: 1420, y: 486, w: 160, h: 30 };

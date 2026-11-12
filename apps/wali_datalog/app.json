@@ -2,7 +2,7 @@
   "id": "wali_datalog",
   "title": "Wali Datalog",
   "description": "Live datalogging and map switching for tuned BMW vehicles on the MGU head unit. Reads engine data for logging; optionally requests a map switch on an already-tuned car. Independent app, read-only by default.",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "license": "MIT",
   "vendor": "TunedByWali",
   "loggingId": "WDLG",
@@ -218,9 +218,19 @@
     },
     {
       "key": "mapcontrol",
-      "label": "Enable map control (writes to DME)",
-      "type": "bool",
-      "default": false
+      "label": "Map control (writes to the DME)",
+      "type": "choice",
+      "default": "off",
+      "options": [
+        [
+          "off",
+          "Off (safe)"
+        ],
+        [
+          "armed",
+          "Armed \u2014 can switch maps"
+        ]
+      ]
     }
   ],
   "config": {

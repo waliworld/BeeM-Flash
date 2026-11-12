@@ -19,6 +19,7 @@
 var uds = require('./uds');
 var dme = require('./dme_profiles');
 var doipMod = require('./doip');
+var seedkey = require('./seedkey');
 
 function promisifySend(transport) {
   return function (bytes) {
@@ -145,43 +146,34 @@ DiagProvider.prototype.health = function () {
 
 // ---- control plane (used by mapcontrol.js) --------------------------------
 
+// All control-plane requests go through seedkey.sendAwait, which waits out
+// responsePending (0x78) and parses the final reply — so a DME that answers
+// "busy" mid-operation is handled, not mistaken for the final answer.
 DiagProvider.prototype.sessionControl = function (session) {
-  return this.send(uds.buildSessionControl(session)).then(function (resp) {
-    return uds.parseResponse(uds.SID.SESSION, resp);
-  });
+  return seedkey.sendAwait(this.send, uds.buildSessionControl(session), uds.SID.SESSION);
 };
 
 DiagProvider.prototype.testerPresent = function () {
-  return this.send(uds.buildTesterPresent()).then(function (resp) {
-    return uds.parseResponse(uds.SID.TESTER_PRESENT, resp);
-  });
+  return seedkey.sendAwait(this.send, uds.buildTesterPresent(), uds.SID.TESTER_PRESENT);
 };
 
-// Optional seed/key. keyFn(seedBytes, level) -> keyBytes. The algorithm is
-// vehicle-specific and intentionally NOT bundled; inject it if your access
-// level requires security. Resolves { ok, nrc } .
+// Read one DID (for read-back verification). Resolves the parsed 0x22 reply.
+DiagProvider.prototype.readDid = function (did) {
+  return seedkey.sendAwait(this.send, uds.buildReadDataByIdentifier(did), uds.SID.READ_DID);
+};
+
+// Optional SecurityAccess. keyFn(seed, level) -> key is the caller's algorithm;
+// no manufacturer algorithm is bundled. Delegates to the seedkey framework
+// (request-seed / algo / send-key, with the already-unlocked shortcut and 0x78
+// handling). Resolves { ok, nrc }.
 DiagProvider.prototype.security = function (level, keyFn) {
-  var self = this;
-  return this.send(uds.buildSecurityRequestSeed(level)).then(function (resp) {
-    var seedResp = uds.parseResponse(uds.SID.SECURITY, resp);
-    if (!seedResp.positive) return { ok: false, nrc: seedResp.nrcName || seedResp.error };
-    var seed = seedResp.data;
-    // All-zero seed => already unlocked.
-    var allZero = seed.every(function (b) { return b === 0; });
-    if (allZero) return { ok: true };
-    if (typeof keyFn !== 'function') return { ok: false, nrc: 'no key provider' };
-    var key = keyFn(seed, level);
-    return self.send(uds.buildSecuritySendKey(level, key)).then(function (r2) {
-      var keyResp = uds.parseResponse(uds.SID.SECURITY, r2);
-      return { ok: keyResp.positive, nrc: keyResp.positive ? null : (keyResp.nrcName || keyResp.error) };
-    });
+  return seedkey.unlock(this.send, level, keyFn).then(function (r) {
+    return { ok: !!r.unlocked, nrc: r.unlocked ? null : (r.nrcName || r.error) };
   });
 };
 
 DiagProvider.prototype.routineControl = function (sub, rid, data) {
-  return this.send(uds.buildRoutineControl(sub, rid, data)).then(function (resp) {
-    return uds.parseResponse(uds.SID.ROUTINE, resp);
-  });
+  return seedkey.sendAwait(this.send, uds.buildRoutineControl(sub, rid, data), uds.SID.ROUTINE);
 };
 
 DiagProvider.prototype.stop = function () {

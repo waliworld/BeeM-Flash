@@ -270,7 +270,10 @@ function maps(cv, t, view) {
   if (m.lastMsg) cv.text(m.lastMsg, 824, 262, 22, m.lastOk ? t.good : t.crit, { weight: 'bold' });
   else cv.text('Select a map with Prev/Next, then Apply.', 824, 262, 22, t.dim, {});
   cv.text('Requested: ' + labelOf(slots, m.requested), 824, 316, 22, t.text, {});
-  cv.text('Active: ' + labelOf(slots, m.selected), 824, 352, 22, t.text, {});
+  var active = (m.selected == null)
+    ? 'unknown (not read back)'
+    : (labelOf(slots, m.selected) + (m.confirmed ? '   ✓ confirmed' : ''));
+  cv.text('Active: ' + active, 824, 352, 22, (m.selected == null) ? t.dim : t.text, {});
 
   cv.text('A Prev   ·   B Next   ·   C Apply   ·   D Back', 32, 506, 20, t.dim, {});
 

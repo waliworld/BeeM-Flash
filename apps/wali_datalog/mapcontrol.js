@@ -1,142 +1,132 @@
 'use strict';
 //
-// mapcontrol.js — gated tune map switching (and cooling) via DME routines.
+// mapcontrol.js — gated tune map switching via a DME routine.
 //
 // This is the ONLY module that writes to the engine controller. It is:
-//   * off unless the "Enable map control" setting is on,
-//   * two-step: prepare() validates and returns a warning; commit() executes
-//     only after the user confirms on screen,
-//   * precondition-guarded: refuses unless the car is stationary and the engine
-//     state is known and stable.
+//   * off unless map control is ARMED in Settings (safe default: off),
+//   * two-step: prepare() validates and returns a warning; commit() runs only
+//     after the user confirms on screen,
+//   * precondition-guarded: refuses unless the data is LIVE (not demo/stale) and
+//     the car is stationary and the engine is at idle,
+//   * HONEST: it never claims a map is active unless it reads the active map
+//     back from the DME and it matches. Otherwise it reports the switch as
+//     "requested, unconfirmed".
 //
-// The map and cooling jobs are addressed by the DME diagnostic identifiers that
-// the MGU community apps use for this purpose (map 0x611E, cooling 0x60FD),
-// driven here as UDS RoutineControl. The exact job encoding is DME/tune
-// specific; keep it in this one place and confirm it against the target DME
-// before trusting a live switch. Nothing here runs unless map control is on.
+// The map-switch routine identifier and the read-back DID are ECU/tune specific.
+// The built-in defaults are an UNVERIFIED community placeholder (RID 0x611E);
+// set config.mapControl ({ rid, statusDid, statusOff, session, securityLevel })
+// in app.json for your own ECU before trusting a live switch. If the ECU gates
+// the routine behind SecurityAccess, supply a key algorithm (seedkey.makeAlgo /
+// a function) — no manufacturer algorithm is bundled.
 //
 var uds = require('./uds');
 var F = require('./format');
 
-var RID_MAP = 0x611E;     // tune map select job
-var RID_COOLING = 0x60FD; // cooling / fan strategy job
+var RID_MAP = 0x611E;     // UNVERIFIED community placeholder for the map-select routine
 
 function MapControl(opts) {
   opts = opts || {};
+  var cfg = opts.config || {};
   this.enabled = !!opts.enabled;
-  this.ridMap = opts.ridMap || RID_MAP;
-  this.ridCooling = opts.ridCooling || RID_COOLING;
-  this.extendedSession = opts.extendedSession || 0x03; // extendedDiagnosticSession
-  this.securityLevel = opts.securityLevel || null;      // e.g. 0x11, if required
-  this.keyFn = opts.keyFn || null;                      // seed->key, injected
-  this.maps = opts.maps || defaultMaps();
-  this.selected = 0;         // last confirmed index (optimistic until read-back)
+  this.rid = cfg.rid || opts.rid || RID_MAP;
+  this.statusDid = cfg.statusDid || opts.statusDid || null;   // DID that reports the active map (read-back)
+  this.statusOff = (cfg.statusOff != null ? cfg.statusOff : (opts.statusOff != null ? opts.statusOff : 0));
+  this.extendedSession = cfg.session || opts.extendedSession || 0x03;
+  this.securityLevel = cfg.securityLevel || opts.securityLevel || null;
+  this.keyFn = opts.keyFn || null;                            // seed->key, caller-supplied
+  this.ridProven = !!(cfg.rid || opts.rid);                   // true only once the user configured a real RID
+  this.maps = cfg.maps || opts.maps || defaultMaps();
+  this.selected = null;      // last CONFIRMED active index (null = unknown, never assumed)
   this.requested = 0;        // index highlighted in the UI
+  this.lastRequested = null; // last index we sent (confirmed or not)
 }
 
 function defaultMaps() {
-  // Generic slots. Real labels are tune-specific; relabel via setMaps().
   return [
-    { index: 0, label: 'Stock' },
-    { index: 1, label: 'Map 1' },
-    { index: 2, label: 'Map 2' },
-    { index: 3, label: 'Map 3' },
-    { index: 4, label: 'Map 4' },
-    { index: 5, label: 'Map 5' },
-    { index: 6, label: 'Map 6' },
-    { index: 7, label: 'Map 7' }
+    { index: 0, label: 'Stock' }, { index: 1, label: 'Map 1' }, { index: 2, label: 'Map 2' },
+    { index: 3, label: 'Map 3' }, { index: 4, label: 'Map 4' }, { index: 5, label: 'Map 5' },
+    { index: 6, label: 'Map 6' }, { index: 7, label: 'Map 7' }
   ];
 }
 
 MapControl.prototype.setMaps = function (maps) { if (maps && maps.length) this.maps = maps; };
 MapControl.prototype.setEnabled = function (on) { this.enabled = !!on; };
+MapControl.prototype.labelFor = function (index) {
+  for (var i = 0; i < this.maps.length; i++) if (this.maps[i].index === index) return this.maps[i].label;
+  return 'Map ' + index;
+};
 
-// Validate a requested switch without executing. Returns:
-//   { ok, blocked, reasons:[...], warning, target }
-MapControl.prototype.prepare = function (index, sample) {
+// Validate a requested switch without executing.
+MapControl.prototype.prepare = function (index, sample, live) {
   var reasons = [];
-  if (!this.enabled) reasons.push('Map control is off (enable it in Settings).');
+  if (!this.enabled) reasons.push('Map control is off (arm it in Settings).');
 
   var target = null;
   for (var i = 0; i < this.maps.length; i++) if (this.maps[i].index === index) target = this.maps[i];
   if (!target) reasons.push('Unknown map slot.');
 
   sample = sample || {};
-  var speed = sample.speed;
-  var rpm = sample.rpm;
+  // Require LIVE data — never act on demo or a stalled feed.
+  if (live === false) reasons.push('Live vehicle data is required (the feed is demo or stale).');
 
+  var speed = sample.speed, rpm = sample.rpm;
   var speedOk = false, idleOk = false;
   if (!F.isNum(speed)) reasons.push('Vehicle speed unknown — cannot confirm the car is stationary.');
   else if (speed > 3) reasons.push('Vehicle must be stationary (speed ' + F.fixed(speed, 0) + ' km/h).');
   else speedOk = true;
-
   if (!F.isNum(rpm)) reasons.push('Engine state unknown.');
   else if (rpm > 1500) reasons.push('Engine must be at idle (rpm ' + F.fixed(rpm, 0) + ').');
   else idleOk = true;
 
-  var blocked = reasons.length > 0 || !this.enabled || !target;
-  return {
-    ok: !blocked,
-    blocked: blocked,
-    reasons: reasons,
-    target: target,
-    speedOk: speedOk,
-    idleOk: idleOk,
-    warning: target ? ('Switch tune to "' + target.label + '"? This writes to the engine controller.') : null
-  };
+  var blocked = reasons.length > 0;
+  var warn = target ? ('Switch tune to "' + target.label + '"? This writes to the engine controller. ' +
+    'Reversible: switch back to Stock afterwards.' +
+    (this.ridProven ? '' : ' NOTE: the switch routine is an unverified placeholder for this ECU.')) : null;
+  return { ok: !blocked, blocked: blocked, reasons: reasons, target: target, speedOk: speedOk, idleOk: idleOk, warning: warn };
 };
 
 // Execute a validated switch. `diag` is a DiagProvider. Resolves:
-//   { ok, message }
-MapControl.prototype.commit = function (index, sample, diag) {
+//   { ok, confirmed, message }
+// ok=true means the DME accepted the routine; confirmed=true means the active
+// map was READ BACK and matches. Never claims "active" without confirmation.
+MapControl.prototype.commit = function (index, sample, diag, live) {
   var self = this;
-  var check = this.prepare(index, sample);
-  if (!check.ok) return Promise.resolve({ ok: false, message: check.reasons.join(' ') });
+  var check = this.prepare(index, sample, live);
+  if (!check.ok) return Promise.resolve({ ok: false, confirmed: false, message: check.reasons.join(' ') });
   if (!diag || typeof diag.routineControl !== 'function') {
-    return Promise.resolve({ ok: false, message: 'No diagnostic transport available.' });
+    return Promise.resolve({ ok: false, confirmed: false, message: 'No diagnostic transport available.' });
   }
 
-  // 1) extended session, 2) optional security, 3) routine, 4) verify.
-  return diag.sessionControl(this.extendedSession).then(function (s) {
-    if (!s.positive) throw new Error('Session denied: ' + (s.nrcName || s.error));
-    if (self.securityLevel) {
-      return diag.security(self.securityLevel, self.keyFn).then(function (sec) {
-        if (!sec.ok) throw new Error('Security denied: ' + (sec.nrc || 'locked'));
+  return Promise.resolve(diag.sessionControl(this.extendedSession)).then(function (s) {
+    if (!s || !s.positive) throw new Error('Diagnostic session denied: ' + ((s && (s.nrcName || s.error)) || 'no reply'));
+    if (!self.securityLevel) return null;
+    return diag.security(self.securityLevel, self.keyFn).then(function (sec) {
+      if (!sec.ok) throw new Error('SecurityAccess denied: ' + (sec.nrc || 'locked') + ' (supply the key algorithm for this ECU).');
+    });
+  }).then(function () {
+    return diag.routineControl(uds.ROUTINE_SUB.START, self.rid, [index & 0xff]);
+  }).then(function (r) {
+    if (!r || !r.positive) throw new Error('The DME rejected the map routine: ' + ((r && (r.nrcName || r.error)) || 'no reply'));
+    self.lastRequested = index;
+    // Read-back verification: only claim the map is active if the DME confirms it.
+    if (self.statusDid && typeof diag.readDid === 'function') {
+      return diag.readDid(self.statusDid).then(function (rb) {
+        var activeIndex = (rb && rb.positive && rb.data && rb.data.length > self.statusOff) ? rb.data[self.statusOff] : null;
+        if (activeIndex === index) {
+          self.selected = index;
+          return { ok: true, confirmed: true, message: 'Map confirmed active: "' + self.labelFor(index) + '" (read back from the DME).' };
+        }
+        return { ok: true, confirmed: false, message: 'Map "' + self.labelFor(index) + '" requested and accepted, but the read-back reported ' +
+          (activeIndex == null ? 'no active map' : '"' + self.labelFor(activeIndex) + '"') + ' — verify on the car.' };
       });
     }
-  }).then(function () {
-    return diag.routineControl(uds.ROUTINE_SUB.START, self.ridMap, [index & 0xff]);
-  }).then(function (r) {
-    if (!r.positive) throw new Error('Map job rejected: ' + (r.nrcName || r.error));
-    self.selected = index;
-    self.requested = index;
-    return { ok: true, message: 'Map switched to "' + self.labelFor(index) + '".' };
+    // No read-back configured: honest about not being able to confirm.
+    return { ok: true, confirmed: false, message: 'Map "' + self.labelFor(index) + '" requested — the DME accepted it, but the app cannot read back the active map to confirm. ' +
+      'Verify on the car, and set config.mapControl.statusDid for your ECU to confirm automatically.' };
   }).catch(function (e) {
-    return { ok: false, message: e && e.message ? e.message : String(e) };
+    return { ok: false, confirmed: false, message: e && e.message ? e.message : String(e) };
   });
-};
-
-// Cooling strategy helper (same gating as map control).
-MapControl.prototype.setCooling = function (level, sample, diag) {
-  if (!this.enabled) return Promise.resolve({ ok: false, message: 'Map control is off.' });
-  if (!diag || typeof diag.routineControl !== 'function') {
-    return Promise.resolve({ ok: false, message: 'No diagnostic transport available.' });
-  }
-  var self = this;
-  return diag.sessionControl(this.extendedSession).then(function () {
-    return diag.routineControl(uds.ROUTINE_SUB.START, self.ridCooling, [level & 0xff]);
-  }).then(function (r) {
-    return { ok: !!r.positive, message: r.positive ? 'Cooling set.' : ('Rejected: ' + (r.nrcName || r.error)) };
-  }).catch(function (e) {
-    return { ok: false, message: e && e.message ? e.message : String(e) };
-  });
-};
-
-MapControl.prototype.labelFor = function (index) {
-  for (var i = 0; i < this.maps.length; i++) if (this.maps[i].index === index) return this.maps[i].label;
-  return 'Map ' + index;
 };
 
 MapControl.RID_MAP = RID_MAP;
-MapControl.RID_COOLING = RID_COOLING;
 module.exports = MapControl;
