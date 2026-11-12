@@ -85,4 +85,12 @@ isolated so finishing them does not touch app logic:
   image present, screen switch, USB mount, browser open.
 - `apps/wali_datalog/src/diag.js` (`makeCtxTransport`) — the UDS transport over
   the unit's diagnostic channel.
+- `apps/wali_datalog/src/doip.js` (`nodeUdpSocket`) — the UDP socket used for
+  vehicle discovery on the head unit's network interface. A host/test harness
+  can inject its own via `ctx.doipSocket()`; see `docs/VEHICLE-CONNECTION.md`.
 - `apps/wali_datalog/src/signalmap.js` — SOME/IP interface/field names.
+
+> Note on the **Connect** screen's buttons: `app.json`'s `live` screen lists
+> `BTN_A`–`BTN_D` plus `BTN_SETTINGS` (5 entries). If the real on-unit SDK
+> strictly caps canvas screens at 4 buttons, `BTN_SETTINGS` and `BTN_D` may need
+> to be reconciled on hardware — confirm this on a unit before relying on it.

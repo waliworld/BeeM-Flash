@@ -18,6 +18,7 @@
 //
 var PROTO = 0x02, INV = 0xFD;
 var PT = {
+  VEHICLE_ID_REQ: 0x0001, VEHICLE_ANNOUNCE: 0x0004, // UDP vehicle discovery
   ROUTE_REQ: 0x0005, ROUTE_RESP: 0x0006, ALIVE_REQ: 0x0007, ALIVE_RESP: 0x0008,
   DIAG: 0x8001, DIAG_ACK: 0x8002, DIAG_NACK: 0x8003
 };
@@ -102,6 +103,95 @@ DoipClient.prototype.send = function (uds, cb) {
   } else doSend();
 };
 
+// ---- UDP vehicle discovery (ISO 13400 Vehicle Identification) -------------
+//
+// Real ENET adapters find the car by broadcasting a Vehicle Identification
+// Request on UDP 13400 and reading back the gateway's Vehicle Announcement
+// (VIN + logical address + its IP, from the response datagram's source
+// address) — no manual IP entry. This is read-only discovery: it sends no
+// diagnostic request and activates no routing.
+
+function buildVehicleIdentificationRequest() {
+  return header(PT.VEHICLE_ID_REQ, []);
+}
+
+// Decode a Vehicle Announcement payload (the bytes after the 8-byte header):
+// VIN(17) + LogicalAddress(2) + EID(6) + GID(6) + FurtherActionRequired(1).
+function parseVehicleAnnouncement(payload) {
+  if (!payload || payload.length < 32) return null;
+  var vin = '';
+  for (var i = 0; i < 17; i++) {
+    var c = payload[i];
+    if (c >= 0x20 && c < 0x7f) vin += String.fromCharCode(c);
+  }
+  return {
+    vin: vin.trim(),
+    logicalAddress: (payload[17] << 8) | payload[18],
+    eid: payload.slice(19, 25),
+    gid: payload.slice(25, 31),
+    furtherActionRequired: payload[31]
+  };
+}
+
+// Decode a full UDP datagram (header + payload) into a Vehicle Announcement,
+// or null if it isn't one.
+function decodeAnnouncementDatagram(bytes) {
+  var r = parseFrames(bytes);
+  for (var i = 0; i < r.frames.length; i++) {
+    if (r.frames[i].type === PT.VEHICLE_ANNOUNCE) return parseVehicleAnnouncement(r.frames[i].payload);
+  }
+  return null;
+}
+
+// Broadcast a Vehicle Identification Request over `socket` and collect
+// Vehicle Announcements for `opts.timeoutMs` (default 2000ms). Resolves an
+// array of { vin, logicalAddress, host }, one per responding gateway. Never
+// called while the connection is disabled — see enetgate.js.
+function discoverVehicles(socket, opts) {
+  opts = opts || {};
+  var timeoutMs = opts.timeoutMs == null ? 2000 : opts.timeoutMs;
+  var setT = opts.setTimeout || (typeof setTimeout === 'function' ? setTimeout : null);
+  return new Promise(function (resolve) {
+    var found = [], seen = {}, done = false;
+    function finish() {
+      if (done) return;
+      done = true;
+      try { socket.close(); } catch (e) {}
+      resolve(found);
+    }
+    socket.onMessage(function (bytes, rinfo) {
+      var v = decodeAnnouncementDatagram(bytes);
+      if (!v) return;
+      var host = (rinfo && rinfo.address) || opts.assumeHost || null;
+      var key = host + '/' + v.logicalAddress;
+      if (seen[key]) return;
+      seen[key] = true;
+      v.host = host;
+      found.push(v);
+      if (opts.stopOnFirst) finish();
+    });
+    try {
+      socket.send(buildVehicleIdentificationRequest(), opts.broadcastHost || '255.255.255.255', opts.port || 13400);
+    } catch (e) { finish(); return; }
+    if (setT) setT(finish, timeoutMs); else finish();
+  });
+}
+
+// Node UDP (dgram) socket adapter for discovery (used on the head unit).
+function nodeUdpSocket() {
+  var dgram; try { dgram = require('dgram'); } catch (e) { return null; }
+  var sock = dgram.createSocket({ type: 'udp4', reuseAddr: true });
+  var msgCb = null;
+  sock.on('message', function (msg, rinfo) { if (msgCb) msgCb(Array.prototype.slice.call(msg), rinfo); });
+  sock.on('error', function () {});
+  try { sock.bind(function () { try { sock.setBroadcast(true); } catch (e) {} }); } catch (e) {}
+  return {
+    onMessage: function (fn) { msgCb = fn; },
+    send: function (bytes, host, port) { try { sock.send(Buffer.from(bytes), port || 13400, host || '255.255.255.255'); } catch (e) {} },
+    close: function () { try { sock.close(); } catch (e) {} }
+  };
+}
+
 // Node TCP socket adapter (used on the head unit). Device binding is isolated here.
 function nodeSocket(host, port) {
   var net; try { net = require('net'); } catch (e) { return null; }
@@ -130,5 +220,10 @@ function makeDoipTransport(opts) {
 
 module.exports = {
   PT: PT, buildRoutingActivation: buildRoutingActivation, buildDiagnosticMessage: buildDiagnosticMessage,
-  parseFrames: parseFrames, header: header, DoipClient: DoipClient, nodeSocket: nodeSocket, makeDoipTransport: makeDoipTransport
+  parseFrames: parseFrames, header: header, DoipClient: DoipClient, nodeSocket: nodeSocket, makeDoipTransport: makeDoipTransport,
+  buildVehicleIdentificationRequest: buildVehicleIdentificationRequest,
+  parseVehicleAnnouncement: parseVehicleAnnouncement,
+  decodeAnnouncementDatagram: decodeAnnouncementDatagram,
+  discoverVehicles: discoverVehicles,
+  nodeUdpSocket: nodeUdpSocket
 };

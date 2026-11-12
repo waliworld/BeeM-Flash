@@ -36,7 +36,8 @@ function run() {
     { screen: 'datalog', note: 'after recording (DONE)' },
     { screen: 'channels', note: 'channel picker' },
     { screen: 'maps', note: 'map control (enabled)' },
-    { screen: 'mhd', note: 'MHD web link' }
+    { screen: 'mhd', note: 'MHD web link' },
+    { screen: 'connect', note: 'vehicle connection (disabled, default)' }
   ];
   var ok = true;
   states.forEach(function (s) {

@@ -3,7 +3,7 @@
 ## Automated checks (run anywhere)
 
 ```bash
-npm test        # 95 assertions, 0 dependencies
+npm test        # 124 assertions, 0 dependencies
 npm run sim     # headless end-to-end drive + render of every screen
 npm run shots   # renders every screen to real pixels (out/shots/*.png)
 ```
@@ -25,6 +25,22 @@ npm run shots   # renders every screen to real pixels (out/shots/*.png)
 - **DoIP (ISO 13400) read client** — routing-activation frame bytes; frame
   parse round-trip; a full client exchange over a fake socket (activate → send →
   unwrap the UDS reply). Read-only transport; no bridge/flash/seed-key.
+- **DoIP vehicle discovery** — Vehicle Identification Request frame bytes;
+  announcement payload decode (VIN, logical address); full-datagram decode;
+  `discoverVehicles()` finds a responding fake gateway and times out to an
+  empty list when nothing answers.
+- **Vehicle-connection safety gate (`enetgate.js`)** — enabling before
+  acknowledgment is refused; enabling after acknowledgment succeeds; "connected"
+  requires both enabled *and* a discovered vehicle; disabling forgets the
+  vehicle; **acknowledgment persists across a restart but "enabled" never does**;
+  `scan()` opens no socket at all while disabled.
+- **Full app wiring, end to end** — a real `App` instance: boots with no
+  transport; refuses Enable before Acknowledge; Acknowledge→Enable succeeds but
+  still has no transport until a vehicle is found; a successful Scan (via a
+  fake UDP socket) wires in a working transport (`diag.supported` /
+  `monitor.supported` both flip to `true`); Disable tears it back out; and a
+  **second, fresh `App` instance on the same storage boots with the connection
+  disabled** even though acknowledgment was remembered.
 - **A2L parser** — parses a MEASUREMENT + its RAT_FUNC COMPU_METHOD, deriving the
   linear scale (f/b), data type (UWORD→u16), endianness (MSB_LAST→little) and
   ECU address; plus the UDS ReadMemoryByAddress (`0x23`) frame.
@@ -53,14 +69,17 @@ npm run shots   # renders every screen to real pixels (out/shots/*.png)
 ### `npm run sim` confirms
 
 The full `App` boots on a simulated ctx, records a 240-sample session at 20 Hz
-with two markers, writes a valid CSV, and renders all five screens without
-throwing. Output includes the CSV header and sample rows.
+with two markers, writes a valid CSV, and renders all six screens (incl.
+Connect, in its default locked state) without throwing. Output includes the
+CSV header and sample rows.
 
 ### `npm run shots` confirms
 
-Every screen (live, datalog REC + DONE, channels, maps enabled/off/confirm, MHD)
-renders to pixels through the **real app modules** (bundled and run in a browser
-canvas), with zero page/console errors. Screenshots are in `out/shots/`.
+Every screen (live in 3 styles, datalog REC + DONE, channels x2, maps
+enabled/off/confirm, MHD, and Connect in its locked/enabled/connected states)
+renders to pixels through the **real app modules** (bundled and run in a
+browser canvas), with zero page/console errors. Screenshots are in
+`out/shots/`.
 
 ## Verified vs. needs-a-car
 
@@ -72,10 +91,13 @@ canvas), with zero page/console errors. Screenshots are in `out/shots/`.
 | Map-control gating + confirm + commit flow | ✅ verified (mock DME) | tests |
 | Provider source-mux + demo fallback | ✅ verified | tests |
 | Every screen renders (all states) | ✅ verified | sim + shots |
+| Vehicle connection safety gate (ack/enable/disable, never auto-reconnects) | ✅ verified | tests |
+| DoIP read transport + vehicle discovery protocol | ✅ verified | tests |
 | **SOME/IP field names / scaling** | ⚠️ needs unit | `src/signalmap.js`, [SIGNALS-AND-DIDS](SIGNALS-AND-DIDS.md) |
 | **DME DID layout / scaling** | ⚠️ needs unit | `src/dme_profiles.js` |
 | **Map/cooling job encoding + security** | ⚠️ needs unit | `src/mapcontrol.js`, `src/diag.js` |
 | **Device bindings** (canvas, screen switch, USB, transport) | ⚠️ needs unit | `main.js`, `src/ui/surface.js`, `src/diag.js` |
+| **Real UDP discovery over a physical ENET adapter** | ⚠️ needs unit/hardware | `src/doip.js` `nodeUdpSocket`, `docs/VEHICLE-CONNECTION.md` |
 | **Packaging/install against the BMW SDK** | ⚠️ needs kit/unit | [BUILD-AND-INSTALL](BUILD-AND-INSTALL.md) |
 
 The ⚠️ items are not stubs that pretend to work: each is isolated, documented,

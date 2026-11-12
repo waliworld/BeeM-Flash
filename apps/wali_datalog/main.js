@@ -15,6 +15,8 @@ var Provider = require('./src/provider');
 var MhdMonitor = require('./src/mhdmonitor');
 var LogEngine = require('./src/logengine');
 var MapControl = require('./src/mapcontrol');
+var EnetGate = require('./src/enetgate');
+var doip = require('./src/doip');
 var Channels = require('./src/channels');
 var storageMod = require('./src/storage');
 var dme = require('./src/dme_profiles');
@@ -23,7 +25,7 @@ var screens = require('./src/ui/screens');
 var surface = require('./src/ui/surface');
 var F = require('./src/format');
 
-var SCREEN_ORDER = ['live', 'datalog', 'channels', 'maps', 'mhd'];
+var SCREEN_ORDER = ['live', 'datalog', 'channels', 'maps', 'mhd', 'connect'];
 var DEFAULTS = { demo: 'auto', source: 'auto', platform: 'B58', rate: 10, units: 'metric', style: 'tiles', maxtiles: 8, autostart: false, mapcontrol: false };
 var DISPLAY_DEFAULT = ['rpm', 'boost', 'iat', 'coolant', 'oil', 'timing', 'knock', 'speed'];
 
@@ -45,16 +47,19 @@ App.prototype.start = function (ctx) {
   var dataDir = this.ctx.dataDir || './data';
   this.storage = this.ctx._storage ? this.ctx._storage : storageMod.fsStorage(dataDir); // sim injects _storage
 
+  // ---- vehicle connection safety gate -------------------------------------
+  // No socket is ever opened and no packet is ever sent to the vehicle until
+  // the user has acknowledged the safety disclosure on the Connect screen AND
+  // explicitly enabled the connection THIS session (enabling is never
+  // persisted — every app launch starts fully disconnected). See enetgate.js.
+  this.enet = new EnetGate({ storage: this.storage });
+
   // ---- data sources -----------------------------------------------------
   this.someip = new SomeipProvider(this.ctx);
   trySafe(function () { self.someip.start(); });
-  var profile = this._loadPidProfile();
-  this.diag = new DiagProvider(this.ctx, profile ? { profile: profile } : {});
-  if (this.diag.supported) trySafe(function () { self.diag.start(); });
-  // MHD live monitor (2C 88 01) over the same diagnostic transport; preferred
-  // source for an MHD-flashed MG1 car. Read-only.
-  this.monitor = new MhdMonitor(this.ctx, { transport: this.diag.transport, platform: this.getSetting('platform') });
-  if (this.monitor.supported) trySafe(function () { self.monitor.start(); });
+  // Constructs this.diag / this.monitor from the current (initially
+  // disabled) connection state, so both start in demo-only mode.
+  this._applyEnetState();
   this.provider = new Provider(this.ctx, {
     someip: this.someip, diag: this.diag, mhd: this.monitor, getSetting: this.getSetting
   });
@@ -172,6 +177,76 @@ App.prototype._loadPidProfile = function () {
   return null;
 };
 
+// ---- vehicle connection (ENET/DoIP), gated by enetgate.js ---------------
+//
+// Rebuilds this.diag / this.monitor from the current connection state. While
+// disabled (the default, every session) or no vehicle has been found, this
+// constructs them with NO transport, so they stay in demo-only mode exactly
+// as before this feature existed — nothing here changes default behavior.
+// Only once the user has acknowledged + enabled + a vehicle has been found
+// (via _enetScan) does a real DoIP transport get built and handed to them.
+App.prototype._applyEnetState = function () {
+  var self = this;
+  if (this.diag) trySafe(function () { self.diag.stop(); });
+  if (this.monitor) trySafe(function () { self.monitor.stop(); });
+
+  var status = this.enet.status();
+  var transport = null;
+  if (status.connected && status.vehicle && status.vehicle.host) {
+    transport = doip.makeDoipTransport({
+      host: status.vehicle.host,
+      port: 13400,
+      targetAddr: status.vehicle.logicalAddress || 0
+    });
+  }
+
+  var profile = this._loadPidProfile();
+  var diagOpts = {};
+  if (profile) diagOpts.profile = profile;
+  if (transport) diagOpts.transport = transport;
+  this.diag = new DiagProvider(this.ctx, diagOpts);
+  if (this.diag.supported) trySafe(function () { self.diag.start(); });
+
+  var monOpts = { platform: this.getSetting('platform') };
+  if (transport) monOpts.transport = transport;
+  this.monitor = new MhdMonitor(this.ctx, monOpts);
+  if (this.monitor.supported) trySafe(function () { self.monitor.start(); });
+
+  if (this.provider) { this.provider.diag = this.diag; this.provider.mhd = this.monitor; }
+};
+
+App.prototype._enetAck = function () {
+  this.enet.acknowledge();
+};
+
+App.prototype._enetToggleEnable = function () {
+  var res = this.enet.setEnabled(!this.enet.enabled);
+  if (!res.ok) { this._flash(res.reason); return; }
+  this._applyEnetState();
+};
+
+App.prototype._enetScan = function () {
+  var self = this;
+  if (!this.enet.enabled) { this._flash('Enable the connection first.'); return; }
+  this.enet.scan(function () { return self._makeDiscoverySocket(); }, { stopOnFirst: true }).then(function (found) {
+    if (found && found.length) {
+      self.enet.setVehicle({ host: found[0].host, logicalAddress: found[0].logicalAddress, vin: found[0].vin });
+      self._flash('Found vehicle at ' + found[0].host);
+    } else {
+      self._flash('No vehicle found.');
+    }
+    self._applyEnetState();
+  });
+};
+
+// DEVICE: a real scan needs a UDP socket on the vehicle's diagnostic network.
+// ctx.doipSocket lets a host/sim inject one for testing; the Node UDP adapter
+// is the default on the head unit / a desktop Node host.
+App.prototype._makeDiscoverySocket = function () {
+  if (this.ctx.doipSocket) return this.ctx.doipSocket();
+  return doip.nodeUdpSocket();
+};
+
 // ---- runtime loops ------------------------------------------------------
 App.prototype._startRuntime = function () {
   var self = this;
@@ -220,6 +295,7 @@ App.prototype.onButton = function (btn) {
     if (btn === 'BTN_A') return this._show('datalog');
     if (btn === 'BTN_B') return this._show('maps');
     if (btn === 'BTN_C') return this._show('channels');
+    if (btn === 'BTN_D') return this._show('connect');
   } else if (s === 'datalog') {
     if (btn === 'BTN_A') return this._toggleRecord();
     if (btn === 'BTN_B') return this.marker('mark');
@@ -237,6 +313,11 @@ App.prototype.onButton = function (btn) {
     if (btn === 'BTN_D') { if (this.confirm) { this.confirm = false; return; } return this._show('live'); }
   } else if (s === 'mhd') {
     if (btn === 'BTN_A') return this._openMhd();
+    if (btn === 'BTN_D') return this._show('live');
+  } else if (s === 'connect') {
+    if (btn === 'BTN_A') return this._enetAck();
+    if (btn === 'BTN_B') return this._enetToggleEnable();
+    if (btn === 'BTN_C') return this._enetScan();
     if (btn === 'BTN_D') return this._show('live');
   }
 };
@@ -371,7 +452,8 @@ App.prototype.buildView = function () {
     style: this.style(),
     selection: this.selection,
     maps: maps,
-    mhd: { internet: !!this.ctx.internet, url: 'https://www.mhdtuning.com' }
+    mhd: { internet: !!this.ctx.internet, url: 'https://www.mhdtuning.com' },
+    enet: this.enet.status()
   };
 };
 

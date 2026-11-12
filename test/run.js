@@ -191,6 +191,79 @@ ok(!!Channels.get('wgdcP') && !!Channels.get('boostDeviation') && !!Channels.get
   eq(uds.toHex(got.resp), '62 41 00 07 d0', 'DoIP transport unwraps the UDS reply');
 })();
 
+// ---- DoIP vehicle discovery (ISO 13400 Vehicle Identification) ------------
+(function () {
+  var doip = require(A + 'doip');
+  eq(uds.toHex(doip.buildVehicleIdentificationRequest()), '02 fd 00 01 00 00 00 00', 'vehicle ID request frame (empty payload)');
+
+  // Build a crafted announcement payload: VIN(17) + logicalAddr(2) + EID(6) + GID(6) + FAR(1)
+  var payload = [];
+  'WBA00000000000001'.slice(0, 17).split('').forEach(function (c) { payload.push(c.charCodeAt(0)); });
+  payload.push(0x10, 0x01); // logical address 0x1001
+  for (var i = 0; i < 6; i++) payload.push(0xAA);
+  for (var i2 = 0; i2 < 6; i2++) payload.push(0xBB);
+  payload.push(0x00);
+  var v = doip.parseVehicleAnnouncement(payload);
+  eq(v.vin, 'WBA00000000000001', 'announcement: VIN decoded');
+  eq(v.logicalAddress, 0x1001, 'announcement: logical address decoded');
+
+  var datagram = doip.header(doip.PT.VEHICLE_ANNOUNCE, payload);
+  var v2 = doip.decodeAnnouncementDatagram(datagram);
+  ok(v2 && v2.vin === 'WBA00000000000001', 'full datagram decodes to the same announcement');
+  ok(doip.decodeAnnouncementDatagram(doip.header(doip.PT.ROUTE_RESP, [0, 0, 0, 0, 0])) === null, 'non-announcement datagram -> null');
+
+  ok(doip.parseVehicleAnnouncement([1, 2, 3]) === null, 'short payload -> null, not a crash');
+})();
+
+// ---- enetgate.js: the vehicle-connection safety gate (synchronous parts) --
+(function () {
+  var EnetGate = require(A + 'enetgate');
+
+  var mem = Store.memStorage();
+  var g = new EnetGate({ storage: mem });
+  ok(!g.acknowledged && !g.enabled, 'enetgate: starts fully disabled and unacknowledged');
+
+  var r1 = g.setEnabled(true);
+  ok(!r1.ok && !g.enabled, 'enetgate: enabling before acknowledgment is refused');
+
+  g.acknowledge();
+  var r2 = g.setEnabled(true);
+  ok(r2.ok && g.enabled, 'enetgate: enabling after acknowledgment succeeds');
+  ok(g.status().connected === false, 'enetgate: not "connected" until a vehicle is set');
+
+  g.setVehicle({ host: '169.254.1.1', logicalAddress: 0x1000, vin: 'X' });
+  ok(g.status().connected === true, 'enetgate: connected once enabled + a vehicle is known');
+
+  g.setEnabled(false);
+  ok(g.vehicle === null, 'enetgate: disabling forgets the discovered vehicle');
+
+  // The core safety property: acknowledgment persists, but "enabled" never does.
+  var g2 = new EnetGate({ storage: mem });
+  ok(g2.acknowledged === true, 'enetgate: acknowledgment persists across restarts');
+  ok(g2.enabled === false, 'enetgate: "enabled" is never persisted -- always false on a fresh start');
+})();
+
+// Helpers for the async discovery/gate assertions folded into the main chain
+// below (kept out of a detached Promise so nothing can race report()/exit()).
+function announceBytes(vin, addr) {
+  var doipMod = require(A + 'doip');
+  var p = [];
+  vin.split('').forEach(function (c) { p.push(c.charCodeAt(0)); });
+  while (p.length < 17) p.push(0x20);
+  p.push((addr >> 8) & 0xff, addr & 0xff);
+  for (var i = 0; i < 12; i++) p.push(0);
+  p.push(0);
+  return doipMod.header(doipMod.PT.VEHICLE_ANNOUNCE, p);
+}
+function makeFakeDiscoverySocket(respond) {
+  var cb = null;
+  return {
+    onMessage: function (fn) { cb = fn; },
+    send: function () { if (respond) respond(function (bytes, rinfo) { cb(bytes, rinfo); }); },
+    close: function () {}
+  };
+}
+
 // ---- log engine -----------------------------------------------------------
 (function () {
   var mem = Store.memStorage();
@@ -304,6 +377,79 @@ Promise.resolve()
       var r = d.read();
       near(r.boost, 1.0, 1e-6, 'packed block: boost unpacked + scaled');
       near(r.iat, 25.0, 1e-6, 'packed block: iat unpacked + scaled from same DID');
+    });
+  })
+  .then(function () {
+    // discoverVehicles(): finds a responding gateway and reports its host/address.
+    var doip = require(A + 'doip');
+    var sock = makeFakeDiscoverySocket(function (deliver) {
+      deliver(announceBytes('TESTVIN0000000001', 0x1000), { address: '10.0.0.5' });
+    });
+    return doip.discoverVehicles(sock, { stopOnFirst: true, timeoutMs: 500 }).then(function (found) {
+      eq(found.length, 1, 'discoverVehicles: finds one vehicle');
+      eq(found[0].host, '10.0.0.5', 'discoverVehicles: host comes from the datagram source address');
+      eq(found[0].logicalAddress, 0x1000, 'discoverVehicles: logical address decoded');
+    });
+  })
+  .then(function () {
+    // Times out to an empty list when nothing answers (bounded wait).
+    var doip = require(A + 'doip');
+    var sock = makeFakeDiscoverySocket(null);
+    return doip.discoverVehicles(sock, { timeoutMs: 10 }).then(function (found) {
+      eq(found.length, 0, 'discoverVehicles: times out to an empty list when nothing answers');
+    });
+  })
+  .then(function () {
+    // enetgate.scan() must never touch the network while the connection is disabled.
+    var EnetGate = require(A + 'enetgate');
+    var g3 = new EnetGate({ storage: Store.memStorage() });
+    var socketFactoryCalled = false;
+    return g3.scan(function () { socketFactoryCalled = true; return {}; }).then(function (found) {
+      ok(!socketFactoryCalled, 'enetgate: scan() never opens a socket while disabled');
+      eq(found.length, 0, 'enetgate: scan() resolves empty while disabled');
+    });
+  })
+  .then(function () {
+    // Full app wiring: acknowledge -> enable -> scan -> a real transport appears;
+    // disable -> the transport disappears. Exercises main.js's _applyEnetState.
+    var main = require('../apps/wali_datalog/main.js');
+    var sim = require('../runtime/sim-ctx.js');
+    var ctx = sim.makeSimCtx({ settings: { demo: 'off', source: 'auto' } });
+    var app = new main.App();
+    app.start(ctx);
+    app._show('connect');
+
+    ok(!app.diag.supported && !app.monitor.supported, 'app: boots with no transport until connected');
+
+    app.onButton('BTN_B'); // Enable before Acknowledge -> refused
+    ok(!app.enet.enabled, 'app: Enable is refused before Acknowledge');
+
+    app.onButton('BTN_A'); // Acknowledge
+    app.onButton('BTN_B'); // Enable
+    ok(app.enet.acknowledged && app.enet.enabled, 'app: Acknowledge then Enable succeeds');
+    ok(!app.diag.supported, 'app: enabled but no vehicle yet -> still no transport');
+
+    ctx.doipSocket = function () {
+      return makeFakeDiscoverySocket(function (deliver) {
+        deliver(announceBytes('WBATESTVIN0000001', 0x1000), { address: '169.254.1.1' });
+      });
+    };
+    app.onButton('BTN_C'); // Scan
+    return new Promise(function (resolve) { setTimeout(resolve, 20); }).then(function () {
+      ok(app.diag.supported && app.monitor.supported, 'app: after a successful scan, a real transport is wired in');
+      eq(app.enet.vehicle.host, '169.254.1.1', 'app: discovered vehicle host stored');
+
+      app.onButton('BTN_B'); // Disable
+      ok(!app.diag.supported && !app.monitor.supported, 'app: disabling tears the transport back out');
+
+      app.stop(); // release timers so the test process can exit cleanly
+
+      // A fresh App instance (same storage) must NOT auto-reconnect.
+      var app2 = new main.App();
+      app2.start(ctx);
+      ok(app2.enet.acknowledged === true, 'app: acknowledgment is remembered on restart');
+      ok(app2.enet.enabled === false, 'app: connection is NOT enabled on restart -- requires a fresh Enable');
+      app2.stop();
     });
   })
   .then(report)

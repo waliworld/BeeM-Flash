@@ -68,7 +68,7 @@ is intentionally not implemented, consistent with that source.
 - `github.com/jtownson/xdfbinext` — XDF/bin tooling; noted for working with a
   user's own `.xdf`.
 
-## DoIP transport (`src/doip.js`)
+## DoIP transport + connection safety gate (`src/doip.js`, `src/enetgate.js`)
 
 An original, read-only ISO 13400 (DoIP) client gives the datalogger a
 standards-based way to read live data from the DME over the vehicle's own
@@ -78,6 +78,19 @@ calibration-write, or seed/key code. A **virtual ENET-over-WiFi bridge** that
 would expose the vehicle's diagnostic network to external tools is deliberately
 **not** provided — it is the enabling layer for wireless ECU flashing and broad
 remote vehicle-network access.
+
+`src/doip.js` also implements ISO 13400's **Vehicle Identification** UDP
+broadcast/announcement (an original implementation of the published standard),
+so the app finds the car's gateway automatically — no manual IP entry, and no
+external "ENET adapter" app involved.
+
+The connection itself is behind `src/enetgate.js`, a hard consent gate: nothing
+is sent to the vehicle until the user acknowledges a safety disclosure and
+explicitly enables the connection, and "enabled" is never persisted — every app
+session starts fully disconnected (see NOTICE.md and docs/VEHICLE-CONNECTION.md).
+No remote or companion interface exists yet (none is built by this project); the
+gate is designed so that if one is added later, it still has to go through this
+same acknowledge-then-enable state rather than a silent auto-connect.
 
 ## What this project does **not** include
 

@@ -107,6 +107,20 @@
     } else if (name === 'mhd') {
       app = makeApp(); drive(app, 6); app.render(cv, 'mhd');
       cap = 'MHD DATALOG (web) link';
+    } else if (name === 'connect-locked') {
+      app = makeApp(); drive(app, 6); app.render(cv, 'connect');
+      cap = 'CONNECT — locked (default: not acknowledged, not enabled)';
+    } else if (name === 'connect-enabled') {
+      app = makeApp(); drive(app, 6);
+      app.enet.acknowledge(); app.enet.setEnabled(true);
+      app.render(cv, 'connect');
+      cap = 'CONNECT — enabled, no vehicle found yet';
+    } else if (name === 'connect-connected') {
+      app = makeApp(); drive(app, 6);
+      app.enet.acknowledge(); app.enet.setEnabled(true);
+      app.enet.setVehicle({ vin: 'WBA00000000000001', host: '169.254.1.1', logicalAddress: 0x1000 });
+      app.render(cv, 'connect');
+      cap = 'CONNECT — connected (read-only)';
     } else {
       app = makeApp(); app.render(cv, 'live');
     }

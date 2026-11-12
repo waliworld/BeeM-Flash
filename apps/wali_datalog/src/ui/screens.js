@@ -69,12 +69,14 @@ function shownVal(view, c) { return F.isNum(c.metric) ? Channels.toUnits(c.ch, c
 function live(cv, t, view) {
   cv.clear(t.bg);
   ribbon(cv, t, view, 'Live');
+  enetBadge(cv, t, view);
 
   var keys = (view.displayed || []).slice(0, view.maxtiles || 8).filter(function (k) { return !!Channels.get(k); });
-  var x0 = 24, y0 = 58, W2 = W - 48, H2 = 452, gap = 14;
+  var x0 = 24, y0 = 82, W2 = W - 48, H2 = 404, gap = 14;
   if (keys.length === 0) {
     cv.text('No display channels selected', W / 2, 240, 30, t.dim, { align: 'c' });
     cv.text('On Channels, press Show to add up to ' + (view.maxtiles || 8) + ' gauges.', W / 2, 282, 22, t.faint, { align: 'c' });
+    cv.text('A Datalog   ·   B Maps   ·   C Channels   ·   D Connect', 32, 506, 20, t.dim, {});
     return;
   }
   var style = view.style || 'tiles';
@@ -114,6 +116,16 @@ function live(cv, t, view) {
       });
     }
   }
+  cv.text('A Datalog   ·   B Maps   ·   C Channels   ·   D Connect', 32, 506, 20, t.dim, {});
+}
+
+// Small top-right indicator of the vehicle connection state, shown on Live.
+function enetBadge(cv, t, view) {
+  var e = view.enet || {};
+  var label = 'NOT CONNECTED', color = t.faint, tc = t.text;
+  if (e.connected) { label = 'ENET CONNECTED'; color = t.good; tc = '#07121a'; }
+  else if (e.enabled) { label = 'ENET ENABLED'; color = t.warn; tc = '#07121a'; }
+  D.badge(cv, t, W - 300, 44, label, color, tc);
 }
 
 // -------------------------------------------------------------- DATALOG -----
@@ -292,6 +304,76 @@ function mhd(cv, t, view) {
   cv.text('A Open site   ·   D Back', 32, 506, 20, t.dim, {});
 }
 
+// Wrap `text` to fit `maxWidth`, drawing each line at `size`/`color` starting
+// at (x,y). Returns the y just below the last line drawn.
+function wrapText(cv, t, text, x, y, maxWidth, size, color) {
+  var words = text.split(' ');
+  var line = '', ly = y, lh = size + 8;
+  for (var i = 0; i < words.length; i++) {
+    var test = line ? line + ' ' + words[i] : words[i];
+    if (line && cv.textWidth(test, size) > maxWidth) {
+      cv.text(line, x, ly, size, color, {});
+      line = words[i];
+      ly += lh;
+    } else line = test;
+  }
+  if (line) cv.text(line, x, ly, size, color, {});
+  return ly + lh;
+}
+
+// ------------------------------------------------------------- CONNECT -----
+function connect(cv, t, view) {
+  cv.clear(t.bg);
+  ribbon(cv, t, view, 'Vehicle Connection');
+  var e = view.enet || {};
+
+  D.badge(cv, t, W - 230, 10, 'READ-ONLY, ALWAYS', t.good);
+
+  // Safety disclosure — always shown, whatever the current state.
+  D.panel(cv, t, 32, 56, 940, 330, { title: 'BEFORE YOU CONNECT' });
+  var lines = [
+    'Opens a network connection to your vehicle’s diagnostic bus (ENET / DoIP) to read live data.',
+    'Read-only, always: this app never writes to the engine or any other module — no flashing, no coding.',
+    'Use only a cable or adapter you trust, on a vehicle you own or are authorized to access.',
+    'Keep the vehicle stationary while connecting or disconnecting hardware.',
+    'Disconnect if anything seems unexpected. You are responsible for how this connection is used.'
+  ];
+  var ly = 112;
+  for (var i = 0; i < lines.length; i++) ly = wrapText(cv, t, '• ' + lines[i], 56, ly, 880, 18, t.dim) + 6;
+
+  // Vehicle / status panel (right)
+  D.panel(cv, t, 992, 56, 576, 330, { title: 'VEHICLE' });
+  if (e.vehicle) {
+    cv.text('VIN', 1016, 112, 16, t.faint, { weight: 'bold' });
+    cv.text(e.vehicle.vin || '(unknown)', 1016, 140, 22, t.text, {});
+    cv.text('HOST', 1016, 178, 16, t.faint, { weight: 'bold' });
+    cv.text(e.vehicle.host || '--', 1016, 206, 22, t.text, {});
+    cv.text('ECU ADDRESS', 1016, 244, 16, t.faint, { weight: 'bold' });
+    cv.text('0x' + (e.vehicle.logicalAddress || 0).toString(16), 1016, 272, 22, t.text, {});
+  } else if (e.scanning) {
+    cv.text('Scanning…', 1016, 140, 24, t.warn, { weight: 'bold' });
+  } else {
+    cv.text('No vehicle connected', 1016, 140, 22, t.dim, {});
+    cv.text(e.enabled ? 'Press Scan to search the network.' : 'Enable the connection to scan.', 1016, 172, 18, t.faint, {});
+  }
+
+  // Acknowledgment + state bar
+  D.panel(cv, t, 32, 400, 1536, 86, {});
+  cv.roundRect(56, 426, 30, 30, 6, e.acknowledged ? t.good : t.line);
+  if (e.acknowledged) cv.text('✓', 71, 448, 22, '#07121a', { align: 'c', weight: 'bold' });
+  cv.text('I have read and understand this warning', 104, 448, 22, t.text, { weight: 'bold' });
+
+  var stateTxt, stateColor;
+  if (!e.acknowledged) { stateTxt = 'LOCKED — acknowledge to continue'; stateColor = t.dim; }
+  else if (e.connected) { stateTxt = 'CONNECTED (read-only)'; stateColor = t.good; }
+  else if (e.enabled) { stateTxt = 'ENABLED — press Scan to find the vehicle'; stateColor = t.warn; }
+  else { stateTxt = 'DISABLED — press Enable to allow a connection'; stateColor = t.dim; }
+  cv.text(stateTxt, 1536 - 32, 448, 22, stateColor, { align: 'r', weight: 'bold' });
+
+  var btnB = !e.acknowledged ? 'Enable (locked)' : (e.enabled ? 'Disable' : 'Enable');
+  cv.text('A Acknowledge   ·   B ' + btnB + '   ·   C Scan   ·   D Back', 32, 506, 20, t.dim, {});
+}
+
 module.exports = {
   W: W, H: H,
   live: live,
@@ -299,8 +381,9 @@ module.exports = {
   channels: channels,
   maps: maps,
   mhd: mhd,
+  connect: connect,
   cval: cval,
   byName: function (name) {
-    return { live: live, datalog: datalog, channels: channels, maps: maps, mhd: mhd }[name] || live;
+    return { live: live, datalog: datalog, channels: channels, maps: maps, mhd: mhd, connect: connect }[name] || live;
   }
 };

@@ -59,6 +59,12 @@ app, and it is built from scratch — see [`NOTICE.md`](NOTICE.md).
   never sees your MHD login.
 - **Works without a car** — a clearly-labelled demo mode drives every screen so
   the app can be reviewed and demonstrated off the vehicle.
+- **Vehicle connection (ENET/DoIP), gated** — a **Connect** screen (Live → D)
+  with a plain-language safety disclosure. No socket is ever opened to the
+  vehicle until you **acknowledge** the warning and **enable** the connection —
+  and enabling is never remembered: every app launch starts fully disconnected.
+  Finds the car automatically (ISO 13400 vehicle discovery, no manual IP entry).
+  Always read-only. See [`docs/VEHICLE-CONNECTION.md`](docs/VEHICLE-CONNECTION.md).
 
 ## Quick start
 
@@ -84,7 +90,8 @@ apps/wali_datalog/        the MGU app (ships to the head unit)
   app.json                manifest: id, signals, screens, settings
   main.js                 controller: wiring, input, view model, loops
   src/                    logengine, channels, provider, demo,
-                          someip, uds, diag, mapcontrol, storage, format
+                          someip, uds, diag, doip, enetgate, mapcontrol,
+                          storage, format
   src/ui/                 theme, draw widgets, screens, device surface
 mgu-repo.json             mgu-store repo-tree descriptor
 runtime/                  off-car simulator ctx + browser preview backend
@@ -99,7 +106,7 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the data flow.
 
 All application logic — the logging state machine and CSV, the UDS/ISO-14229
 codec, unit conversion, map-control gating, demo fallback, and every screen's
-rendering — is covered by `npm test` (95 assertions) and the headless
+rendering — is covered by `npm test` (124 assertions) and the headless
 `npm run sim`, and the screens are rendered to real pixels by `npm run shots`.
 
 Three things are, by their nature, completed on the actual unit and are clearly
@@ -120,8 +127,11 @@ Full detail and the on-car procedure are in
 
 ## Safety
 
-Datalogging only reads. The one action that writes to the engine controller —
-a map switch — is off by default, requires turning on "Enable map control" in
-Settings, asks for on-screen confirmation, and refuses unless the car is
-stationary with the engine at idle. You are responsible for the tune on your
-car. Provided "as is" under the MIT [`LICENSE`](LICENSE).
+Datalogging only reads. Connecting to the vehicle at all requires acknowledging
+a safety disclosure and explicitly enabling it each session (see
+[`docs/VEHICLE-CONNECTION.md`](docs/VEHICLE-CONNECTION.md)). The one action that
+writes to the engine controller — a map switch — is off by default, requires
+turning on "Enable map control" in Settings, asks for on-screen confirmation,
+and refuses unless the car is stationary with the engine at idle. You are
+responsible for the tune on your car. Provided "as is" under the MIT
+[`LICENSE`](LICENSE).

@@ -28,6 +28,7 @@
         ["BTN_A", "Datalog"],
         ["BTN_B", "Maps"],
         ["BTN_C", "Channels"],
+        ["BTN_D", "Connect"],
         ["BTN_SETTINGS", "Settings"]
       ]
     },
@@ -70,6 +71,17 @@
       "kind": "canvas",
       "buttons": [
         ["BTN_A", "Open site"],
+        ["BTN_D", "Back"]
+      ]
+    },
+    {
+      "name": "connect",
+      "title": "Vehicle Connection",
+      "kind": "canvas",
+      "buttons": [
+        ["BTN_A", "Acknowledge"],
+        ["BTN_B", "Enable"],
+        ["BTN_C", "Scan"],
         ["BTN_D", "Back"]
       ]
     }

@@ -58,6 +58,14 @@ talks to the vehicle over standard, publicly documented diagnostic protocols.
   adapter"/gateway), and it implements no seed/key SecurityAccess. Both are the
   enabling layer for wireless ECU flashing and broad remote vehicle access, and
   are intentionally out of scope.
+- **Vehicle connection requires explicit, per-session consent.** No socket is
+  ever opened and no packet is ever sent to the vehicle's diagnostic network
+  until the user, on the Connect screen, (1) acknowledges a plain-language
+  safety disclosure and (2) explicitly enables the connection. The
+  acknowledgment is remembered; whether the connection is *enabled* is not —
+  every app launch starts fully disconnected and requires the user to press
+  Enable again before anything is sent. See `apps/wali_datalog/src/enetgate.js`
+  and `apps/wali_datalog/src/doip.js`.
 
 ## Third-party components
 
