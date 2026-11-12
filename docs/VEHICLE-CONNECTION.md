@@ -76,3 +76,18 @@ npm test   # enetgate.js + doip.js discovery + a full app-level
            # acknowledge -> enable -> scan -> connect -> disable -> restart
            # round-trip, all under test/run.js
 ```
+
+## UDS SecurityAccess (seed/key) — an open framework
+
+`seedkey.js` implements the standard UDS SecurityAccess exchange (service `0x27`):
+request a seed, compute a key, send the key, for a security level on **a vehicle
+you own**, over its diagnostic port. It follows python-udsoncan's model: the
+library drives the request-seed / send-key handshake and responsePending (`0x78`)
+handling, while the **key-derivation algorithm is pluggable and supplied by you
+or the community** — `algo(seed, level, params) -> key`. **No manufacturer key
+algorithm is bundled in this repository.** Without an algorithm, `unlock()`
+refuses and sends nothing.
+
+`test/ecusim.js` is a fake UDS ECU (sessions, seed/key, gated DIDs, routines)
+that lets contributors develop and test these flows off-car; it is test-only and
+is not part of the installed app.

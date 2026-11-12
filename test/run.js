@@ -506,6 +506,51 @@ Promise.resolve()
       app2.stop();
     });
   })
+  .then(function () {
+    // ---- UDS SecurityAccess seed/key flow (seedkey.js + the test ECU) -------
+    var seedkey = require(A + 'seedkey');
+    var EcuSim = require('./ecusim').EcuSim;
+    var clientAlgo = function (seed) { return seed.map(function (b) { return (b + 1) & 0xff; }); };
+
+    var ecu = new EcuSim({ securedDids: { 0x1234: [0xAA, 0xBB] } });
+    return seedkey.unlock(ecu.transport(), 0x11, clientAlgo).then(function (r) {
+      ok(r.unlocked === true, 'seedkey: correct key unlocks the level');
+      ok(ecu.unlocked === true, 'seedkey: ECU reports unlocked');
+      ok(r.seed && r.seed.length === 4, 'seedkey: seed returned by the ECU');
+      // already-unlocked -> zero seed -> shortcut (no key sent)
+      return seedkey.unlock(ecu.transport(), 0x11, clientAlgo);
+    }).then(function (r3) {
+      ok(r3.unlocked === true && r3.already === true, 'seedkey: already-unlocked shortcut (zero seed)');
+      // a wrong algorithm is rejected with invalidKey
+      var badAlgo = function (seed) { return seed.slice(); }; // identity (wrong)
+      return seedkey.unlock(new EcuSim().transport(), 0x11, badAlgo);
+    }).then(function (r2) {
+      ok(r2.unlocked === false, 'seedkey: wrong key is rejected');
+      eq(r2.nrcName, 'invalidKey', 'seedkey: NRC is invalidKey');
+      // a secured DID is denied before unlock, readable after
+      var ecu3 = new EcuSim({ securedDids: { 0x4A36: [0x01, 0x02] } });
+      var s3 = ecu3.transport();
+      return s3(uds.buildReadDataByIdentifier(0x4A36)).then(function (resp) {
+        var p = uds.parseResponse(uds.SID.READ_DID, resp);
+        ok(!p.positive && p.nrcName === 'securityAccessDenied', 'seedkey: secured DID denied before unlock');
+        return seedkey.unlock(s3, 0x11, clientAlgo).then(function () {
+          return s3(uds.buildReadDataByIdentifier(0x4A36));
+        }).then(function (resp2) {
+          var p2 = uds.parseResponse(uds.SID.READ_DID, resp2);
+          ok(p2.positive && p2.data[0] === 0x01, 'seedkey: secured DID readable after unlock');
+        });
+      });
+    }).then(function () {
+      // refuses to proceed without a key algorithm (no proprietary keys bundled)
+      return seedkey.unlock(new EcuSim().transport(), 0x11, null).then(function (r4) {
+        ok(r4.unlocked === false && /no security algorithm/.test(r4.error || ''), 'seedkey: refuses without a key algorithm');
+        // diagnostic session control
+        return seedkey.session(new EcuSim().transport(), 0x03).then(function (sr) {
+          ok(sr.ok === true, 'seedkey: extended diagnostic session (0x10 03) ok');
+        });
+      });
+    });
+  })
   .then(report)
   .catch(function (e) { console.error(e); process.exit(1); });
 
