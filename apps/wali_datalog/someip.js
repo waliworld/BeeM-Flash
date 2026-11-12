@@ -41,28 +41,35 @@ SomeipProvider.prototype.start = function () {
   }
   this.supported = true;
 
-  Object.keys(groups).forEach(function (gk) {
-    var g = groups[gk];
+  // One watch per interface, one handler per field. The kit hands the handler
+  // the whole field STRUCT; we read each verified signal's named member out of
+  // it (so coolant + oil, which share statusEngineTemperature, come from one
+  // handler). Unverified bindings stay dormant.
+  Object.keys(groups).forEach(function (iface) {
+    var g = groups[iface];
     var handlers = {};
     Object.keys(g.fields).forEach(function (field) {
-      var logical = g.fields[field];
-      var binding = signalmap.get(logical);
-      // Only wire verified bindings; leave guesses dormant.
-      if (!binding || !binding.verified) return;
-      handlers[field] = function (raw) {
-        var v = signalmap.scale(logical, raw);
-        if (typeof v === 'number' && isFinite(v)) {
-          self.values[logical] = v;
-          self.lastUpdate = Date.now();
-        }
+      var sigs = g.fields[field].filter(function (s) {
+        var b = signalmap.get(s);
+        return b && b.verified;
+      });
+      if (!sigs.length) return;
+      handlers[field] = function (struct) {
+        var changed = false;
+        sigs.forEach(function (s) {
+          var v = signalmap.readValue(s, struct);
+          if (typeof v === 'number' && isFinite(v)) { self.values[s] = v; changed = true; }
+        });
+        if (changed) self.lastUpdate = Date.now();
       };
     });
     if (Object.keys(handlers).length === 0) return;
     try {
-      var h = sig.watch(g.iface, g.instance, handlers);
+      // Instance '1' (string) — BMW publishes the vehicle interfaces on instance 1.
+      var h = sig.watch(iface, '1', handlers, self.ctx.log);
       if (h) self.subs.push(h);
     } catch (e) {
-      if (self.ctx.log && self.ctx.log.warn) self.ctx.log.warn('someip watch failed: ' + e);
+      if (self.ctx.log && self.ctx.log.warn) self.ctx.log.warn('someip watch failed (' + iface + '): ' + e);
     }
   });
   return true;

@@ -2,7 +2,7 @@
   "id": "wali_datalog",
   "title": "Wali Datalog",
   "description": "Live datalogging and map switching for tuned BMW vehicles on the MGU head unit. Reads engine data for logging; optionally requests a map switch on an already-tuned car. Independent app, read-only by default.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "license": "MIT",
   "vendor": "TunedByWali",
   "loggingId": "WDLG",
@@ -13,14 +13,12 @@
     "description": "Live datalogging and map switching for tuned BMW vehicles on the MGU head unit. Reads engine data for logging; optionally requests a map switch on an already-tuned car. Independent app, read-only by default. iDrive 8 (touch; GPU renderer)."
   },
   "signals": {
-    "VehicleData": {
-      "engineSpeed": "s",
-      "vehicleSpeed": "s",
-      "coolantTemp": "s",
-      "oilTemp": "s",
-      "gear": "s",
-      "accelPedal": "s",
-      "intakeTemp": "s"
+    "de.bmw.infotainment.vehicle.CDS": {
+      "statusEngineSpeed2": "rs",
+      "statusEngineTemperature": "rs"
+    },
+    "de.bmw.infotainment.vehicle.Vehicle2": {
+      "statusCarSpeed2": "rs"
     }
   },
   "screens": [

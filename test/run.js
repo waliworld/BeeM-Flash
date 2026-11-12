@@ -15,11 +15,44 @@ var Provider = require(A + 'provider');
 var Store = require(A + 'storage');
 var dme = require(A + 'dme_profiles');
 var DiagProvider = require(A + 'diag');
+var signalmap = require(A + 'signalmap');
 
 var pass = 0, fail = 0, failures = [];
 function ok(cond, msg) { if (cond) pass++; else { fail++; failures.push(msg); } }
 function eq(a, b, msg) { ok(a === b, msg + ' (got ' + JSON.stringify(a) + ', want ' + JSON.stringify(b) + ')'); }
 function near(a, b, eps, msg) { ok(Math.abs(a - b) <= eps, msg + ' (got ' + a + ', want ~' + b + ')'); }
+
+// ---- SOME/IP signal map (real BMW interface/field/member + struct reader) --
+// The four core engine signals use BMW's own TypeConverters (idrive7-apps
+// live_data/signals.js) and are the verified bindings.
+(function () {
+  var m = signalmap.MAP;
+  eq(m.engineSpeed.iface, 'de.bmw.infotainment.vehicle.CDS', 'rpm interface');
+  eq(m.engineSpeed.field, 'statusEngineSpeed2', 'rpm field');
+  eq(m.engineSpeed.member, 'actualValueRPMEngineCrankshaft', 'rpm member');
+  ok(m.engineSpeed.verified && m.vehicleSpeed.verified && m.coolantTemp.verified && m.oilTemp.verified, 'core four verified');
+  // readValue: member selection + scaling (raw 12000 * 0.25 = 3000 rpm)
+  near(signalmap.readValue('engineSpeed', { actualValueRPMEngineCrankshaft: 12000 }), 3000, 1e-9, 'rpm scale 0.25');
+  // speed 6400 * 0.015625 = 100 km/h
+  near(signalmap.readValue('vehicleSpeed', { speedVehicleCentreOfGravity: 6400 }), 100, 1e-9, 'speed scale 0.015625');
+  // coolant raw 138 - 48 = 90 °C
+  near(signalmap.readValue('coolantTemp', { temperatureEngineDrive: 138 }), 90, 1e-9, 'coolant offset -48');
+  // one struct feeds BOTH coolant and oil (shared statusEngineTemperature)
+  var s = { temperatureEngineDrive: 138, temperatureEngineOilDrive: 150 };
+  near(signalmap.readValue('coolantTemp', s), 90, 1e-9, 'coolant from shared struct');
+  near(signalmap.readValue('oilTemp', s), 102, 1e-9, 'oil from shared struct');
+  // "no data" sentinels are rejected (not scaled into a wrong number)
+  ok(isNaN(signalmap.readValue('engineSpeed', { actualValueRPMEngineCrankshaft: 65535 })), 'rpm 65535 sentinel -> NaN');
+  ok(isNaN(signalmap.readValue('coolantTemp', { temperatureEngineDrive: 255 })), 'coolant 255 sentinel -> NaN');
+  ok(isNaN(signalmap.readValue('engineSpeed', {})), 'missing member -> NaN');
+  // interfaces() declares the real interfaces for the manifest
+  var ifs = signalmap.interfaces();
+  ok(ifs['de.bmw.infotainment.vehicle.CDS'] && ifs['de.bmw.infotainment.vehicle.CDS'].statusEngineSpeed2 === 'rs', 'interfaces() lists CDS');
+  ok(!ifs.VehicleData, 'no fake VehicleData interface');
+  // watchGroups groups by interface then field (coolant+oil share one field)
+  var g = signalmap.watchGroups();
+  eq(g['de.bmw.infotainment.vehicle.CDS'].fields.statusEngineTemperature.sort().join(','), 'coolantTemp,oilTemp', 'coolant+oil grouped on one field');
+})();
 
 // ---- format ---------------------------------------------------------------
 eq(F.csvRow(['a', 'b,c', 'd"e']), 'a,"b,c","d""e"', 'csv escaping');

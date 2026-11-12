@@ -1,6 +1,6 @@
 {
   "name": "wali-mgu-datalog",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "An independent datalogging and map-switching app for tuned BMW vehicles, running on the MGU (iDrive 7/8) head unit. Built from scratch; contains no third-party app code and no BMW SDK.",
   "license": "MIT",

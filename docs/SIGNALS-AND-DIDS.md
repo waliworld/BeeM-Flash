@@ -25,26 +25,39 @@ path is MHD's closed plugin and is not implemented.
 This is the recommended route; the per-PID map below is for stock cars, extra
 channels, or non-MHD setups.
 
-## 1. SOME/IP bus signals (`src/signalmap.js`)
+## 1. SOME/IP bus signals (`signalmap.js`)
 
 Signals such as RPM, vehicle speed and temperatures are broadcast on the unit's
-internal bus. Interface and field names come from the unit's own catalogue:
+internal bus. Each field is a STRUCT; the value is one named member of it (the
+kit's `signals.watch` hands the whole struct to the handler, and `someip.js`
+reads `binding.member`).
 
-```
-/etc/oap/someip/someip-interfaces.json   (on the head unit)
-```
+The four core engine signals use the **car-tested BMW interfaces/fields/members
+and BMW's own TypeConverters**, taken from cauliflowermossgrape's reference apps
+(`idrive7-apps` `live_data/signals.js`), and are marked `verified: true`:
 
-Procedure:
+| channel | interface | field · member | scale |
+|---|---|---|---|
+| rpm | `…vehicle.CDS` | `statusEngineSpeed2` · `actualValueRPMEngineCrankshaft` | ×0.25 |
+| speed | `…vehicle.Vehicle2` | `statusCarSpeed2` · `speedVehicleCentreOfGravity` | ×0.015625 |
+| coolant | `…vehicle.CDS` | `statusEngineTemperature` · `temperatureEngineDrive` | −48 |
+| oil | `…vehicle.CDS` | `statusEngineTemperature` · `temperatureEngineOilDrive` | −48 |
 
-1. Copy that catalogue off the unit to `reference/someip-interfaces.json`
-   (git-ignored; do not publish it).
-2. Explore fields and scaling with the kit tools:
+`someip.js` rejects each field's "no data" sentinels (rpm/speed 65535, temps 255)
+instead of scaling them into a wrong value, and one `statusEngineTemperature`
+struct feeds both coolant and oil.
+
+To add or confirm more signals (pedal and gear ship as `verified:false` until
+confirmed):
+
+1. Explore fields and scaling with the kit tools:
    `python3 kit/tools/sigdoc.py <interface>` and
-   `python3 kit/tools/check_signals.py`.
-3. For each entry in `MAP`, set the real `iface`/`field`, the scaling `m`/`b`
-   (engineering = raw·m + b), and then `verified: true`.
-4. Mirror the interface/field you actually use in `app.json` → `signals`, so the
-   platform grants the subscription.
+   `python3 kit/tools/check_signals.py` (or copy the unit's own catalogue
+   `/etc/oap/someip/someip-interfaces.json` off the car, git-ignored).
+2. Set the real `iface`/`field`/`member`, the scaling `m`/`b`
+   (engineering = raw·m + b), any `invalid` sentinels, and then `verified: true`.
+3. The interfaces you subscribe to are mirrored into `app.json` → `signals`
+   (see `signalmap.interfaces()`), so the platform grants the subscription.
 
 Unverified entries stay dormant: `someip.js` only wires `verified:true`
 bindings, so a guess can't emit a value.
