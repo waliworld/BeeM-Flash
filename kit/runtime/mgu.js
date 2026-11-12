@@ -92,7 +92,11 @@ const log = {};
 
 // crashes otherwise only reach DLT; keep the reason next to the app's log
 // (iDrive 8: the entry module logs it, shows it on the app's page, and the app runs on)
-process.on('uncaughtException', (e) => { fileLog('FATAL', 'uncaught: ' + (e && e.stack || e)); if (!ID8) process.exit(1); });
+// Keep the app alive on a stray async throw (a failed UDS read, a signal callback) instead of
+// exiting: on the car an exit makes CorruptAppsHandler wipe the app's data and a second one
+// uninstalls it (the same reason run() below never calls process.exit). The app's render and
+// sampler loops are each guarded and simply carry on; iDrive 8 already behaved this way.
+process.on('uncaughtException', (e) => { fileLog('FATAL', 'uncaught (kept running): ' + (e && e.stack || e)); });
 process.on('exit', (code) => fileLog(code ? 'FATAL' : 'INFO', 'exit code ' + code + ' rss=' + Math.round(process.memoryUsage().rss / 1048576) + 'MB'));
 
 /* ---------------- settings (persisted in data/settings.json) ---------------- */

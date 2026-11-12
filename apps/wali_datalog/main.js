@@ -63,7 +63,11 @@ function App() {}
 App.prototype.start = function (ctx) {
   var self = this;
   this.ctx = ctx || {};
-  this.t = mergeTheme(theme.DARK, this.ctx.theme ? safe(this.ctx.theme) : null);
+  // LAMBO (black / yellow / red) is authoritative for our canvas: start from whatever the kit
+  // theme provides (so we inherit any extra keys) but let LAMBO's palette win, so the look is the
+  // Lambo one on the car regardless of the unit's default kit theme (which was overriding it to
+  // M Tricolour orange/white). The app also ships a 'lambo' kit theme and defaults to it.
+  this.t = mergeTheme(this.ctx.theme ? safe(this.ctx.theme) : {}, theme.LAMBO);
 
   // ---- settings ---------------------------------------------------------
   this.getSetting = function (k) {
@@ -368,6 +372,7 @@ App.prototype._relabel = function () {
 App.prototype._fail = function (where, err) {
   var msg = (err && err.message) ? err.message : String(err);
   this._lastError = where + ': ' + msg;
+  this._lastErrorAt = Date.now();
   if (this.ctx.log && this.ctx.log.error) { try { this.ctx.log.error('[wali] ' + this._lastError); } catch (e) {} }
 };
 
@@ -531,13 +536,15 @@ App.prototype._export = function () {
 };
 
 App.prototype._toggleLog = function () {
-  var key = Channels.all()[this.selection].key;
+  var ch = Channels.all()[this.selection]; if (!ch) return;
+  var key = ch.key;
   var i = this.enabled.indexOf(key);
   if (i >= 0) this.enabled.splice(i, 1); else this.enabled.push(key);
   this._saveEnabled();
 };
 App.prototype._toggleShow = function () {
-  var key = Channels.all()[this.selection].key;
+  var ch = Channels.all()[this.selection]; if (!ch) return;
+  var key = ch.key;
   var i = this.displayed.indexOf(key);
   if (i >= 0) { this.displayed.splice(i, 1); }
   else if (this.displayed.length >= this.maxTiles()) { this._flash('Display limit reached (' + this.maxTiles() + ') — remove one first'); return; }
@@ -969,6 +976,16 @@ App.prototype.render = function (cv, tabName) {
   var scv = screens.scaleCv(cv, scale);
   screens.chrome(scv, this.t, view);
   screens.content(tabName || this.tab)(scv, this.t, view, screens.CONTENT);
+  // Diagnostic banner: if something failed in the last 15 s, show it (unscaled, at
+  // the very bottom) so an on-car problem is visible and can be screenshotted
+  // instead of failing silently. Clears itself afterwards.
+  if (this._lastError && this._lastErrorAt && (Date.now() - this._lastErrorAt) < 15000) {
+    try {
+      var bh = 24, by = screens.H - bh;
+      cv.fillRect(0, by, screens.W, bh, (this.t && this.t.crit) || '#ff2a1f');
+      cv.text('ERR ' + String(this._lastError).slice(0, 110), 12, by + 17, 15, '#000000', { weight: 'bold' });
+    } catch (e) { /* never let the banner itself break a frame */ }
+  }
 };
 
 // ---- device shims -------------------------------------------------------

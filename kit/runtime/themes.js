@@ -8,6 +8,15 @@
  * from the theme colour to red at the dial's limit (redline, max boost, ...).
  */
 const THEMES = {
+    lambo: {
+        name: 'Lambo (black / yellow)',
+        bg: '#000000', panelTop: '#141414', panelBottom: '#0a0a0a', panelEdge: '#2a2a2a',
+        tab: '#ffffff', track: '#1c1c1c', tick: '#5a5a5a', text: '#ffffff', dim: '#b2b2b2',
+        accent: '#ffe600', accent2: '#fff23d', ok: '#ffffff', warn: '#ffe600', crit: '#ff2a1f', cold: '#7a7a7a',
+        glow: '#ffe60055', stripes: ['#ffe600'], oil: '#ff2a1f', bar: '#ffe600', hang: '#fff23d',
+        sel: '#ffe600', selText: '#000000', marker: '#ffe600', ramp: ['#4a4300', '#ffe600', '#fff23d'],
+        hotRamp: ['#4a4300', '#ffe600', '#ffe600', '#ff2a1f', '#ff2a1f'],
+    },
     m_red: {
         name: 'M Red',
         bg: '#050506', panelTop: '#17181c', panelBottom: '#0d0d10', panelEdge: '#2a2b31',

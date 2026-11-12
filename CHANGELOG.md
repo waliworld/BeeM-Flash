@@ -18,6 +18,35 @@ UI: one canvas screen with internal paging driven by four HMI bar buttons
 
 ## Beta 2 — v2.x.x
 
+### v2.8.3 — on-car stability + theme
+First on-car run (2.8.2 installs and reads live engine data). Fixes from it:
+- **App no longer quits itself.** On iDrive 7 the kit turned **any** stray
+  uncaught async exception (e.g. a failed UDS read or a signal callback) into
+  `process.exit(1)` — which is exactly what made the app "shut off after 30–60 s"
+  and "die when a log channel was tapped". The kit now **logs and keeps running**
+  instead (iDrive 8 already did), matching the kit's own rule that an app must not
+  exit on the car (an exit makes the platform wipe/uninstall it). The render and
+  sampler loops were already individually guarded.
+- **Colours are the Lambo black/yellow/red again.** The car's default kit theme
+  (M Tricolour — white/**orange**/red) was being merged *over* our palette. Added a
+  proper **`lambo` kit theme** (black, bright yellow `#ffe600`, red `#ff2a1f`, no
+  orange, no green), made it the app's **default `theme` setting** (selectable in
+  Setup), and made the Lambo palette authoritative for the app's own canvas so the
+  unit theme can't override it.
+- **Header now reads “BeeM-Flash”** (the `MAIN` screen title was still the old
+  “Wali Datalog”).
+- **On-screen error banner** — if anything throws, a red strip briefly shows the
+  message so an on-car fault is visible/screenshot-able instead of silent.
+- Hardened the channel Log/Show toggles against an out-of-range selection.
+
+Known, still open (need a clearer photo / the car's app log to finish): the canvas
+is drawn at 1600×520 and the HMI scales it to the unit's app area, so it doesn't
+fill perfectly; and the UDS-only live channels (boost, charge-air temp, timing,
+knock) read `--` until the UDS/fast-block source is confirmed on this car — the
+bus signals (rpm, coolant, oil, speed) already work. The **Connect** tab is the
+optional ENET/Wi-Fi path; on the head unit the data already comes through the
+car's internal gateway, so no Wi-Fi adapter appears or is needed.
+
 ### v2.8.2 — install fix (SOME/IP manifest)
 - **Fixes the on-car install failure** `the app manager could not install … :
   generateSomeipInterfaces … nothing is installed`. BMW's interface generator
