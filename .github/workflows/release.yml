@@ -7,7 +7,12 @@ name: Release to MGU Store catalog
 
 on:
   push:
-    branches: [main]
+    # Publishes on pushes to the repository's default/working branch. `main` is
+    # kept for when a main branch exists; the claude/ branch is the current
+    # default branch of waliworld/beem-flash, where the app is developed.
+    branches:
+      - main
+      - 'claude/blissful-pascal-whi8or'
     paths:
       - 'apps/**'
       - 'kit/**'
