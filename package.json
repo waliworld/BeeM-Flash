@@ -11,7 +11,10 @@
   "scripts": {
     "test": "node test/run.js",
     "sim": "node scripts/run-sim.js",
-    "preview": "node scripts/make-preview.js",
-    "shots": "node scripts/make-shots.js"
+    "bundle": "node scripts/bundle.js apps/wali_datalog/main.js runtime/web/app.bundle.js",
+    "preview": "npm run bundle && node -e \"console.log('Open runtime/web/index.html in a browser')\"",
+    "shots": "npm run bundle && node scripts/make-shots.js",
+    "build:app": "python3 kit/tools/build.py wali_datalog && python3 kit/tools/build.py --hmi ID8 wali_datalog",
+    "release": "sh tools/release.sh"
   }
 }

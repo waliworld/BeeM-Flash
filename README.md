@@ -35,7 +35,7 @@ app, and it is built from scratch — see [`NOTICE.md`](NOTICE.md).
   lambda actual/target + trims, HPFP/LPFP, port-injection, VANOS, torque, EGT,
   flex-fuel, G-forces, …), read the efficient **packed measurement-block** way.
   The per-tune PID address map is imported as `pidmap.json` (see
-  `apps/wali_datalog/profiles/template.json`) so every channel goes live on your
+  `profiles/template.json`) so every channel goes live on your
   DME without touching code.
 - **Matches your MHD preset** — convert an MHD Flasher `LogPresets.csv` export to
   a channel preset with `scripts/preset_from_mhd_csv.js`, drop it on the unit as
@@ -75,27 +75,34 @@ npm test
 # Drive the whole app headless (demo drive + logging + every screen)
 npm run sim
 
-# Regenerate the UI screenshots in out/shots/ (uses the bundled real app code)
-node scripts/bundle.js runtime/web/preview-entry.js runtime/web/app.bundle.js
+# Regenerate the UI screenshots in out/shots/ (bundles + runs the real app code)
 npm run shots
+
+# Build the installable packages (iDrive 7 + iDrive 8) and the Store catalog
+npm run build:app      # dist/wali_datalog@<v>.tgz/.mgu  +  dist/src/wali_datalog8@<v>.tgz
+npm run release        # dist/release/catalog.json + packages + icon
 ```
 
 Install on a head unit is covered in
-[`docs/BUILD-AND-INSTALL.md`](docs/BUILD-AND-INSTALL.md).
+[`docs/BUILD-AND-INSTALL.md`](docs/BUILD-AND-INSTALL.md): the CI workflow
+publishes a `catalog` GitHub release, and the Store installs the app from it.
 
 ## How it's structured
 
 ```
-apps/wali_datalog/        the MGU app (ships to the head unit)
-  app.json                manifest: id, signals, screens, settings
-  main.js                 controller: wiring, input, view model, loops
-  src/                    logengine, channels, provider, demo,
-                          someip, uds, diag, doip, enetgate, mapcontrol,
-                          storage, format
-  src/ui/                 theme, draw widgets, screens, device surface
-mgu-repo.json             mgu-store repo-tree descriptor
+apps/wali_datalog/        the MGU app (flat module layout the kit builds)
+  app.json                manifest: id (+ id8), signals, screens, settings
+  main.js                 controller: wiring, input, view model, loops, kit boot
+  icon.png                app tile icon (generated from the "gauge" glyph)
+  *.js                    logengine, channels, provider, demo, someip, uds,
+                          diag, doip, enetgate, mapcontrol, storage, format,
+                          theme, draw, screens, surface (on-device canvas adapter)
+kit/                      vendored MGU app kit (MIT): runtime + build.py + id8
+tools/                    release.py / release.sh (build the Store catalog)
+.github/workflows/        release.yml (publishes the `catalog` GitHub release)
+profiles/ presets/        reference PID maps + presets (build-time inputs)
 runtime/                  off-car simulator ctx + browser preview backend
-scripts/                  build wrapper, bundler, simulator, screenshots
+scripts/                  bundler, simulator, screenshots, PID/preset generators
 test/                     zero-dependency test runner
 docs/                     architecture, build/install, signals & DIDs, verification
 ```

@@ -1,0 +1,60 @@
+name: Release to MGU Store catalog
+
+# Builds the app for iDrive 7 and iDrive 8 and publishes the MGU Store catalog as the assets of a GitHub release
+# tagged "catalog". In the Store on the head unit: Settings, Add source, this repository (owner/name), Releases; then
+# install Wali Datalog and restart the head unit. BMW's oap-sdk is never built, committed or uploaded — the head unit
+# links it from a donor app at install time.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/**'
+      - 'kit/**'
+      - 'tools/**'
+      - 'oap-sdk/**'
+      - '.github/workflows/release.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: catalog-release
+  cancel-in-progress: true
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # tools/release.sh reads the last commit time for a reproducible build
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build the MGU Store release (dist/release/)
+        run: |
+          chmod +x tools/release.sh
+          tools/release.sh
+          echo '--- dist/release/ ---'
+          ls -l dist/release
+
+      - name: Publish the catalog release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Ensure the "catalog" release exists, then (re)upload every asset.
+          if ! gh release view catalog >/dev/null 2>&1; then
+            gh release create catalog \
+              --title 'MGU Store catalog' \
+              --notes 'Wali Datalog for the MGU head unit (iDrive 7 and iDrive 8). Add this repository as a source in the Store (Settings, Add source, Releases), install Wali Datalog and restart the head unit.' \
+              --latest=false
+          fi
+          gh release upload catalog dist/release/* --clobber

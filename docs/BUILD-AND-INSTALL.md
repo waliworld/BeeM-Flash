@@ -2,60 +2,85 @@
 
 > **The BMW SDK is never in this repository.** The MGU app platform links every
 > app against the on-board SDK (`oap-sdk` + generated `rhmiData`) that already
-> lives on the head unit. A build therefore needs either the head unit itself or
-> a build host that can extract the SDK from a donor BMW app. This repo contains
-> only our own app source.
+> lives on the head unit. The build here uses a committed placeholder for the
+> SDK; the head unit links the real one from a donor app at install time. This
+> repo contains only our own app source plus the open-source MGU **app kit**
+> (`kit/`, MIT — the same runtime every community MGU app uses).
+
+## How it installs (the short version)
+
+The app is distributed exactly like other community MGU apps (e.g. RideTube): a
+GitHub Actions workflow builds the app for iDrive 7 and iDrive 8 and publishes a
+**catalog release** (a GitHub release tagged `catalog`). On the head unit you add
+this repository as a **source** in the Store, and the Store installs Wali Datalog
+from that release. Nothing is "built on your phone" and there is no fragile
+build-on-the-unit step — the artifacts are prebuilt by CI.
 
 ## 0. Prerequisites
 
-- An MGU head unit (iDrive 7 or 8) with the community store installed
-  ([mgu-store](https://github.com/robertnisipeanu/mgu-store)) and the
-  `mgu-render` renderer tool.
-- For building a package off-car: a checkout of the
-  [`idrive7-apps`](https://github.com/robertnisipeanu/idrive7-apps) kit, whose
-  `kit/tools/extract_sdk.js` rebuilds the SDK from a donor app, and
-  `kit/tools/build.py`. Node 14+ and Python 3.12 for the kit's tooling.
+- **To develop/verify (no car):** Node 18+ and Python 3.12. Everything needed to
+  build is vendored in `kit/`.
+- **To install:** an MGU head unit (iDrive 7 or 8) with the community
+  [mgu-store](https://github.com/robertnisipeanu/mgu-store) installed.
 
 ## 1. Develop and verify (no car)
 
 ```bash
-npm test          # pure-logic tests
-npm run sim       # headless end-to-end drive + all screens
-node scripts/bundle.js runtime/web/preview-entry.js runtime/web/app.bundle.js
-npm run shots     # UI screenshots to out/shots/
+npm test          # 124 pure-logic assertions, 0 dependencies
+npm run sim       # headless end-to-end drive + all screens on a simulated ctx
+npm run shots     # regenerates the preview bundle + renders every screen to out/shots/
 ```
 
-## 2. Build a package (`.mgu`)
+## 2. Build the installable packages
 
-The app is written in the kit's app format (`app.json` + `main.js` + `src/`), so
-it builds with the kit against the SDK the kit provides:
+The app is in the kit's app format (`app.json` + a flat set of `*.js` modules +
+`icon.png`), so the vendored kit builds it directly — no external checkout:
 
 ```bash
-# point the build wrapper at your idrive7-apps checkout
-export MGU_KIT=/path/to/idrive7-apps
-python3 scripts/mgu_build.py wali_datalog apps/wali_datalog
-# -> dist/wali_datalog@<version>.mgu
+npm run build:app
+#  -> dist/wali_datalog@<version>.tgz   + .mgu   (iDrive 7 OAP package)
+#  -> dist/src/wali_datalog8@<version>.tgz        (iDrive 8 source package)
 ```
 
-`scripts/mgu_build.py` stages `apps/wali_datalog` into the kit's `apps/` folder,
-runs `kit/tools/build.py`, and copies the resulting package into `dist/`. If no
-kit/SDK is found it exits with a clear message rather than producing a broken
-package.
+Under the hood this is `python3 kit/tools/build.py wali_datalog` (iDrive 7) and
+`python3 kit/tools/build.py --hmi ID8 wali_datalog` (iDrive 8). `tools/release.sh`
+creates the SDK placeholder automatically; to run `build.py` by hand once, create
+it first:
 
-## 3. Install
+```bash
+mkdir -p oap-sdk && echo 'module.exports = {};' > oap-sdk/index.js \
+  && echo '{"name":"oap-sdk","version":"0.0.0-placeholder","private":true}' > oap-sdk/package.json
+```
 
-**Through the store (recommended).** Point the on-car Store at this GitHub
-repository. `mgu-repo.json` declares `wali_datalog` as a repo-tree app the Store
-can build on the unit (where the SDK is present). Follow the store's
-`docs/PUBLISHING.md` for adding a source; the exact repo-tree build fields should
-be checked against the store version you run.
+## 3. Assemble the catalog release
 
-**From a built package.** Copy `dist/wali_datalog@<version>.mgu` to the unit and
-install it with the store/kit deploy tooling
-(`deploy/push-to-car.sh install`, or the store's USB flow). The app then appears
-in the head unit's *All apps* list as **Wali Datalog**.
+```bash
+npm run release          # = tools/release.sh
+#  -> dist/release/catalog.json
+#  -> dist/release/wali_datalog@<version>.tgz     (iDrive 7, SDK stripped out)
+#  -> dist/release/wali_datalog8@<version>.tgz    (iDrive 8 source package)
+#  -> dist/release/wali_datalog.png               (app tile icon)
+```
 
-## 4. First run on the car
+Upload every file in `dist/release/` to a GitHub release tagged `catalog`. The
+**`.github/workflows/release.yml`** workflow does exactly this on every push to
+`main` (and on manual dispatch): it runs `tools/release.sh` and uploads the
+assets to the `catalog` release with `gh release upload … --clobber`.
+
+## 4. Install on the head unit
+
+1. In the **Store** on the car: **Settings → Add source**, enter this repository
+   (`owner/name`), choose **Releases**.
+2. Install **Wali Datalog**, then **restart the head unit**.
+3. The app appears in the head unit's app list as **Wali Datalog**.
+
+The Store picks the right package automatically: the iDrive 7 OAP package, or the
+iDrive 8 source package (catalog `"build": "unit"`), which the unit links against
+the SDK of a donor app on first install. Required infrastructure components
+(`mgu-render`, and `mgu-inputgate`/`mgu-deploy`) are listed in `catalog.json` and
+installed by the Store alongside the app.
+
+## 5. First run on the car
 
 1. Open **Wali Datalog**. It starts on **Live** showing demo data (badge
    "DEMO DATA") until live signals are verified.
@@ -69,28 +94,24 @@ in the head unit's *All apps* list as **Wali Datalog**.
 
 ## Internet (optional)
 
-The **MHD Datalog (web)** screen needs the unit online. Internet on MGU apps is
-granted by `mgu-uplink` plus the internet flag in the store manifest
-(`package.json` `mguInternet` / `mgu-app.json` `internet:true`). Without it, the
-screen explains that internet is unavailable; the rest of the app is offline.
+The **MHD Datalog (web)** screen needs the unit online. Without internet the
+screen explains that it is unavailable; the rest of the app is fully offline.
 
-## Device binding checklist
+## What is verified off-car vs. needs a unit
 
-These are the only places that touch unit-specific APIs. They are marked and
-isolated so finishing them does not touch app logic:
+The **build** (both head units), the **boot into the kit** (`require('./kit/mgu')`
+beside the staged `app.js`), and the **on-device draw path** (every screen drawn
+through the real `kit/runtime/canvas.js` via `surface.js` and pushed to each
+screen's `<screen>_GFX` cell) are all verified here, off-car. The remaining
+unit-specific bindings are isolated and fail safe (unverified → demo data; writes
+→ refused):
 
-- `apps/wali_datalog/src/ui/surface.js` — map our draw calls to the real
-  `ctx.canvas` primitives (names/options).
-- `apps/wali_datalog/main.js` (`_present`, `_show`, `_mediaDir`, `openUrl`) —
-  image present, screen switch, USB mount, browser open.
-- `apps/wali_datalog/src/diag.js` (`makeCtxTransport`) — the UDS transport over
-  the unit's diagnostic channel.
-- `apps/wali_datalog/src/doip.js` (`nodeUdpSocket`) — the UDP socket used for
-  vehicle discovery on the head unit's network interface. A host/test harness
-  can inject its own via `ctx.doipSocket()`; see `docs/VEHICLE-CONNECTION.md`.
-- `apps/wali_datalog/src/signalmap.js` — SOME/IP interface/field names.
-
-> Note on the **Connect** screen's buttons: `app.json`'s `live` screen lists
-> `BTN_A`–`BTN_D` plus `BTN_SETTINGS` (5 entries). If the real on-unit SDK
-> strictly caps canvas screens at 4 buttons, `BTN_SETTINGS` and `BTN_D` may need
-> to be reconciled on hardware — confirm this on a unit before relying on it.
+- `apps/wali_datalog/diag.js` (`makeCtxTransport`) — the UDS transport over the
+  unit's diagnostic channel.
+- `apps/wali_datalog/doip.js` (`nodeUdpSocket`) — the UDP socket for vehicle
+  discovery on the head unit's network interface (a host/test harness can inject
+  one via `ctx.doipSocket()`; see [`VEHICLE-CONNECTION.md`](VEHICLE-CONNECTION.md)).
+- `apps/wali_datalog/signalmap.js` / `dme_profiles.js` — SOME/IP field names and
+  DME DID layout/scaling (calibrate per car).
+- `catalog.json` `requires` versions — the exact Store infrastructure component
+  versions; adjust to the Store build you run if a newer set ships.

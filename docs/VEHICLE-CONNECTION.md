@@ -28,7 +28,7 @@ order:
                                             └───────── Disable ────────┘
 ```
 
-Key properties, enforced in `apps/wali_datalog/src/enetgate.js`:
+Key properties, enforced in `apps/wali_datalog/enetgate.js`:
 
 - **Acknowledgment persists** across app restarts (stored in `enet.json`), so
   the disclosure doesn't need to be re-read every single launch.

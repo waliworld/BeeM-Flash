@@ -23,6 +23,15 @@ function bundle(entry) {
   function load(abs) {
     abs = resolve(abs);
     if (modules.hasOwnProperty(abs)) return abs;
+    // Device-only modules (e.g. the kit runtime linked on the head unit) do not
+    // exist in this tree and must not be inlined into the browser preview. Stub
+    // any require that cannot be resolved to a real file, so the preview builds
+    // and the guarded require in main.js simply yields an empty module.
+    if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) {
+      modules[abs] = 'module.exports = {};';
+      order.push(abs);
+      return abs;
+    }
     modules[abs] = ''; // reserve (cycle guard)
     var code = fs.readFileSync(abs, 'utf8');
     code = code.replace(/require\(\s*(['"])(\.[^'"]+)\1\s*\)/g, function (m, q, rel) {

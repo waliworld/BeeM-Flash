@@ -6,8 +6,8 @@
 // assembled by main.js (on the car) or the simulator (off the car) from the
 // provider, the log engine, and map control. No I/O happens here.
 //
-var Channels = require('../channels');
-var F = require('../format');
+var Channels = require('./channels');
+var F = require('./format');
 var D = require('./draw');
 
 var W = 1600, H = 520;

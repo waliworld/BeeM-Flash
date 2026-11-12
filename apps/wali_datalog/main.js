@@ -9,21 +9,21 @@
 // device-specific calls (canvas surface, image present, screen show, media dir)
 // are probed on ctx with safe fallbacks and marked DEVICE below.
 //
-var SomeipProvider = require('./src/someip');
-var DiagProvider = require('./src/diag');
-var Provider = require('./src/provider');
-var MhdMonitor = require('./src/mhdmonitor');
-var LogEngine = require('./src/logengine');
-var MapControl = require('./src/mapcontrol');
-var EnetGate = require('./src/enetgate');
-var doip = require('./src/doip');
-var Channels = require('./src/channels');
-var storageMod = require('./src/storage');
-var dme = require('./src/dme_profiles');
-var theme = require('./src/ui/theme');
-var screens = require('./src/ui/screens');
-var surface = require('./src/ui/surface');
-var F = require('./src/format');
+var SomeipProvider = require('./someip');
+var DiagProvider = require('./diag');
+var Provider = require('./provider');
+var MhdMonitor = require('./mhdmonitor');
+var LogEngine = require('./logengine');
+var MapControl = require('./mapcontrol');
+var EnetGate = require('./enetgate');
+var doip = require('./doip');
+var Channels = require('./channels');
+var storageMod = require('./storage');
+var dme = require('./dme_profiles');
+var theme = require('./theme');
+var screens = require('./screens');
+var surface = require('./surface');
+var F = require('./format');
 
 var SCREEN_ORDER = ['live', 'datalog', 'channels', 'maps', 'mhd', 'connect'];
 var DEFAULTS = { demo: 'auto', source: 'auto', platform: 'B58', rate: 10, units: 'metric', style: 'tiles', maxtiles: 8, autostart: false, mapcontrol: false };
@@ -469,9 +469,11 @@ App.prototype._makeSurface = function () {
   return null;
 };
 App.prototype._present = function (name) {
-  // DEVICE: hand the drawn canvas to the screen's image widget.
+  // DEVICE: hand the drawn canvas to this screen's graphic cell. The kit's
+  // build.py names a canvas screen's image widget "<screen>_GFX" (e.g.
+  // live_GFX, datalog_GFX), and ctx.ui.image(cell, canvas) pushes the frame.
   if (this.ctx.ui && this.ctx.ui.image && this._surface && this._surface.handle) {
-    return this.ctx.ui.image('canvas', this._surface.handle);
+    return this.ctx.ui.image((name || this.screen) + '_GFX', this._surface.handle);
   }
   return null;
 };
@@ -502,8 +504,17 @@ function safe(fn) { try { return fn(); } catch (e) { return null; } }
 function trySafe(fn) { try { fn(); } catch (e) {} }
 
 // Export for the simulator/tests, and self-register on the head unit runtime.
+//
+// On the head unit the kit links this file as the app entry and provides the
+// runtime as a sibling module (javascript/kit/mgu.js), exactly as every kit app
+// does: `require('./kit/mgu')`. In the PC simulator, the test suite and the web
+// preview there is no kit beside this file, so the require is guarded and the
+// harness drives the exported App directly. The split name keeps naive bundlers
+// from trying to resolve the kit path off-car.
 var app = new App();
-if (typeof mgu !== 'undefined' && mgu && mgu.run) {
+var mgu = null;
+try { mgu = require('./kit/' + 'mgu'); } catch (e) { mgu = null; }
+if (mgu && mgu.run) {
   mgu.run({ start: function (ctx) { return app.start(ctx); } });
 }
 module.exports = { App: App, app: app, SCREEN_ORDER: SCREEN_ORDER };

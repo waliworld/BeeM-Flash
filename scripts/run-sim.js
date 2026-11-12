@@ -53,7 +53,7 @@ function run() {
   });
 
   // Map-control gating demo: off by default refuses a switch.
-  var offMap = new (require('../apps/wali_datalog/src/mapcontrol'))({ enabled: false });
+  var offMap = new (require('../apps/wali_datalog/mapcontrol'))({ enabled: false });
   var prep = offMap.prepare(1, { speed: 0, rpm: 800 });
   console.log('\nMap switch while control OFF -> ok=' + prep.ok + ' (expected false)');
 

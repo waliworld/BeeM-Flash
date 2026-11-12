@@ -9,7 +9,7 @@
 //
 var fs = require('fs');
 var path = require('path');
-var Channels = require('../apps/wali_datalog/src/channels');
+var Channels = require('../apps/wali_datalog/channels');
 
 function norm(s) { return String(s).replace(/\s+/g, ' ').trim(); }
 
@@ -82,7 +82,7 @@ if (require.main === module) {
   if (!csvPath) { console.error('usage: node scripts/preset_from_mhd_csv.js <LogPresets.csv> [out.json]'); process.exit(2); }
   var res = convert(fs.readFileSync(csvPath, 'utf8'));
   var out = { label: 'MHD preset ' + (res.ecu || 'unknown'), ecu: res.ecu, enabled: res.enabled };
-  var outPath = process.argv[3] || path.join('apps', 'wali_datalog', 'presets', (res.ecu || 'preset') + '.json');
+  var outPath = process.argv[3] || path.join('presets', (res.ecu || 'preset') + '.json');
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   fs.writeFileSync(outPath, JSON.stringify(out, null, 2) + '\n');
   console.log('ECU: ' + res.ecu);

@@ -3,10 +3,15 @@
   "title": "Wali Datalog",
   "description": "Live datalogging and map switching for tuned BMW vehicles on the MGU head unit. Reads engine data for logging; optionally requests a map switch on an already-tuned car. Independent app, read-only by default.",
   "version": "0.1.0",
+  "license": "MIT",
   "vendor": "TunedByWali",
   "loggingId": "WDLG",
   "iconGlyph": "gauge",
-
+  "id8": {
+    "id": "wali_datalog8",
+    "loggingId": "WDL8",
+    "description": "Live datalogging and map switching for tuned BMW vehicles on the MGU head unit. Reads engine data for logging; optionally requests a map switch on an already-tuned car. Independent app, read-only by default. iDrive 8 (touch; GPU renderer)."
+  },
   "signals": {
     "VehicleData": {
       "engineSpeed": "s",
@@ -18,18 +23,32 @@
       "intakeTemp": "s"
     }
   },
-
   "screens": [
     {
       "name": "live",
       "title": "Live",
       "kind": "canvas",
       "buttons": [
-        ["BTN_A", "Datalog"],
-        ["BTN_B", "Maps"],
-        ["BTN_C", "Channels"],
-        ["BTN_D", "Connect"],
-        ["BTN_SETTINGS", "Settings"]
+        [
+          "BTN_A",
+          "Datalog"
+        ],
+        [
+          "BTN_B",
+          "Maps"
+        ],
+        [
+          "BTN_C",
+          "Channels"
+        ],
+        [
+          "BTN_D",
+          "Connect"
+        ],
+        [
+          "BTN_SETTINGS",
+          "Settings"
+        ]
       ]
     },
     {
@@ -37,10 +56,22 @@
       "title": "Datalog",
       "kind": "canvas",
       "buttons": [
-        ["BTN_A", "Start/Stop"],
-        ["BTN_B", "Marker"],
-        ["BTN_C", "Export"],
-        ["BTN_D", "Live"]
+        [
+          "BTN_A",
+          "Start/Stop"
+        ],
+        [
+          "BTN_B",
+          "Marker"
+        ],
+        [
+          "BTN_C",
+          "Export"
+        ],
+        [
+          "BTN_D",
+          "Live"
+        ]
       ]
     },
     {
@@ -48,10 +79,22 @@
       "title": "Channels",
       "kind": "canvas",
       "buttons": [
-        ["BTN_A", "Log"],
-        ["BTN_B", "Show"],
-        ["BTN_C", "Clear"],
-        ["BTN_D", "Back"]
+        [
+          "BTN_A",
+          "Log"
+        ],
+        [
+          "BTN_B",
+          "Show"
+        ],
+        [
+          "BTN_C",
+          "Clear"
+        ],
+        [
+          "BTN_D",
+          "Back"
+        ]
       ]
     },
     {
@@ -59,10 +102,22 @@
       "title": "Map Control",
       "kind": "canvas",
       "buttons": [
-        ["BTN_A", "Prev"],
-        ["BTN_B", "Next"],
-        ["BTN_C", "Apply"],
-        ["BTN_D", "Back"]
+        [
+          "BTN_A",
+          "Prev"
+        ],
+        [
+          "BTN_B",
+          "Next"
+        ],
+        [
+          "BTN_C",
+          "Apply"
+        ],
+        [
+          "BTN_D",
+          "Back"
+        ]
       ]
     },
     {
@@ -70,8 +125,14 @@
       "title": "MHD Datalog (web)",
       "kind": "canvas",
       "buttons": [
-        ["BTN_A", "Open site"],
-        ["BTN_D", "Back"]
+        [
+          "BTN_A",
+          "Open site"
+        ],
+        [
+          "BTN_D",
+          "Back"
+        ]
       ]
     },
     {
@@ -79,62 +140,168 @@
       "title": "Vehicle Connection",
       "kind": "canvas",
       "buttons": [
-        ["BTN_A", "Acknowledge"],
-        ["BTN_B", "Enable"],
-        ["BTN_C", "Scan"],
-        ["BTN_D", "Back"]
+        [
+          "BTN_A",
+          "Acknowledge"
+        ],
+        [
+          "BTN_B",
+          "Enable"
+        ],
+        [
+          "BTN_C",
+          "Scan"
+        ],
+        [
+          "BTN_D",
+          "Back"
+        ]
       ]
     }
   ],
-
   "settings": [
     {
       "key": "demo",
       "label": "Demo data",
       "type": "choice",
-      "options": [["auto", "Auto"], ["on", "On"], ["off", "Off"]],
+      "options": [
+        [
+          "auto",
+          "Auto"
+        ],
+        [
+          "on",
+          "On"
+        ],
+        [
+          "off",
+          "Off"
+        ]
+      ],
       "default": "auto"
     },
     {
       "key": "source",
       "label": "Data source",
       "type": "choice",
-      "options": [["auto", "Auto"], ["mhd", "MHD live monitor"], ["someip", "Bus signals"], ["diag", "Diagnostic (UDS)"]],
+      "options": [
+        [
+          "auto",
+          "Auto"
+        ],
+        [
+          "mhd",
+          "MHD live monitor"
+        ],
+        [
+          "someip",
+          "Bus signals"
+        ],
+        [
+          "diag",
+          "Diagnostic (UDS)"
+        ]
+      ],
       "default": "auto"
     },
     {
       "key": "platform",
       "label": "Engine platform",
       "type": "choice",
-      "options": [["B58", "B58 (gen 1/2)"], ["S58", "S58"]],
+      "options": [
+        [
+          "B58",
+          "B58 (gen 1/2)"
+        ],
+        [
+          "S58",
+          "S58"
+        ]
+      ],
       "default": "B58"
     },
     {
       "key": "rate",
       "label": "Sample rate",
       "type": "choice",
-      "options": [[5, "5 Hz"], [10, "10 Hz"], [20, "20 Hz"], [50, "50 Hz"]],
+      "options": [
+        [
+          5,
+          "5 Hz"
+        ],
+        [
+          10,
+          "10 Hz"
+        ],
+        [
+          20,
+          "20 Hz"
+        ],
+        [
+          50,
+          "50 Hz"
+        ]
+      ],
       "default": 10
     },
     {
       "key": "units",
       "label": "Units",
       "type": "choice",
-      "options": [["metric", "Metric (°C, km/h, bar)"], ["imperial", "Imperial (°F, mph, psi)"]],
+      "options": [
+        [
+          "metric",
+          "Metric (\u00b0C, km/h, bar)"
+        ],
+        [
+          "imperial",
+          "Imperial (\u00b0F, mph, psi)"
+        ]
+      ],
       "default": "metric"
     },
     {
       "key": "style",
       "label": "Live display style",
       "type": "choice",
-      "options": [["tiles", "Tiles"], ["bars", "Bars"], ["dials", "Dials"]],
+      "options": [
+        [
+          "tiles",
+          "Tiles"
+        ],
+        [
+          "bars",
+          "Bars"
+        ],
+        [
+          "dials",
+          "Dials"
+        ]
+      ],
       "default": "tiles"
     },
     {
       "key": "maxtiles",
       "label": "Max live channels",
       "type": "choice",
-      "options": [[6, "6"], [8, "8"], [10, "10"], [12, "12"]],
+      "options": [
+        [
+          6,
+          "6"
+        ],
+        [
+          8,
+          "8"
+        ],
+        [
+          10,
+          "10"
+        ],
+        [
+          12,
+          "12"
+        ]
+      ],
       "default": 8
     },
     {

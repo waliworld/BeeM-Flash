@@ -19,7 +19,7 @@
 //
 var fs = require('fs');
 var path = require('path');
-var Channels = require('../apps/wali_datalog/src/channels');
+var Channels = require('../apps/wali_datalog/channels');
 var ds = require('./build_pid_dataset'); // reuse CSV line parser + COLS
 
 function lenOf(dt) { var n = parseInt(String(dt).replace(/[^0-9]/g, ''), 10) || 16; return Math.max(1, n / 8) | 0; }
@@ -70,7 +70,7 @@ if (require.main === module) {
   if (!dsPath || !selPath) { console.error('usage: node scripts/pidmap_from_dataset.js <dataset.csv> <select.json> [out.json]'); process.exit(2); }
   var selDoc = JSON.parse(fs.readFileSync(selPath, 'utf8'));
   var res = build(fs.readFileSync(dsPath, 'utf8'), selDoc);
-  var out = process.argv[4] || path.join('apps', 'wali_datalog', 'profiles', 'pidmap.' + selDoc.platform.toLowerCase() + '.json');
+  var out = process.argv[4] || path.join('profiles', 'pidmap.' + selDoc.platform.toLowerCase() + '.json');
   var derived = selDoc.datasetPlatform && selDoc.datasetPlatform !== selDoc.platform;
   var doc = {
     label: selDoc.platform + ' enhanced-PID map (community-sourced, unverified'

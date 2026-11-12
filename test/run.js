@@ -5,7 +5,7 @@
 // Covers formatting, the UDS codec, the log engine (incl. error path), map-
 // control gating, the provider's demo fallback, and channel helpers.
 //
-var A = '../apps/wali_datalog/src/';
+var A = '../apps/wali_datalog/';
 var F = require(A + 'format');
 var uds = require(A + 'uds');
 var Channels = require(A + 'channels');

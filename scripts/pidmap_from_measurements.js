@@ -19,7 +19,7 @@
 //
 var fs = require('fs');
 var path = require('path');
-var Channels = require('../apps/wali_datalog/src/channels');
+var Channels = require('../apps/wali_datalog/channels');
 var mhd = require('./preset_from_mhd_csv'); // reuse its MHD name map
 
 function norm(s) { return String(s == null ? '' : s).replace(/\s+/g, ' ').trim(); }
@@ -129,7 +129,7 @@ if (require.main === module) {
   if (!inPath) { console.error('usage: node scripts/pidmap_from_measurements.js <table.csv|json> [out.json] [--label "..."]'); process.exit(2); }
   var labelArg = '';
   var li = process.argv.indexOf('--label'); if (li >= 0) labelArg = process.argv[li + 1] || '';
-  var outPath = process.argv[3] && process.argv[3].charAt(0) !== '-' ? process.argv[3] : path.join('apps', 'wali_datalog', 'profiles', 'pidmap.json');
+  var outPath = process.argv[3] && process.argv[3].charAt(0) !== '-' ? process.argv[3] : path.join('profiles', 'pidmap.json');
 
   var raw = fs.readFileSync(inPath, 'utf8');
   var rows = inPath.match(/\.json$/i) ? JSON.parse(raw) : parseCsv(raw);

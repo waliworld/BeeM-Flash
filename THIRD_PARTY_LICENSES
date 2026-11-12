@@ -1,0 +1,35 @@
+Third-party components bundled in this repository
+=================================================
+
+This project is our own work. Two third-party, open-source components are
+vendored or referenced; both are MIT-licensed and credited here. No MHD Flasher
+code and no BMW SDK are included.
+
+-------------------------------------------------------------------------------
+1. MGU App Kit  (directory: kit/)
+-------------------------------------------------------------------------------
+The build/runtime kit that every community MGU app uses: the Node runtime
+(canvas, gauges, signals, display, fonts), the iDrive 8 boot/link layer, and the
+build tooling (kit/tools/build.py and friends). Vendored unmodified so the app
+builds and installs without an external checkout.
+
+License: MIT. Full text: kit/LICENSE
+  Copyright (c) 2026 cauliflowermossgrape
+  Copyright (c) 2026 小白151 (GitHub: JackieZ123430) — Chinese translation
+
+-------------------------------------------------------------------------------
+2. MHD live-monitor packed-block layout  (referenced in: apps/wali_datalog/mhdmonitor.js)
+-------------------------------------------------------------------------------
+The field order and scaling of the UDS "2C 88 01" live-monitor block were
+transcribed from the published ADX description used by the MIT-licensed
+freebeamer/core project. Only the data-layout description is used; no code is
+copied.
+
+License: MIT (freebeamer/core).
+
+-------------------------------------------------------------------------------
+Not included
+-------------------------------------------------------------------------------
+- BMW on-board SDK (oap-sdk) — supplied by the head unit at install time; a
+  placeholder (oap-sdk/, git-ignored) stands in for local builds only.
+- MHD Flasher application code — none is used.

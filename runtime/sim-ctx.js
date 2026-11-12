@@ -7,7 +7,7 @@
 // ctx.loop are omitted so the harness drives tick()/render() deterministically.
 //
 var record = require('./record-surface');
-var storageMod = require('../apps/wali_datalog/src/storage');
+var storageMod = require('../apps/wali_datalog/storage');
 
 function makeSimCtx(opts) {
   opts = opts || {};

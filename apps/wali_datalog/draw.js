@@ -14,7 +14,7 @@
 //   cv.text(str,x,y,size,color,opts) -> width            // opts:{align:'l'|'c'|'r', weight:'normal'|'bold'|'light'}
 //   cv.textWidth(str,size,weight) -> width
 //
-var F = require('../format');
+var F = require('./format');
 
 var GAUGE_A0 = 150;
 var GAUGE_A1 = 390; // 240-degree sweep, open at the bottom

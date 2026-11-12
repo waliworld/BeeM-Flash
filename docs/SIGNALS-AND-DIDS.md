@@ -71,7 +71,7 @@ flags, no vendor data):
 
 ```bash
 node scripts/preset_from_mhd_csv.js path/to/LogPresets.csv
-# -> apps/wali_datalog/presets/<ECU>.json  (e.g. 00005C64145A05.json)
+# -> presets/<ECU>.json  (e.g. 00005C64145A05.json)
 ```
 
 Copy that file to the head unit as the app's **`preset.json`** (in the app data
@@ -99,7 +99,7 @@ a block costs no extra requests.
 Rather than editing code, drop a JSON profile on the unit as the app's
 **`pidmap.json`** (in the app's data dir). `main.js` loads it at startup via
 `dme_profiles.fromJson`. Start from the documented example at
-[`apps/wali_datalog/profiles/template.json`](../apps/wali_datalog/profiles/template.json):
+[`profiles/template.json`](../profiles/template.json):
 
 ```json
 {
@@ -127,7 +127,7 @@ one step:
 
 ```bash
 node scripts/pidmap_from_measurements.js measurements.csv --label "B58 gen2"
-# -> apps/wali_datalog/profiles/pidmap.json  (verified:false until you confirm)
+# -> profiles/pidmap.json  (verified:false until you confirm)
 ```
 
 The table is a CSV (or JSON array) with columns matched case-insensitively:
@@ -154,11 +154,11 @@ community-sourced and `verified:false`:
   identifier,address,data_type,endianness,scale,offset,unit,source,verified`
   (see `data/SOURCES.md` for attribution). Rebuild with
   `node scripts/build_pid_dataset.js <bmw_pid_data-checkout>`.
-- `apps/wali_datalog/profiles/pidmap.b58.json` — 21 core channels mapped to B58
+- `profiles/pidmap.b58.json` — 21 core channels mapped to B58
   enhanced PIDs, with units folded into the scaling (hPa→bar, MPa→bar, …).
   Rebuild/extend via `profiles/select.b58.json` +
   `node scripts/pidmap_from_dataset.js data/bmw_enhanced_pids.csv profiles/select.b58.json`.
-- `apps/wali_datalog/profiles/pidmap.s58.json` — S58 candidate (S58 and B58 gen2
+- `profiles/pidmap.s58.json` — S58 candidate (S58 and B58 gen2
   are both Bosch MG1 and share the enhanced-PID map); derived from B58, flagged
   unverified for S58.
 
