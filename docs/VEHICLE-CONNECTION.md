@@ -1,8 +1,13 @@
 # Vehicle connection (ENET / DoIP) — the safety gate
 
 This describes the **Connect** screen and the consent model behind it. Read
-this alongside `NOTICE.md`, which states the project's scope (no flashing, no
-ENET-over-WiFi bridge, no security-access unlock).
+this alongside `NOTICE.md` (project scope and independence) and, for the write
+paths an owner can use on their own vehicle, `docs/FLASHING.md` (the open
+calibration-section flasher and the pluggable SecurityAccess framework).
+
+The **live-data path** described below is read-only: the logger and dashboard
+only ever *read* from the vehicle. Writing (map switch, calibration flashing)
+is a separate, explicitly-gated action, never part of connecting or logging.
 
 ## What it is
 

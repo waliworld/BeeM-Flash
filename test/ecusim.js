@@ -33,6 +33,13 @@ function EcuSim(opts) {
   this.routines = opts.routines || {};            // { rid: fn(sub,data)->[bytes] | [bytes] }
   this._lastSeed = null;
   this.log = [];                                  // every request seen (for assertions)
+  // ---- flashing (write) simulation state ----
+  this.maxBlock = opts.maxBlock || 0x0102;        // max TransferData block the "DME" accepts
+  this.flashNeedsUnlock = opts.flashNeedsUnlock === true; // gate 0x34 behind SecurityAccess
+  this.flashNeedsProg = opts.flashNeedsProg === true;     // gate 0x34 behind programmingSession (0x02)
+  this.download = null;                           // active download { addr, size, received[], counter }
+  this.flashed = null;                            // the bytes written by the last completed download
+  this.resetType = null;                          // last ECU reset subfunction seen
 }
 
 EcuSim.prototype.handle = function (req) {
@@ -64,6 +71,37 @@ EcuSim.prototype.handle = function (req) {
     }
     if (this.dids.hasOwnProperty(did)) return [0x62, req[1], req[2]].concat(this.dids[did]);
     return [0x7F, 0x22, 0x31];                      // requestOutOfRange
+  }
+
+  if (sid === uds.SID.ECU_RESET) { this.resetType = req[1]; this.download = null; return [0x51, req[1]]; }
+
+  // RequestDownload (0x34): begin a write. Optionally gated behind unlock / a
+  // programming session — the standard preconditions a real DME enforces.
+  if (sid === uds.SID.REQUEST_DOWNLOAD) {
+    if (this.flashNeedsUnlock && !this.unlocked) return [0x7F, 0x34, 0x33]; // securityAccessDenied
+    if (this.flashNeedsProg && this.session !== 0x02) return [0x7F, 0x34, 0x22]; // conditionsNotCorrect
+    var alfid = req[2], aB = alfid & 0x0f, sB = (alfid >> 4) & 0x0f, k = 3, addr = 0, size = 0;
+    for (var ai = 0; ai < aB; ai++) addr = addr * 256 + (req[k++] & 0xff);
+    for (var si = 0; si < sB; si++) size = size * 256 + (req[k++] & 0xff);
+    this.download = { addr: addr, size: size, received: [], counter: 0 };
+    var mb = this.maxBlock;
+    return [0x74, 0x20, (mb >> 8) & 0xff, mb & 0xff]; // lengthFormatId 0x20 = 2-byte maxBlockLength
+  }
+
+  // TransferData (0x36): one block; append it and echo the sequence counter.
+  if (sid === uds.SID.TRANSFER_DATA) {
+    if (!this.download) return [0x7F, 0x36, 0x24]; // requestSequenceError
+    this.download.counter = req[1];
+    this.download.received = this.download.received.concat(req.slice(2));
+    return [0x76, req[1]];
+  }
+
+  // RequestTransferExit (0x37): finalize; expose the written bytes for assertions.
+  if (sid === uds.SID.TRANSFER_EXIT) {
+    if (!this.download) return [0x7F, 0x37, 0x24];
+    this.flashed = this.download.received.slice();
+    this.download = null;
+    return [0x77];
   }
 
   if (sid === uds.SID.ROUTINE) {

@@ -54,6 +54,17 @@ app, and it is built from scratch — see [`NOTICE.md`](NOTICE.md).
 - **Map control (opt-in)** — switch tune maps via the DME diagnostic job,
   guarded by on-screen confirmation and "stationary + engine idle" preconditions.
   **Off by default.**
+- **Open ENET/DoIP diagnostic toolkit** — an open DoIP/ENET transport, a
+  **pluggable SecurityAccess (seed/key)** framework whose key algorithm you
+  supply for your own ECU (no manufacturer keys bundled), and an **"all-in" test
+  ECU** (`test/ecusim.js`) the community can build on off-car.
+- **Calibration-section flashing (owner's own vehicle)** — for a car you've
+  already flashed that needs only the calibration section rewritten, an open UDS
+  flasher built from the standard download services. It bundles no data, keys, or
+  addresses — you supply them — refuses to act without explicit per-flash
+  acknowledgment, and reports failures honestly. Irreversible and safety-critical;
+  see [`docs/FLASHING.md`](docs/FLASHING.md). **Your vehicle, your data, your
+  responsibility.**
 - **Works without a car** — a clearly-labelled demo mode drives every screen so
   the app can be reviewed and demonstrated off the vehicle.
 - **Vehicle connection (ENET/DoIP), gated** — a **Connect** screen (Live → D)
@@ -61,7 +72,8 @@ app, and it is built from scratch — see [`NOTICE.md`](NOTICE.md).
   vehicle until you **acknowledge** the warning and **enable** the connection —
   and enabling is never remembered: every app launch starts fully disconnected.
   Finds the car automatically (ISO 13400 vehicle discovery, no manual IP entry).
-  Always read-only. See [`docs/VEHICLE-CONNECTION.md`](docs/VEHICLE-CONNECTION.md).
+  The live-data path is read-only; writes (map switch, flashing) are separate,
+  explicitly-gated actions. See [`docs/VEHICLE-CONNECTION.md`](docs/VEHICLE-CONNECTION.md).
 
 ## Quick start
 

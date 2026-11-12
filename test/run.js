@@ -670,6 +670,90 @@ Promise.resolve()
       ok(r.unlocked === true, 'seedkey: unlock with a makeAlgo({add:1}) configured algorithm');
     });
   })
+  .then(function () {
+    // ---- calibration-section flashing (open UDS write path) ----------------
+    // Flash a BIN through the full session -> security -> erase -> download ->
+    // transfer -> exit -> verify -> reset sequence against the test ECU, and
+    // confirm the written bytes match and the write is confirmed.
+    var flash = require(A + 'flash');
+    var EcuSim = require('./ecusim').EcuSim;
+    var cal = []; for (var i = 0; i < 300; i++) cal.push((i * 7 + 3) & 0xff); // multi-block payload
+    var clientKey = function (seed) { return seed.map(function (b) { return (b + 1) & 0xff; }); };
+
+    // Hard gates first: no silent flashing.
+    return flash.flashCalibration(null, { data: cal, address: 0x80000000 }).then(function (r0) {
+      ok(r0.ok === false && /acknowledg/i.test(r0.message), 'flash: refuses without explicit acknowledgment');
+      return flash.flashCalibration(null, { acknowledged: true, address: 0x80000000 });
+    }).then(function (r1) {
+      ok(r1.ok === false && /no calibration data/i.test(r1.message), 'flash: refuses without calibration data');
+      return flash.flashCalibration(null, { acknowledged: true, data: cal });
+    }).then(function (r2) {
+      ok(r2.ok === false && /address/i.test(r2.message), 'flash: refuses without a section address');
+
+      // Full flash against a DME that gates the write behind unlock + prog session.
+      var sim = new EcuSim({
+        maxBlock: 66, flashNeedsUnlock: true, flashNeedsProg: true,
+        routines: { 0xFF00: [0x00], 0xFF01: [0x00] } // erase ok, verify ok
+      });
+      var steps = [];
+      return flash.flashCalibration(sim.transport(), {
+        acknowledged: true, data: cal, address: 0xA0010000,
+        securityLevel: 0x11, keyFn: clientKey,
+        eraseRid: 0xFF00, checkRid: 0xFF01
+      }, function (s) { steps.push(s); }).then(function (res) {
+        ok(res.ok === true, 'flash: full sequence succeeds');
+        ok(res.confirmed === true, 'flash: write confirmed by verify routine');
+        var same = sim.flashed && sim.flashed.length === cal.length && sim.flashed.every(function (b, k) { return b === cal[k]; });
+        ok(same, 'flash: ECU received exactly the calibration bytes (reassembled across blocks)');
+        ok(sim.resetType === 0x01, 'flash: ECU reset issued after flashing');
+        ok(steps.indexOf('requestDownload') >= 0 && steps.indexOf('transferExit') >= 0, 'flash: progress reported through the sequence');
+      });
+    }).then(function () {
+      // Denied security must surface honestly, not report success.
+      var sim2 = new EcuSim({ flashNeedsUnlock: true });
+      return flash.flashCalibration(sim2.transport(), {
+        acknowledged: true, data: cal, address: 0xA0010000,
+        securityLevel: 0x11, keyFn: function (s) { return s.map(function (b) { return (b ^ 0xFF) & 0xff; }); } // wrong key
+      }).then(function (res) {
+        ok(res.ok === false && /SecurityAccess denied/i.test(res.message), 'flash: wrong key -> honest SecurityAccess failure, not written');
+        ok(sim2.flashed === null, 'flash: nothing written when security fails');
+      });
+    }).then(function () {
+      // Declarative descriptor -> opts (user-supplied data, no code, nothing bundled).
+      var bad = flash.normalizeDescriptor({}, cal);
+      ok(bad.error && /address/i.test(bad.error), 'flash: descriptor without an address is rejected');
+      var norm = flash.normalizeDescriptor({
+        address: '0xA0010000', session: 2,
+        security: { level: 17, algo: { type: 'add', value: 1 } },
+        eraseRoutine: '0xFF00', checkRoutine: '0xFF01'
+      }, cal);
+      ok(norm.opts && norm.opts.address === 0xA0010000 && typeof norm.opts.keyFn === 'function' && norm.opts.acknowledged === false,
+        'flash: descriptor normalizes to opts (algo built from spec, not acknowledged by default)');
+      var sim4 = new EcuSim({ maxBlock: 66, flashNeedsUnlock: true, routines: { 0xFF00: [0x00], 0xFF01: [0x00] } });
+      norm.opts.acknowledged = true; // the owner acknowledges at flash time
+      return flash.flashCalibration(sim4.transport(), norm.opts).then(function (res) {
+        ok(res.ok === true && res.confirmed === true, 'flash: descriptor-driven flash succeeds and verifies');
+      });
+    }).then(function () {
+      // End-to-end over the ENET/DoIP gateway (proves it works through the real transport).
+      var doip = require(A + 'doip');
+      var flash = require(A + 'flash');
+      var EcuSim = require('./ecusim').EcuSim;
+      var sim3 = new EcuSim({ maxBlock: 130, routines: { 0xFF10: [0x00] } });
+      var gw = new doip.DoipGateway({ socket: sim3.doipSocket(), targetAddr: 0x1000 });
+      var cal2 = []; for (var j = 0; j < 200; j++) cal2.push((255 - j) & 0xff);
+      return gw.activate().then(function () {
+        return flash.flashCalibration(function (bytes) { return gw.send(bytes); }, {
+          acknowledged: true, data: cal2, address: 0xA0020000, checkRid: 0xFF10
+        });
+      }).then(function (res) {
+        ok(res.ok === true && res.confirmed === true, 'flash: works end-to-end over the ENET/DoIP gateway');
+        var same = sim3.flashed && sim3.flashed.length === cal2.length && sim3.flashed.every(function (b, k) { return b === cal2[k]; });
+        ok(same, 'flash: DoIP-delivered calibration bytes match');
+        gw.close();
+      });
+    });
+  })
   .then(report)
   .catch(function (e) { console.error(e); process.exit(1); });
 

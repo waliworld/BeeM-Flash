@@ -9,12 +9,16 @@
 
 var SID = {
   SESSION: 0x10,
+  ECU_RESET: 0x11,
   SECURITY: 0x27,
   TESTER_PRESENT: 0x3E,
   READ_DID: 0x22,
   READ_MEM: 0x23, // ReadMemoryByAddress (read-only; used for A2L address measurements)
   DDDI: 0x2C, // DynamicallyDefineDataIdentifier (the fast block read uses 2C 88 01)
-  ROUTINE: 0x31
+  ROUTINE: 0x31,
+  REQUEST_DOWNLOAD: 0x34, // calibration flashing (write): see flash.js
+  TRANSFER_DATA: 0x36,
+  TRANSFER_EXIT: 0x37
 };
 
 var ROUTINE_SUB = { START: 0x01, STOP: 0x02, RESULT: 0x03 };
@@ -98,6 +102,52 @@ function buildMonitorRequest() {
   return [SID.DDDI, 0x88, 0x01];
 }
 
+// Big-endian byte array of a value (addresses can exceed 32 bits, so divide).
+function bytesOf(val, n) {
+  var out = [];
+  for (var i = n - 1; i >= 0; i--) out.push(Math.floor(val / Math.pow(256, i)) & 0xff);
+  return out;
+}
+
+// ---- programming / flashing (write) — see flash.js -----------------------
+// These are the standard UDS download services. They are used ONLY by the gated,
+// user-confirmed calibration flash flow, for a vehicle the owner has already
+// flashed, with user-supplied data. Nothing here acts on a car by itself.
+
+function buildEcuReset(type) { return [SID.ECU_RESET, u8(type == null ? 0x01 : type)]; }
+
+// RequestDownload (0x34): announce a write of `size` bytes at `addr`.
+// dataFormatIdentifier 0x00 = no compression/encryption. The DME replies with
+// the maximum block length it will accept per TransferData.
+function buildRequestDownload(addr, size, opts) {
+  opts = opts || {};
+  var dataFormat = opts.dataFormat == null ? 0x00 : opts.dataFormat;
+  var addrBytes = opts.addrBytes || 4, sizeBytes = opts.sizeBytes || 4;
+  var alfid = ((sizeBytes & 0x0f) << 4) | (addrBytes & 0x0f);
+  return [SID.REQUEST_DOWNLOAD, dataFormat & 0xff, alfid].concat(bytesOf(addr, addrBytes)).concat(bytesOf(size, sizeBytes));
+}
+
+// TransferData (0x36): one block, with a 1-byte block sequence counter (1..255,0,..).
+function buildTransferData(counter, data) {
+  return [SID.TRANSFER_DATA, counter & 0xff].concat(data || []);
+}
+
+// RequestTransferExit (0x37): end the download.
+function buildRequestTransferExit(data) {
+  return [SID.TRANSFER_EXIT].concat(data || []);
+}
+
+// Parse the RequestDownload (0x74) reply -> { maxBlockLength }.
+function parseDownloadResponse(bytes) {
+  var p = parseResponse(SID.REQUEST_DOWNLOAD, bytes);
+  if (!p.positive) return p;
+  var lenFmt = (p.data[0] >> 4) & 0x0f; // lengthFormatIdentifier: high nibble = #bytes
+  var max = 0;
+  for (var i = 0; i < lenFmt && 1 + i < p.data.length; i++) max = max * 256 + p.data[1 + i];
+  p.maxBlockLength = max;
+  return p;
+}
+
 // ---- response parsing -----------------------------------------------------
 
 // Returns { positive, sid, sub, did, rid, data, nrc, nrcName, pending, error }
@@ -179,6 +229,12 @@ module.exports = {
   buildSecuritySendKey: buildSecuritySendKey,
   buildRoutineControl: buildRoutineControl,
   buildMonitorRequest: buildMonitorRequest,
+  buildEcuReset: buildEcuReset,
+  buildRequestDownload: buildRequestDownload,
+  buildTransferData: buildTransferData,
+  buildRequestTransferExit: buildRequestTransferExit,
+  parseDownloadResponse: parseDownloadResponse,
+  bytesOf: bytesOf,
   parseResponse: parseResponse,
   readInt: readInt,
   scaleFromSpec: scaleFromSpec

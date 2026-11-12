@@ -2,10 +2,13 @@
 
 ## What this project is
 
-**Wali Datalog** is an independent application for the BMW **MGU** head unit
-(iDrive 7 and iDrive 8). It reads live vehicle data for datalogging and,
-optionally, requests a tune **map switch** on a car that has already been tuned
-by its owner. It is written from scratch.
+**Wali Datalog** is an independent, open-source application for the BMW **MGU**
+head unit (iDrive 7 and iDrive 8). It reads live vehicle data for datalogging,
+requests a tune **map switch** on a car already tuned by its owner, and provides
+an open ENET/DoIP diagnostic toolkit — a pluggable SecurityAccess (seed/key)
+framework and a calibration-section flasher — for an owner working on their own
+vehicle. It is written from scratch, for the benefit of the open-source
+community. No manufacturer keys, algorithms, calibrations, or SDK are bundled.
 
 It is built the way a third-party client is built for a platform (the "RideTube
 for YouTube" model): it targets a documented, public application interface and
@@ -29,17 +32,25 @@ talks to the vehicle over standard, publicly documented diagnostic protocols.
 - All vehicle data stays on the head unit. Logs are written to the app's own
   writable data directory and exported by the user to a USB stick. No telemetry
   is sent anywhere by this app.
-- The app does not generate tunes, and does not automate or relay any third-party app
-  to flash maps. It provides live datalogging (read-only), map *switching* among
-  maps already flashed in the DME (gated, confirmed, precondition-checked), and
-  a read-only view of map definitions. Flashing a DME is irreversible and
-  safety-critical; it is intentionally out of scope.
-- **No ENET-over-WiFi bridge / no security-access unlock.** The app includes a
-  read-only DoIP client for its own live-data reads, but it does not expose the
-  vehicle's diagnostic network to external tools over WiFi (a "virtual ENET
-  adapter"/gateway), and it implements no seed/key SecurityAccess. Both are the
-  enabling layer for wireless ECU flashing and broad remote vehicle access, and
-  are intentionally out of scope.
+- The app does not generate tunes, and bundles no calibration data, ECU address,
+  or security key — the owner supplies all of those for their own ECU. It
+  provides live datalogging (read-only), map *switching* among maps already
+  flashed in the DME (gated, confirmed, precondition-checked), a read-only view
+  of map definitions, and an **open calibration-section flasher** (standard UDS
+  download services) for a vehicle the owner has already flashed and now needs
+  only the calibration section rewritten. Flashing a DME is irreversible and
+  safety-critical: the flasher refuses to act without explicit per-flash
+  acknowledgment and the owner's own data, reports failures honestly (never a
+  false "success"), and is the owner's responsibility. See `docs/FLASHING.md`.
+- **Open ENET/DoIP gateway + pluggable SecurityAccess.** The app includes an
+  open DoIP/ENET transport and a seed/key SecurityAccess framework whose
+  key-derivation algorithm is **supplied by the owner or the community** (the
+  `python-udsoncan` `security_algo` model) — no manufacturer algorithm is
+  shipped. These are standard, publicly documented diagnostic capabilities for
+  an owner working on their own vehicle, and the "all-in" test harness
+  (`test/ecusim.js`) lets the community develop against them off-car. The app
+  sends nothing to a vehicle until the per-session Connect consent gate is
+  satisfied.
 - **Vehicle connection requires explicit, per-session consent.** No socket is
   ever opened and no packet is ever sent to the vehicle's diagnostic network
   until the user, on the Connect screen, (1) acknowledges a plain-language
