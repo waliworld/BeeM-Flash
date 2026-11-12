@@ -523,6 +523,27 @@ function makeFakeDiscoverySocket(respond) {
   ok(vr.match === false && /^[0-9a-f]{64}$/.test(vr.sha256), 'binverify: unknown image -> no match, reports its hash');
 })();
 
+// ---- OBD-II source: PID decode + both boost PIDs (additional source) --------
+(function () {
+  var obd = require(A + 'obd');
+  near(obd.parse(0x0C, [0x41, 0x0C, 0x1A, 0xF8]).rpm, 1726, 1, 'obd: rpm (PID 0x0C)');
+  eq(obd.parse(0x05, [0x41, 0x05, 0x5A]).coolant, 50, 'obd: coolant (PID 0x05, A-40)');
+  near(obd.parse(0x0B, [0x41, 0x0B, 0xFF]).boostObd0B, 2.55, 1e-6, 'obd: 0x0B manifold boost caps at 2.55 bar');
+  var b70 = obd.parse(0x70, [0x41, 0x70, 0x00, 0x24, 0x00]); // u16(d,1)=0x2400=9216 /32=288 kPa
+  ok(b70 && b70.boostObd70 > 2.55, 'obd: 0x70 boost does NOT cap (reads above 2.55 bar)');
+  ok(obd.parse(0x0C, [0x7f, 0x01, 0x12]) === null, 'obd: negative response -> null');
+  // provider decode/merge + boost derivation (prefer wide-range source over 0x0B)
+  var p = new obd.ObdProvider({}, {});
+  p._apply(obd.parse(0x0C, [0x41, 0x0C, 0x1A, 0xF8]));
+  p._apply(obd.parse(0x33, [0x41, 0x33, 0x64]));  // baro 100 kPa = 1.0 bar
+  p._apply(obd.parse(0x0B, [0x41, 0x0B, 0xFF]));  // manifold 255 kPa abs
+  p._apply(obd.parse(0x87, [0x41, 0x87, 0x00, 0x90])); // wide manifold 0x0090/32 = 4.5... kPa? u16=144 /32=4.5 kPa (demo)
+  var v = p.read();
+  near(v.rpm, 1726, 1, 'obd provider: rpm cached as a channel');
+  near(v.boostObd0B, 2.55, 1e-6, 'obd provider: 0x0B channel exposed');
+  ok(isFinite(v.boost) && isFinite(v.boostAbs), 'obd provider: derives boost / boostAbs');
+})();
+
 // error path: storage that throws on open -> engine error state
 (function () {
   var bad = { open: function () { throw new Error('disk full'); } };
@@ -1038,6 +1059,36 @@ Promise.resolve()
       // read-only: ecuinfo issues only 0x22 requests
       var onlyReads = sim.log.every(function (r) { return r[0] === uds.SID.READ_DID; });
       ok(onlyReads, 'ecuinfo: only ReadDataByIdentifier (0x22) issued — read-only');
+    });
+  })
+  .then(function () {
+    // ---- on-car calibration read-out (0x23) + fingerprint ------------------
+    var calreadout = require(A + 'calreadout');
+    var binverify = require(A + 'binverify');
+    var region = []; for (var i = 0; i < 256; i++) region.push(i & 0xff);
+    // fake DME: answer ReadMemoryByAddress (0x23) from a 256-byte region at 0x8000
+    var send = function (bytes) {
+      return Promise.resolve().then(function () {
+        if (bytes[0] !== uds.SID.READ_MEM) return [0x7f, bytes[0], 0x11];
+        var alfid = bytes[1], aB = alfid & 0x0f, sB = (alfid >> 4) & 0x0f, k = 2, addr = 0, len = 0, j;
+        for (j = 0; j < aB; j++) addr = addr * 256 + bytes[k++];
+        for (j = 0; j < sB; j++) len = len * 256 + bytes[k++];
+        var base = addr - 0x8000, out = [0x63], m;
+        for (m = 0; m < len; m++) out.push(region[(base + m) % region.length]);
+        return out;
+      });
+    };
+    var seen = [];
+    return calreadout.readCalibration(send, { address: 0x8000, size: 256, chunk: 64 }, function (pct) { seen.push(pct); }).then(function (res) {
+      ok(res.ok && res.size === 256, 'calreadout: assembles the full region over chunked 0x23 reads');
+      ok(res.data[0] === 0 && res.data[255] === 255, 'calreadout: bytes are read back correctly');
+      ok(seen[seen.length - 1] === 100, 'calreadout: progress reaches 100%');
+      var v = binverify.verify(res.data);
+      ok(v.match === false && /^[0-9a-f]{64}$/.test(v.sha256), 'calreadout: fingerprint runs on the live read-out');
+      // refuses without a configured region
+      return calreadout.readCalibration(send, {});
+    }).then(function (r2) {
+      ok(r2.ok === false && /region/i.test(r2.error), 'calreadout: refuses without a configured region');
     });
   })
   .then(report)

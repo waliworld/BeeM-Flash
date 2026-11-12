@@ -17,6 +17,7 @@ function Provider(ctx, opts) {
   this.someip = opts.someip || null; // SomeipProvider | null
   this.diag = opts.diag || null;     // DiagProvider | null
   this.monitor = opts.monitor || null;  // FastLog (UDS block logger) | null (preferred when present)
+  this.obd = opts.obd || null;       // ObdProvider (standard OBD-II PIDs) | null
   this.demo = new Demo();
   this.getSetting = opts.getSetting || function () { return undefined; };
   this.demoSince = 0;
@@ -46,6 +47,7 @@ Provider.prototype.read = function (nowMs) {
   var mon = (this.monitor && (pref === 'auto' || pref === 'fast')) ? this.monitor.read() : {};
   var sip = (this.someip && (pref === 'auto' || pref === 'someip')) ? this.someip.read() : {};
   var dia = (this.diag && (pref === 'auto' || pref === 'diag')) ? this.diag.read() : {};
+  var obd = (this.obd && (pref === 'auto' || pref === 'obd')) ? this.obd.read() : {};
 
   var values = {};
   var liveCount = 0;
@@ -53,7 +55,9 @@ Provider.prototype.read = function (nowMs) {
   for (var i = 0; i < chans.length; i++) {
     var ch = chans[i];
     var v;
+    // channel-keyed sources first (fast block, then OBD-II), then keyed sources
     if (typeof mon[ch.key] === 'number' && isFinite(mon[ch.key])) v = mon[ch.key];
+    else if (typeof obd[ch.key] === 'number' && isFinite(obd[ch.key])) v = obd[ch.key];
     else if (ch.read.kind === 'someip') v = sip[ch.read.sig];
     else if (ch.read.kind === 'diag') v = dia[ch.read.key];
     else v = undefined; // derived filled below

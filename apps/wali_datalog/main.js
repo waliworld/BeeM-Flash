@@ -11,6 +11,7 @@
 //
 var SomeipProvider = require('./someip');
 var DiagProvider = require('./diag');
+var ObdProvider = require('./obd').ObdProvider;
 var Provider = require('./provider');
 var FastLog = require('./fastlog');
 var LogEngine = require('./logengine');
@@ -23,6 +24,8 @@ var dme = require('./dme_profiles');
 var dtc = require('./dtc');
 var modules = require('./modules');
 var ecuinfo = require('./ecuinfo');
+var calreadout = require('./calreadout');
+var binverify = require('./binverify');
 var flash = require('./flash');
 var flashrun = require('./flashrun');
 var theme = require('./theme');
@@ -49,7 +52,7 @@ var SETTINGS_SCHEMA = [
   { key: 'maxtiles', label: 'Max live gauges', options: [6, 8, 10, 12] },
   { key: 'rate', label: 'Sample rate', hint: 'Hz', options: [5, 10, 20, 50] },
   { key: 'demo', label: 'Demo data', options: ['auto', 'on', 'off'] },
-  { key: 'source', label: 'Data source', options: ['auto', 'fast', 'someip', 'diag'] },
+  { key: 'source', label: 'Data source', hint: 'auto / fast / bus / UDS / OBD-II', options: ['auto', 'fast', 'someip', 'diag', 'obd'] },
   { key: 'platform', label: 'Engine platform', options: ['B58', 'S58'] },
   { key: 'autostart', label: 'Auto-start on drive', bool: true },
   { key: 'mapcontrol', label: 'Map control', hint: 'writes to the DME', options: ['off', 'armed'], danger: true }
@@ -88,7 +91,7 @@ App.prototype.start = function (ctx) {
   // disabled) connection state, so both start in demo-only mode.
   this._applyEnetState();
   this.provider = new Provider(this.ctx, {
-    someip: this.someip, diag: this.diag, monitor: this.monitor, getSetting: this.getSetting
+    someip: this.someip, diag: this.diag, monitor: this.monitor, obd: this.obd, getSetting: this.getSetting
   });
 
   // ---- log engine -------------------------------------------------------
@@ -124,7 +127,7 @@ App.prototype.start = function (ctx) {
   this.flash = { armed: false, descriptor: null, opts: null, status: '', confirm: false, running: false, progress: 0, step: '', result: null };
   // Read-only ECU identification / calibration info page. A successful read is a
   // prerequisite for flashing (you must see what's on the car first).
-  this.info = { reading: false, items: null, tune: null, done: false, msg: '' };
+  this.info = { reading: false, items: null, tune: null, done: false, msg: '', binVerify: null };
 
   // react to settings changes live
   if (this.ctx.settings && this.ctx.settings.onChange) {
@@ -249,6 +252,7 @@ App.prototype._applyEnetState = function () {
   var self = this;
   if (this.diag) trySafe(function () { self.diag.stop(); });
   if (this.monitor) trySafe(function () { self.monitor.stop(); });
+  if (this.obd) trySafe(function () { self.obd.stop(); });
 
   var status = this.enet.status();
   var transport = null;
@@ -273,7 +277,13 @@ App.prototype._applyEnetState = function () {
   this.monitor = new FastLog(this.ctx, monOpts);
   if (this.monitor.supported) trySafe(function () { self.monitor.start(); });
 
-  if (this.provider) { this.provider.diag = this.diag; this.provider.monitor = this.monitor; }
+  // Additional source: standard OBD-II PIDs (incl. the non-saturating boost PIDs).
+  var obdOpts = { pids: (this._config().obdPids) || undefined };
+  if (transport) obdOpts.transport = transport;
+  this.obd = new ObdProvider(this.ctx, obdOpts);
+  if (this.obd.supported) trySafe(function () { self.obd.start(); });
+
+  if (this.provider) { this.provider.diag = this.diag; this.provider.monitor = this.monitor; this.provider.obd = this.obd; }
 };
 
 App.prototype._enetAck = function () {
@@ -436,7 +446,8 @@ App.prototype._actions = function () {
     { label: this.codes.scope === 'dme' ? 'ALL' : 'ENGINE', fn: function () { self._codesToggleScope(); } }
   ];
   if (s === 'info') return [
-    { label: 'READ', disabled: this.info.reading, fn: function () { self._infoRead(); } }
+    { label: 'READ', disabled: this.info.reading, fn: function () { self._infoRead(); } },
+    { label: 'READ CAL', disabled: this.info.reading || !this._config().calReadout, fn: function () { self._infoReadCal(); } }
   ];
   if (s === 'flash') {
     var ready = this.flash.armed && this.flash.descriptor && !this.flash.running && this.info.done;
@@ -654,6 +665,33 @@ App.prototype._infoRead = function () {
   });
 };
 
+// Read the car's current calibration region out and fingerprint it (binverify).
+// This is the on-car confirmation that catches a map-only tune keeping the stock
+// ID. The region + any security come from config.calReadout (owner-supplied).
+App.prototype._infoReadCal = function () {
+  var self = this;
+  if (this.info.reading) return Promise.resolve();
+  var cfg = this._config().calReadout;
+  if (!cfg || typeof cfg.address !== 'number') { this.info.msg = 'No calibration region configured (config.calReadout.address/size).'; return Promise.resolve(); }
+  var gw = this._makeGateway();
+  if (!gw) { this.info.msg = 'Connect to the vehicle first (CONNECT tab).'; return Promise.resolve(); }
+  var opts = {}; for (var k in cfg) if (cfg.hasOwnProperty(k)) opts[k] = cfg[k];
+  if (cfg.securityAlgo && !opts.keyFn) { try { opts.keyFn = require('./seedkey').makeAlgo(cfg.securityAlgo); } catch (e) {} }
+  this.info.reading = true; this.info.msg = 'Reading calibration…'; this.info.binVerify = null;
+  return gw.activate().then(function () {
+    return calreadout.readCalibration(function (b) { return gw.send(b); }, opts, function (pct) { self.info.msg = 'Reading calibration… ' + pct + '%'; });
+  }).then(function (res) {
+    if (!res.ok) { self.info.msg = 'Cal read failed: ' + res.error; return; }
+    var v = binverify.verify(res.data);
+    self.info.binVerify = v;
+    self.info.msg = 'Read ' + res.size + ' bytes — ' + binverify.describe(v);
+  }).catch(function (e) {
+    self.info.msg = 'Cal read failed: ' + ((e && e.message) || e);
+  }).then(function () {
+    self.info.reading = false; try { gw.close(); } catch (x) {}
+  });
+};
+
 // ---- settings (SETUP tab) ----------------------------------------------
 App.prototype._setupMove = function (d) {
   var n = SETTINGS_SCHEMA.length;
@@ -803,7 +841,7 @@ App.prototype.buildView = function () {
       descriptor: this.flash.descriptor, result: this.flash.result,
       blocked: !this.info.done, tune: this.info.tune
     },
-    info: { reading: this.info.reading, items: this.info.items, tune: this.info.tune, done: this.info.done, msg: this.info.msg },
+    info: { reading: this.info.reading, items: this.info.items, tune: this.info.tune, done: this.info.done, msg: this.info.msg, binVerify: this.info.binVerify },
     setup: this._setupItems(), setupSel: this.setupSel,
     tab: this.tab, tabs: TABS, actions: this._actions(),
     webUrl: this._config().webUrl || ''
@@ -921,8 +959,13 @@ function hit(r, x, y) { return r && x >= r.x && x <= r.x + r.w && y >= r.y && y 
 
 App.prototype.render = function (cv, tabName) {
   var view = this.buildView();
-  screens.chrome(cv, this.t, view);
-  screens.content(tabName || this.tab)(cv, this.t, view, screens.CONTENT);
+  // Shrink all fonts uniformly so nothing overlaps / runs off the head-unit
+  // screen (config.fontScale, default 0.85). Layout boxes are unchanged.
+  var scale = this._config().fontScale;
+  if (typeof scale !== 'number' || !(scale > 0)) scale = 0.85;
+  var scv = screens.scaleCv(cv, scale);
+  screens.chrome(scv, this.t, view);
+  screens.content(tabName || this.tab)(scv, this.t, view, screens.CONTENT);
 };
 
 // ---- device shims -------------------------------------------------------
@@ -960,6 +1003,7 @@ App.prototype.stop = function () {
   trySafe(function () { this.someip.stop(); }.bind(this));
   trySafe(function () { this.diag.stop(); }.bind(this));
   trySafe(function () { this.monitor.stop(); }.bind(this));
+  trySafe(function () { if (this.obd) this.obd.stop(); }.bind(this));
 };
 
 // ---- helpers ------------------------------------------------------------

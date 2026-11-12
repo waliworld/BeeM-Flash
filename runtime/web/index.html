@@ -127,6 +127,7 @@
       ];
       app.info.msg = '8 of 11 identifiers read';
       app.info.tune = SAMPLE_TUNE; app.info.done = true;
+      app.info.binVerify = { match: false, kind: null, sha256: '9f2c…' }; // on-car image not stock (map-only tune caught)
       app.tab = 'info'; app.render(cv); cap = 'INFO — ECU identification + tune status (read-only)';
     }
     else if (name === 'setup') { app = makeApp(); drive(app, 6); app.setupSel = 1; app.tab = 'setup'; app.render(cv); cap = 'SETUP — in-app settings'; }

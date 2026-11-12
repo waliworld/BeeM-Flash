@@ -24,6 +24,27 @@ var TAB_Y = 46, TAB_H = 50;
 var CONTENT = { x: 24, y: 126, w: W - 48, h: 300 };
 var BAR = { x: 24, y: 438, w: W - 48, h: 74 };
 
+// Wrap a drawing surface so every text size is scaled by `s` (and textWidth
+// matches), without moving any layout box. Used to shrink all fonts uniformly so
+// nothing overlaps or runs off the edge on the head unit, where the baked fonts
+// render wider than the preview. Positions/shapes are untouched.
+function scaleCv(cv, s) {
+  if (!cv || !(s > 0) || s === 1) return cv;
+  function z(v) { return Math.max(8, Math.round(v * s)); }
+  return {
+    handle: cv.handle,
+    clear: function (c) { return cv.clear(c); },
+    fillRect: function (x, y, w, h, c) { return cv.fillRect(x, y, w, h, c); },
+    roundRect: function (x, y, w, h, r, c) { return cv.roundRect(x, y, w, h, r, c); },
+    strokeRoundRect: function (x, y, w, h, r, c, lw) { return cv.strokeRoundRect(x, y, w, h, r, c, lw); },
+    line: function (x1, y1, x2, y2, c, lw) { return cv.line(x1, y1, x2, y2, c, lw); },
+    circle: function (cx, cy, r, c) { return cv.circle(cx, cy, r, c); },
+    arcSector: function (cx, cy, r0, r1, a0, a1, c) { return cv.arcSector(cx, cy, r0, r1, a0, a1, c); },
+    text: function (str, x, y, size, color, opts) { return cv.text(str, x, y, z(size), color, opts); },
+    textWidth: function (str, size, weight) { return cv.textWidth(str, z(size), weight); }
+  };
+}
+
 // ---- geometry (shared with main.js hit-testing) ---------------------------
 function tabRects(n) {
   var out = [], width = (W - 48) / n;
@@ -490,15 +511,24 @@ function info(cv, t, view, R) {
     cv.fillRect(x, y + 11, cw - 24, 1, t.line);
   }
   // Tune / last-flash status line.
-  var tn = f.tune;
+  var tn = f.tune, bv = f.binVerify;
+  if (tn || bv) {
+    cv.fillRect(R.x + 24, R.y + R.h - 68, R.w - 48, 1, t.line);
+  }
   if (tn) {
     var oc = (tn.detected || tn.modified === true);
-    cv.fillRect(R.x + 24, R.y + R.h - 44, R.w - 48, 1, t.line);
-    cv.text('TUNE', R.x + 28, R.y + R.h - 18, 15, t.faint, { weight: 'bold' });
+    cv.text('TUNE (ID)', R.x + 28, R.y + R.h - 44, 15, t.faint, { weight: 'bold' });
     var msg = tn.detected ? ('Looks like ' + tn.detected + ' — ' + (tn.calId || '')) :
       (tn.modified === true ? ('Looks modified — ' + (tn.calId || '')) :
       (tn.modified === false ? ('Looks stock — ' + (tn.calId || '')) : tn.note));
-    cv.text(msg, R.x + 110, R.y + R.h - 18, 18, oc ? t.crit : t.text, { weight: oc ? 'bold' : 'normal' });
+    cv.text(msg, R.x + 150, R.y + R.h - 44, 18, oc ? t.crit : t.text, { weight: oc ? 'bold' : 'normal' });
+  }
+  if (bv) {
+    // On-car image fingerprint (definitive): stock = white, anything else = red.
+    var isStock = bv.match && bv.kind === 'stock';
+    cv.text('IMAGE', R.x + 28, R.y + R.h - 16, 15, t.faint, { weight: 'bold' });
+    var imsg = bv.match ? (bv.kind === 'stock' ? ('STOCK image (' + bv.id + ')') : ('MHD+ base (' + bv.id + ')')) : 'not a known stock image (modified)';
+    cv.text(imsg, R.x + 150, R.y + R.h - 16, 18, isStock ? t.text : t.crit, { weight: isStock ? 'normal' : 'bold' });
   }
 }
 
@@ -508,7 +538,7 @@ function content(name) {
 
 module.exports = {
   W: W, H: H, CONTENT: CONTENT, BAR: BAR,
-  tabRects: tabRects, barRects: barRects,
+  tabRects: tabRects, barRects: barRects, scaleCv: scaleCv,
   chrome: chrome, content: content,
   live: live, log: log, channels: channels, maps: maps, connect: connect, codes: codes, info: info, flash: flash, setup: setup,
   cval: cval,

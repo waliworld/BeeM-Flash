@@ -147,6 +147,16 @@ with `python3 -I scripts/build_binfingerprints.py <bins_root> data/stock_bins.js
 then the stockbins.js generator. The numeric stock software IDs parsed from these
 filenames also augment the A2L-derived stock-ID set used by the tune check.
 
+## OBD-II source PID scalings
+
+The optional OBD-II data source (`apps/wali_datalog/obd.js`) decodes standard
+SAE J1979 Mode-01 PIDs. The scalings are the published standard ones, cross-checked
+against the MIT-licensed openbimmer project (already credited above), including
+its note that high-boost cars should read boost from PID `0x70` / `0x87` rather
+than the `0x0B` manifold PID that saturates at 255 kPa. The app exposes all three
+so the correct source can be confirmed on-car. This source is additive; the
+UDS/DID, fast-block and bus sources are unchanged.
+
 ## What this project does **not** include
 
 No BMW SGBD/EDIABAS files, no ISTA/INPA binaries, no proprietary tuning-application code or

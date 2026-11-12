@@ -18,6 +18,21 @@ UI: one canvas screen with internal paging driven by four HMI bar buttons
 
 ## Beta 2 — v2.x.x
 
+### v2.5.0  (all additive — nothing removed)
+- **Smaller fonts** — every screen's text is scaled down uniformly (default 0.85,
+  `config.fontScale`) so nothing overlaps or runs off the head-unit screen.
+- **OBD-II data source (added, not a replacement)** — a new `obd` option under
+  Data source reads standard SAE J1979 Mode-01 PIDs, for cars without a per-tune
+  pidmap. It reads boost from PID **0x70 / 0x87** (which don't saturate) as well
+  as **0x0B** (which caps at 255 kPa), exposing all of them so the boost-PID
+  question can be settled on-car. Existing sources (fast block, bus, UDS) are
+  untouched.
+- **On-car calibration read-out (added)** — a **READ CAL** action on the INFO tab
+  reads the DME's calibration region over UDS (0x23) and runs the binary
+  fingerprint on it, so the stock/MHD+/modified verdict is confirmed against the
+  car's *live* image — the fully-automatic version of the v2.4 check. Region and
+  any security come from `config.calReadout`.
+
 ### v2.4.0
 - **Binary-level tune verification** — bundled **SHA-256 fingerprints** of 156
   known MG1 DME images (79 stock + 77 MHD+ bases, from the community
