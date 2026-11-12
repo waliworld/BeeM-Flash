@@ -91,3 +91,18 @@ refuses and sends nothing.
 `test/ecusim.js` is a fake UDS ECU (sessions, seed/key, gated DIDs, routines)
 that lets contributors develop and test these flows off-car; it is test-only and
 is not part of the installed app.
+
+## The ENET/DoIP gateway (open diagnostic connection)
+
+`doip.js` is the app's own ISO 13400 (DoIP) connection to the car over its
+diagnostic Ethernet — the open-source equivalent of an ENET adapter's link. It
+discovers the vehicle (UDP Vehicle Identification), performs routing activation,
+and carries **any** UDS request the caller builds (reads, sessions, and the
+SecurityAccess handshake from `seedkey.js`). It is a client that connects out to
+the car on a connection the user has enabled (`enetgate.js`); it is not a network
+bridge and opens no listener.
+
+`DoipGateway` composes the transport with a promise-based `send()`, routing
+activation, a TesterPresent keep-alive, and `session()` / `unlock(level, algo)`
+convenience methods. `test/ecusim.js` answers DoIP framing like a real gateway,
+so the whole path (discover → activate → unlock → read) is tested off-car.

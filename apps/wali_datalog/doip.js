@@ -1,20 +1,22 @@
 'use strict';
 //
-// doip.js — minimal ISO 13400 (DoIP) client, for the app's own live-data reads
-// over the vehicle's diagnostic Ethernet (ISO 13400).
+// doip.js — ISO 13400 (DoIP) client: the app's own diagnostic connection to the
+// vehicle over its diagnostic Ethernet (ENET), the open-source equivalent of an
+// ENET adapter's link.
 //
-// SCOPE: read-only transport. It gives our datalogger a standards-based way to
-// reach the DME (routing activation + diagnostic request/response) so it can
-// issue the read requests it already generates (UDS 0x22 / 0x2C monitor / 0x19).
-// It is NOT a gateway/bridge: it opens no external listener, forwards no
-// third-party traffic, and contains no flashing, calibration-write, or
-// security-access (seed/key) code. ISO 13400 framing is a published standard;
-// this is an original implementation.
+// SCOPE: a standards diagnostic transport. It reaches an ECU (UDP vehicle
+// discovery + routing activation + diagnostic request/response) and carries any
+// UDS request the caller builds — reads, sessions, and SecurityAccess (the
+// seed/key handshake itself lives in seedkey.js, and no manufacturer key is
+// bundled). It is a CLIENT that connects OUT to the car on a connection the user
+// has enabled (enetgate.js); it is NOT a network bridge — it opens no external
+// listener and forwards no third-party traffic. ISO 13400 framing is a published
+// standard; this is an original implementation.
 //
 // The socket is injected ({ onData(fn), write(bytes), close() }) so the DoIP
-// framing is testable off-car and the device binding (a TCP socket to the
-// vehicle's DoIP gateway) stays isolated. Logical addresses are vehicle-specific
-// and configured, not hard-coded to anything that would act on a car by default.
+// framing is testable off-car (see test/ecusim.js) and the device binding (a TCP
+// socket to the vehicle's DoIP gateway) stays isolated. Logical addresses are
+// vehicle-specific and configured, not hard-coded to act on a car by default.
 //
 var PROTO = 0x02, INV = 0xFD;
 var PT = {
@@ -218,9 +220,61 @@ function makeDoipTransport(opts) {
   return { supported: true, send: function (bytes, cb) { client.send(bytes, cb); }, client: client };
 }
 
+// A promise-shaped send(bytes) -> Promise<resp> from a callback transport
+// ({ send(bytes, cb) }); seedkey.js and any UDS flow consume this shape.
+function promiseSend(transport) {
+  return function (bytes) {
+    return new Promise(function (resolve, reject) {
+      transport.send(bytes, function (err, resp) { if (err) reject(err); else resolve(resp); });
+    });
+  };
+}
+
+// DoipGateway — the open diagnostic connection to the vehicle over ENET/DoIP.
+// Composes the DoIP transport with routing activation, an optional TesterPresent
+// keep-alive, a promise-based send(), and convenience session()/unlock() that run
+// the standard UDS session + SecurityAccess handshake with a CALLER-SUPPLIED key
+// algorithm (seedkey.js; no manufacturer key is bundled). For a vehicle you own,
+// on a connection the user has enabled (enetgate.js).
+function DoipGateway(opts) {
+  opts = opts || {};
+  this._opts = opts;
+  this.transport = makeDoipTransport(opts);
+  this.supported = this.transport.supported;
+  this.send = promiseSend(this.transport);   // send(udsBytes) -> Promise<respBytes>
+  this.client = this.transport.client || null;
+  this._keep = null;
+}
+DoipGateway.prototype.activate = function () {
+  var self = this;
+  return new Promise(function (resolve, reject) {
+    if (!self.client) { reject(new Error('no DoIP transport')); return; }
+    self.client.activate(function (err) { if (err) { reject(err); return; } self.client.activated = true; resolve(true); });
+  });
+};
+DoipGateway.prototype.session = function (type, opts) { return require('./seedkey').session(this.send, type, opts); };
+DoipGateway.prototype.unlock = function (level, algo, opts) { return require('./seedkey').unlock(this.send, level, algo, opts); };
+DoipGateway.prototype.keepAlive = function (ms, setIntervalFn) {
+  var self = this, si = setIntervalFn || (typeof setInterval === 'function' ? setInterval : null);
+  if (!si) return;
+  this.stopKeepAlive();
+  var u = require('./uds');
+  this._keep = si(function () { self.send(u.buildTesterPresent()).catch(function () {}); }, ms || 2000);
+};
+DoipGateway.prototype.stopKeepAlive = function () {
+  if (this._keep != null && typeof clearInterval === 'function') clearInterval(this._keep);
+  this._keep = null;
+};
+DoipGateway.prototype.close = function () {
+  this.stopKeepAlive();
+  try { if (this.client && this.client.socket && this.client.socket.close) this.client.socket.close(); } catch (e) {}
+  try { if (this._opts.socket && this._opts.socket.close) this._opts.socket.close(); } catch (e) {}
+};
+
 module.exports = {
   PT: PT, buildRoutingActivation: buildRoutingActivation, buildDiagnosticMessage: buildDiagnosticMessage,
   parseFrames: parseFrames, header: header, DoipClient: DoipClient, nodeSocket: nodeSocket, makeDoipTransport: makeDoipTransport,
+  promiseSend: promiseSend, DoipGateway: DoipGateway,
   buildVehicleIdentificationRequest: buildVehicleIdentificationRequest,
   parseVehicleAnnouncement: parseVehicleAnnouncement,
   decodeAnnouncementDatagram: decodeAnnouncementDatagram,

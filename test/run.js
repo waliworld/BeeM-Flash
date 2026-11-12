@@ -551,6 +551,37 @@ Promise.resolve()
       });
     });
   })
+  .then(function () {
+    // ---- DoIP/ENET gateway end-to-end over the test ECU --------------------
+    var doip = require(A + 'doip');
+    var seedkey = require(A + 'seedkey');
+    var EcuSim = require('./ecusim').EcuSim;
+    var clientAlgo = function (seed) { return seed.map(function (b) { return (b + 1) & 0xff; }); };
+
+    var ecu = new EcuSim({ securedDids: { 0x4A36: [0xDE, 0xAD] } });
+    var gw = new doip.DoipGateway({ socket: ecu.doipSocket(), targetAddr: 0x1000 });
+    ok(gw.supported === true, 'doip gateway: supported with a socket');
+    return gw.activate().then(function (a) {
+      ok(a === true, 'doip gateway: routing activation succeeds');
+      // secured DID denied before unlock (over DoIP)
+      return gw.send(uds.buildReadDataByIdentifier(0x4A36));
+    }).then(function (resp) {
+      var p = uds.parseResponse(uds.SID.READ_DID, resp);
+      ok(!p.positive && p.nrcName === 'securityAccessDenied', 'doip gateway: secured DID denied before unlock');
+      // unlock over DoIP with a caller-supplied algorithm
+      return gw.unlock(0x11, clientAlgo);
+    }).then(function (u) {
+      ok(u.unlocked === true, 'doip gateway: SecurityAccess unlock over DoIP');
+      return gw.send(uds.buildReadDataByIdentifier(0x4A36));
+    }).then(function (resp2) {
+      var p2 = uds.parseResponse(uds.SID.READ_DID, resp2);
+      ok(p2.positive && p2.data[0] === 0xDE && p2.data[1] === 0xAD, 'doip gateway: secured DID readable after unlock');
+      return gw.session(0x03);
+    }).then(function (s) {
+      ok(s.ok === true, 'doip gateway: diagnostic session over DoIP');
+      gw.close();
+    });
+  })
   .then(report)
   .catch(function (e) { console.error(e); process.exit(1); });
 

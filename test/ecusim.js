@@ -83,4 +83,35 @@ EcuSim.prototype.transport = function () {
   return function (bytes) { return Promise.resolve(self.handle(bytes)); };
 };
 
+// A fake DoIP socket ({ onData, write, close }) that speaks ISO 13400 framing to
+// a DoipClient / DoipGateway: it answers routing activation and wraps each UDS
+// reply in a diagnostic message, exactly as a car's DoIP gateway would. Lets the
+// whole ENET/DoIP path (discover -> activate -> unlock -> read) run off-car.
+EcuSim.prototype.doipSocket = function (opts) {
+  var self = this, dataCb = null;
+  opts = opts || {};
+  var tester = opts.sourceAddr || 0x0E00, ecu = opts.targetAddr || 0x1000;
+  var doip = require('../apps/wali_datalog/doip');
+  function deliver(bytes) { if (dataCb) dataCb(bytes); }
+  return {
+    onData: function (fn) { dataCb = fn; },
+    write: function (bytes) {
+      var r = doip.parseFrames(Array.prototype.slice.call(bytes));
+      r.frames.forEach(function (f) {
+        if (f.type === doip.PT.ROUTE_REQ) {
+          deliver(doip.header(doip.PT.ROUTE_RESP,
+            [(tester >> 8) & 0xff, tester & 0xff, (ecu >> 8) & 0xff, ecu & 0xff, 0x10, 0, 0, 0, 0]));
+        } else if (f.type === doip.PT.DIAG) {
+          var reqUds = f.payload.slice(4);           // src(2), tgt(2), uds...
+          var respUds = self.handle(reqUds);
+          var addr = [(ecu >> 8) & 0xff, ecu & 0xff, (tester >> 8) & 0xff, tester & 0xff];
+          deliver(doip.header(doip.PT.DIAG_ACK, addr.concat([0x00])));  // positive ack
+          deliver(doip.header(doip.PT.DIAG, addr.concat(respUds)));      // the UDS reply
+        }
+      });
+    },
+    close: function () {}
+  };
+};
+
 module.exports = { EcuSim: EcuSim, plusOne: plusOne };
