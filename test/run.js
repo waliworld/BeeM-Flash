@@ -542,6 +542,17 @@ function makeFakeDiscoverySocket(respond) {
   var bin2 = [10, 20, 30, 40, 0, 0, 0, 0];
   var sc = { blocks: [{ name: 's', algo: 'sumcomp', ranges: [[0, 4]], store: { at: 4, size: 4, endian: 'le' }, params: { target: 0x10000 } }] };
   ok(cs.correct(bin2, sc).check.ok, 'checksum: sum-complement correction is valid');
+  // zlib-style CRC-32 with a seed (used by the Bosch MG1 block scheme)
+  eq(cs.crc32Seed(s, 0, 9, 0) >>> 0, 0xCBF43926, 'checksum: crc32Seed(seed=0) == standard CRC-32');
+  // Bosch MG1 (motorcycle/MSE8) auto-detecting block scheme: detect, correct, re-verify
+  var img = []; for (var q = 0; q < 0x40210; q++) img.push(0);
+  img[0x40000] = 0xDE; img[0x40001] = 0xAD; img[0x40002] = 0xBE; img[0x40003] = 0xEF;
+  for (var k = 0x40008; k < 0x40080; k++) img[k] = (k * 7) & 0xff;
+  var fe = 0x40090; for (var fo = 0; fo < 0x15C; fo += 4) { img[fe + fo] = 0x12; img[fe + fo + 1] = 0x34; img[fe + fo + 2] = 0x56; img[fe + fo + 3] = 0x78; }
+  var mchk = cs.check(img, { preset: 'bosch-mg1' });
+  ok(mchk.count === 1 && mchk.ok === false, 'checksum: Bosch MG1 scheme auto-detects a block, flags bad CRC');
+  var mcor = cs.correct(img, { preset: 'bosch-mg1' });
+  ok(mcor.check.ok && mcor.changed.length === 1, 'checksum: Bosch MG1 scheme corrects the block CRC');
 })();
 
 // ---- OBD-II source: PID decode + both boost PIDs (additional source) --------

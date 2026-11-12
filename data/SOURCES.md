@@ -157,6 +157,22 @@ than the `0x0B` manifold PID that saturates at 255 kPa. The app exposes all thre
 so the correct source can be confirmed on-car. This source is additive; the
 UDS/DID, fast-block and bus sources are unchanged.
 
+## Checksum research — moto-ecu-checksum (MIT) + A2L / web
+
+The checksum research in `data/checksum_schemes/` and the `bosch-mg1` preset in
+`apps/wali_datalog/checksum.js` draw on:
+- The A2L `XCP_CRC_32` declarations (algorithm = standard CRC-32) and code-segment
+  ranges from the Apache-2.0 `mgflasher-map-packs` A2Ls.
+- The Bosch MG1 block-CRC scheme (CRC-32 reflected, init `0xACC08E37`, big-endian
+  CRC at the end of each `DEADBEEF`…`12345678`-fill block) and the update/keep
+  repair modes, ported from the MIT-licensed
+  [NetworkDir/moto-ecu-checksum](https://github.com/NetworkDir/moto-ecu-checksum).
+  We verified this scheme does **not** match BMW automotive MG1CS images, so it
+  is scoped to motorcycle MG1 / MSE8.
+- The MG1 signature caveat (a correct CRC is not sufficient on MG1/MD1) from
+  public tuning references (cartechnology, tuning-database, WinOLS MDG1 notes).
+Only algorithms/structure are used; no firmware is redistributed.
+
 ## What this project does **not** include
 
 No BMW SGBD/EDIABAS files, no ISTA/INPA binaries, no proprietary tuning-application code or

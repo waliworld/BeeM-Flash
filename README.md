@@ -97,6 +97,25 @@ app, and it is built from scratch — see [`NOTICE.md`](NOTICE.md).
   The live-data path is read-only; writes (map switch, flashing) are separate,
   explicitly-gated actions. See [`docs/VEHICLE-CONNECTION.md`](docs/VEHICLE-CONNECTION.md).
 
+## Screens
+
+Every tab, rendered by the real app code (regenerate with `npm run shots`).
+
+| | |
+|---|---|
+| **Live** — gauges (tiles / bars / dials) | **Log** — dyno pull estimate + session summary |
+| ![Live](out/shots/live.png) | ![Log](out/shots/log-run.png) |
+| **Channels** — pick log / show channels | **Maps** — gated tune map switch |
+| ![Channels](out/shots/channels.png) | ![Maps](out/shots/maps.png) |
+| **Connect** — gated ENET/DoIP link | **Codes** — whole-vehicle fault codes + tune |
+| ![Connect](out/shots/connect.png) | ![Codes](out/shots/codes-result.png) |
+| **Info** — ECU ID + tune / image verdict | **Setup** — in-app settings |
+| ![Info](out/shots/info.png) | ![Setup](out/shots/setup.png) |
+| **Flash** — locked until the ECU is read | **Flash** — ready: fingerprint + checksum |
+| ![Flash locked](out/shots/flash-blocked.png) | ![Flash ready](out/shots/flash-ready.png) |
+
+More in [`out/shots/`](out/shots/) (live bar/dial styles, map-off/confirm, codes-confirm, flash confirm/running, …).
+
 ## Quick start
 
 ```bash

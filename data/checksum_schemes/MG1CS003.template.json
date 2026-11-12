@@ -1,0 +1,101 @@
+{
+ "source": "template generated from A2L R1C9J9E5B_3076-090_020_005_v7.3.3.a2l",
+ "ecu": "MG1CS003",
+ "version": "R1C2J9E5B",
+ "algorithm": "XCP_CRC_32 (standard CRC-32) \u2014 from the A2L MEMORY_SEGMENT CHECKSUM blocks",
+ "WARNING": "UNVERIFIED TEMPLATE. The ranges are the A2L code segments; the STORE location and the exact CRC init/seed are NOT in the A2L and must be confirmed from the bin / WinOLS. MG1 also carries an RSA SIGNATURE a correct CRC does not satisfy. Do NOT flash using this template unverified.",
+ "checksum": {
+  "blocks": [
+   {
+    "name": "Pst9040000",
+    "algo": "crc32",
+    "ranges": [
+     [
+      151257088,
+      157808608
+     ]
+    ],
+    "store": {
+     "at": "__TODO_fill_from_bin_or_WinOLS__",
+     "size": 4,
+     "endian": "le"
+    },
+    "params": {
+     "__note": "XCP_CRC_32 = IEEE CRC-32; confirm init/seed and the big/little-endian store on your DME before use"
+    }
+   },
+   {
+    "name": "Pst9000000",
+    "algo": "crc32",
+    "ranges": [
+     [
+      150994944,
+      151256320
+     ]
+    ],
+    "store": {
+     "at": "__TODO_fill_from_bin_or_WinOLS__",
+     "size": 4,
+     "endian": "le"
+    },
+    "params": {
+     "__note": "XCP_CRC_32 = IEEE CRC-32; confirm init/seed and the big/little-endian store on your DME before use"
+    }
+   },
+   {
+    "name": "Dst9680000",
+    "algo": "crc32",
+    "ranges": [
+     [
+      157810688,
+      158857184
+     ]
+    ],
+    "store": {
+     "at": "__TODO_fill_from_bin_or_WinOLS__",
+     "size": 4,
+     "endian": "le"
+    },
+    "params": {
+     "__note": "XCP_CRC_32 = IEEE CRC-32; confirm init/seed and the big/little-endian store on your DME before use"
+    }
+   },
+   {
+    "name": "Dst977FD00",
+    "algo": "crc32",
+    "ranges": [
+     [
+      158858496,
+      158858504
+     ]
+    ],
+    "store": {
+     "at": "__TODO_fill_from_bin_or_WinOLS__",
+     "size": 4,
+     "endian": "le"
+    },
+    "params": {
+     "__note": "XCP_CRC_32 = IEEE CRC-32; confirm init/seed and the big/little-endian store on your DME before use"
+    }
+   },
+   {
+    "name": "Dst977FE0C",
+    "algo": "crc32",
+    "ranges": [
+     [
+      158858764,
+      158859228
+     ]
+    ],
+    "store": {
+     "at": "__TODO_fill_from_bin_or_WinOLS__",
+     "size": 4,
+     "endian": "le"
+    },
+    "params": {
+     "__note": "XCP_CRC_32 = IEEE CRC-32; confirm init/seed and the big/little-endian store on your DME before use"
+    }
+   }
+  ]
+ }
+}

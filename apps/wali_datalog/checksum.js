@@ -123,4 +123,58 @@ function correct(bin, scheme) {
   return { bin: copy, changed: changed, check: check(copy, scheme) };
 }
 
-module.exports = { crc: crc, crcWith: crcWith, PRESETS: PRESETS, compute: compute, check: check, correct: correct, readStore: readStore, writeStore: writeStore };
+// ---- Bosch MG1 block scheme (auto-detecting) --------------------------------
+// Ported from the MIT-licensed NetworkDir/moto-ecu-checksum (see data/SOURCES.md).
+// CONFIRMED for motorcycle MG1 (MG1CA094) and Bosch MSE8.0. It is NOT the scheme
+// BMW automotive MG1CS201/049/003 use — our tests find none of these blocks in
+// BMW stock images — so do not select it for a BMW DME. Selected with
+// scheme.preset === 'bosch-mg1'.
+var CRC32_TABLE = (function () { var t = [], n, c, k; for (n = 0; n < 256; n++) { c = n; for (k = 0; k < 8; k++) c = (c & 1) ? ((0xEDB88320 ^ (c >>> 1)) >>> 0) : (c >>> 1); t[n] = c >>> 0; } return t; })();
+function crc32Seed(bytes, start, end, seed) { var c = (seed ^ 0xFFFFFFFF) >>> 0; for (var i = start; i < end; i++) c = (CRC32_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8)) >>> 0; return (c ^ 0xFFFFFFFF) >>> 0; }
+function readU32BE(b, o) { return (((b[o] << 24) | (b[o + 1] << 16) | (b[o + 2] << 8) | b[o + 3]) >>> 0); }
+function writeU32BE(b, o, v) { b[o] = (v >>> 24) & 0xff; b[o + 1] = (v >>> 16) & 0xff; b[o + 2] = (v >>> 8) & 0xff; b[o + 3] = v & 0xff; }
+function idxOf(b, pat, from) { for (var i = from || 0; i + pat.length <= b.length; i++) { var ok = true; for (var j = 0; j < pat.length; j++) if (b[i + j] !== pat[j]) { ok = false; break; } if (ok) return i; } return -1; }
+var MG1 = { SEED: 0x533F71C8, STEP: 0x40000, FILL_LEN: 0x15C, HEAD: [0xDE, 0xAD, 0xBE, 0xEF], FILL: [0x12, 0x34, 0x56, 0x78], MSE8: [0x12, 0x34, 0x10, 0x08] };
+function mg1Blocks(bin) {
+  var out = [], p = idxOf(bin, MG1.FILL, 0);
+  function isFill(i) { return bin[i] === 0x12 && bin[i + 1] === 0x34 && bin[i + 2] === 0x56 && bin[i + 3] === 0x78; }
+  while (p >= 0) {
+    var e = p; while (e + 4 <= bin.length && isFill(e)) e += 4;
+    if (e - p === MG1.FILL_LEN && e + 4 <= bin.length && !(bin[e] === 0x12 && bin[e + 1] === 0x34 && bin[e + 2] === 0x10 && bin[e + 3] === 0x08)) {
+      var s = Math.floor(p / MG1.STEP) * MG1.STEP;
+      while (s >= 0 && !(bin[s] === 0xDE && bin[s + 1] === 0xAD && bin[s + 2] === 0xBE && bin[s + 3] === 0xEF)) s -= MG1.STEP;
+      if (s >= 0) out.push({ start: s, crc: e });
+    }
+    p = idxOf(bin, MG1.FILL, e > p ? e : p + 1);
+  }
+  return out;
+}
+function mg1Check(bin) {
+  var blocks = mg1Blocks(bin), res = [], allOk = true;
+  for (var i = 0; i < blocks.length; i++) {
+    var b = blocks[i], computed = crc32Seed(bin, b.start, b.crc, MG1.SEED), stored = readU32BE(bin, b.crc), ok = computed === stored;
+    if (!ok) allOk = false;
+    res.push({ name: 'blk@0x' + b.start.toString(16), computed: computed, stored: stored, ok: ok });
+  }
+  return { ok: allOk && blocks.length > 0, blocks: res, count: blocks.length };
+}
+function mg1Correct(bin) {
+  var copy = bin.slice(), blocks = mg1Blocks(copy), changed = [];
+  for (var i = 0; i < blocks.length; i++) {
+    var b = blocks[i], computed = crc32Seed(copy, b.start, b.crc, MG1.SEED), stored = readU32BE(copy, b.crc);
+    if (computed !== stored) { writeU32BE(copy, b.crc, computed); changed.push({ name: 'blk@0x' + b.start.toString(16), from: stored, to: computed }); }
+  }
+  return { bin: copy, changed: changed, check: mg1Check(copy) };
+}
+
+// Allow a named preset scheme (e.g. { preset: 'bosch-mg1' }) via check/correct.
+var _check = check, _correct = correct;
+check = function (bin, scheme) { return (scheme && scheme.preset === 'bosch-mg1') ? mg1Check(bin) : _check(bin, scheme); };
+correct = function (bin, scheme) { return (scheme && scheme.preset === 'bosch-mg1') ? mg1Correct(bin) : _correct(bin, scheme); };
+
+module.exports = {
+  crc: crc, crcWith: crcWith, PRESETS: PRESETS, compute: compute,
+  check: function (b, s) { return check(b, s); }, correct: function (b, s) { return correct(b, s); },
+  readStore: readStore, writeStore: writeStore,
+  crc32Seed: crc32Seed, mg1Check: mg1Check, mg1Correct: mg1Correct, mg1Blocks: mg1Blocks, MG1: MG1
+};
