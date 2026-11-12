@@ -16,7 +16,7 @@ function Provider(ctx, opts) {
   this.ctx = ctx || {};
   this.someip = opts.someip || null; // SomeipProvider | null
   this.diag = opts.diag || null;     // DiagProvider | null
-  this.mhd = opts.mhd || null;       // MhdMonitor | null (preferred when present)
+  this.monitor = opts.monitor || null;  // FastLog (UDS block logger) | null (preferred when present)
   this.demo = new Demo();
   this.getSetting = opts.getSetting || function () { return undefined; };
   this.demoSince = 0;
@@ -42,8 +42,8 @@ Provider.prototype.read = function (nowMs) {
     return this._pack(this.demo.sample(now), true, false);
   }
 
-  // Gather live values. MHD monitor (channel-keyed) is preferred when present.
-  var mhd = (this.mhd && (pref === 'auto' || pref === 'mhd')) ? this.mhd.read() : {};
+  // Gather live values. The fast UDS block logger (channel-keyed) is preferred when present.
+  var mon = (this.monitor && (pref === 'auto' || pref === 'fast')) ? this.monitor.read() : {};
   var sip = (this.someip && (pref === 'auto' || pref === 'someip')) ? this.someip.read() : {};
   var dia = (this.diag && (pref === 'auto' || pref === 'diag')) ? this.diag.read() : {};
 
@@ -53,7 +53,7 @@ Provider.prototype.read = function (nowMs) {
   for (var i = 0; i < chans.length; i++) {
     var ch = chans[i];
     var v;
-    if (typeof mhd[ch.key] === 'number' && isFinite(mhd[ch.key])) v = mhd[ch.key];
+    if (typeof mon[ch.key] === 'number' && isFinite(mon[ch.key])) v = mon[ch.key];
     else if (ch.read.kind === 'someip') v = sip[ch.read.sig];
     else if (ch.read.kind === 'diag') v = dia[ch.read.key];
     else v = undefined; // derived filled below

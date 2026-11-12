@@ -1,8 +1,8 @@
 'use strict';
 //
-// dme_profiles.js — diagnostic read map for the MHD+ class channel set.
+// dme_profiles.js — diagnostic read map for the extended tuner-class channel set.
 //
-// MHD+ logging reads the DME over UDS. The high-rate way (and how MHD+ works) is
+// Extended logging reads the DME over UDS. The high-rate way is
 // to read a few *wide measurement blocks*: one ReadDataByIdentifier (0x22) per
 // block returns many values packed at fixed byte offsets, which we unpack into
 // many channels. This file models that:

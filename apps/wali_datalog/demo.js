@@ -89,7 +89,7 @@ Demo.prototype.step = function (dt) {
   this.iat = clamp(lerp(this.iat, iatTarget, clamp(dt * 0.5, 0, 1)), 18, 85);
   this.egt = clamp(lerp(this.egt, 300 + load * 4, clamp(dt * 0.6, 0, 1)), 250, 980);
 
-  // Extended MHD+ class channels derived from the toy model.
+  // Extended tuner-class channels derived from the toy model.
   var baro = 1.0;
   var boostAbs = clamp(boost + baro, 0, 4);
   var out = {
@@ -131,7 +131,7 @@ Demo.prototype.step = function (dt) {
     out['knockCyl' + c] = clamp(knock + (c % 2) * 0.3 + Math.max(0, 0.4 * Math.sin(this.t * 0.7 + c)), 0, 15);
   }
 
-  // Extended B58 / MHD+ class channels
+  // Extended B58 tuner-class channels
   out.boostDeviation = clamp(boost - (boost * 1.03 + 0.02), -1, 1);
   out.boostSetpointFactor = clamp(0.9 + this.throttle * 0.001, 0, 2);
   out.compressorAfterPD = clamp(boostAbs * 0.99, 0, 4);

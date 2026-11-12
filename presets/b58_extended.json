@@ -1,5 +1,5 @@
 {
-  "label": "B58 MHD+ preset (from an MHD LogPresets export)",
+  "label": "B58 extended tuner preset",
   "platform": "B58",
   "enabled": [
     "pedal",

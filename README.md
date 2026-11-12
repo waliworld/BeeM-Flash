@@ -6,7 +6,7 @@ tune maps**. It installs through the community iDrive app store
 ([mgu-store](https://github.com/robertnisipeanu/mgu-store)) like any other MGU
 app, and it is built from scratch — see [`NOTICE.md`](NOTICE.md).
 
-> Independent and unaffiliated. No MHD/BMW code is used; "MHD", "BMW" and
+> Independent and unaffiliated open-source project. No BMW or tuning-vendor code is used; "BMW", "iDrive" and
 > "iDrive" are used only to describe compatibility. The app is **read-only by
 > default**; writing maps to the engine is off unless you explicitly enable it.
 
@@ -28,23 +28,23 @@ app, and it is built from scratch — see [`NOTICE.md`](NOTICE.md).
 - **Datalogging** — one-tap **Start/Stop**, a **Marker** button for pulls, pick
   channels, self-describing CSV with units in the header, sessions listed
   on-screen, one-button export to USB. Metric or imperial. Live data can come
-  from the MHD monitor, enhanced PIDs, A2L address reads, bus signals, or a
-  read-only **DoIP** client over the car's own diagnostic Ethernet (no MHD).
-- **Full MHD+ class channel set** — ~92 channels (boost actual/target/deviation,
+  from the fast UDS block read, enhanced PIDs, A2L address reads, bus signals, or a
+  read-only **DoIP** client over the car's own diagnostic Ethernet.
+- **Full extended tuner class channel set** — ~92 channels (boost actual/target/deviation,
   compressor model, WGDC P/I/D, MAF req, per-cylinder ignition timing and knock,
   lambda actual/target + trims, HPFP/LPFP, port-injection, VANOS, torque, EGT,
   flex-fuel, G-forces, …), read the efficient **packed measurement-block** way.
   The per-tune PID address map is imported as `pidmap.json` (see
   `profiles/template.json`) so every channel goes live on your
   DME without touching code.
-- **Matches your MHD preset** — convert an MHD Flasher `LogPresets.csv` export to
-  a channel preset with `scripts/preset_from_mhd_csv.js`, drop it on the unit as
-  `preset.json`, and the selection mirrors what MHD+ logs on that ECU.
-- **MHD live monitor (B58/S58)** — if the car is MHD-flashed, one UDS exchange
+- **Import a log preset** — convert a tuner tool's `presets.csv` export to
+  a channel preset with `scripts/preset_from_csv.js`, drop it on the unit as
+  `preset.json`, and the selection mirrors what you logged on that ECU.
+- **Fast UDS block read (B58/S58)** — on a supported tuned car, one UDS exchange
   (`2C 88 01`) returns a 36-byte packed block with ~14 channels already scaled
   (boost/target/deviation, load, coolant, IAT, ethanol, WG distribution, mass
   flow, speed…). No PID map needed; it's the preferred source. Read-only;
-  transcribed from MHD's published ADX via MIT `freebeamer/core` (`data/SOURCES.md`).
+  with its block layout from the MIT-licensed `freebeamer/core` (`data/SOURCES.md`).
 - **Ready-made B58 / S58 maps** — an attributed, open-sourced enhanced-PID
   dataset (`data/bmw_enhanced_pids.csv`, ~2000 PIDs) and curated
   `profiles/pidmap.b58.json` / `pidmap.s58.json` (21 core channels, scaling +
@@ -54,9 +54,6 @@ app, and it is built from scratch — see [`NOTICE.md`](NOTICE.md).
 - **Map control (opt-in)** — switch tune maps via the DME diagnostic job,
   guarded by on-screen confirmation and "stationary + engine idle" preconditions.
   **Off by default.**
-- **MHD Datalog (web)** — a shortcut that opens MHD's own site so you can sign
-  in and datalog through MHD's page. A convenience, not an integration; the app
-  never sees your MHD login.
 - **Works without a car** — a clearly-labelled demo mode drives every screen so
   the app can be reviewed and demonstrated off the vehicle.
 - **Vehicle connection (ENET/DoIP), gated** — a **Connect** screen (Live → D)

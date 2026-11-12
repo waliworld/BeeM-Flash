@@ -81,14 +81,14 @@ ok(Channels.defaults().indexOf('rpm') >= 0, 'rpm is a default channel');
 near(Channels.toUnits(Channels.get('speed'), 100, 'imperial'), 62.1371, 1e-3, 'speed to mph');
 eq(Channels.unitLabel(Channels.get('boost'), 'imperial'), 'psi', 'boost imperial unit');
 
-// ---- MHD+ PID profile + packed blocks ------------------------------------
-ok(Channels.all().length > 85, 'catalogue has 85+ channels (MHD+ class)');
+// ---- extended PID profile + packed blocks --------------------------------
+ok(Channels.all().length > 85, 'catalogue has 85+ channels (extended class)');
 ok(!!Channels.get('timingCyl6') && !!Channels.get('knockCyl6'), 'per-cylinder channels present');
 ok(!!Channels.get('wgdcP') && !!Channels.get('boostDeviation') && !!Channels.get('loadReq'), 'B58 wastegate/boost control channels present');
 
-// MHD LogPresets.csv -> preset converter (names + flags only; no vendor data)
+// tuner log-preset CSV -> preset converter (names + flags only; no vendor data)
 (function () {
-  var conv = require('../scripts/preset_from_mhd_csv');
+  var conv = require('../scripts/preset_from_csv');
   var csv = [
     '#ECU Info: 0000TEST',
     'Parameter;Selected',
@@ -173,9 +173,9 @@ ok(!!Channels.get('wgdcP') && !!Channels.get('boostDeviation') && !!Channels.get
   ok(threw, 'profile entry without a did is rejected');
 })();
 
-// ---- MHD live-monitor decode (2C 88 01 -> 36-byte LE packed block) --------
+// ---- fast block decode (UDS 2C 88 01 -> 36-byte LE packed block) ----------
 (function () {
-  var MhdMonitor = require(A + 'mhdmonitor');
+  var FastLog = require(A + 'fastlog');
   var body = [];
   for (var i = 0; i < 36; i++) body.push(0);
   function u16(off, v) { body[off] = v & 0xff; body[off + 1] = (v >> 8) & 0xff; }
@@ -187,15 +187,15 @@ ok(!!Channels.get('wgdcP') && !!Channels.get('boostDeviation') && !!Channels.get
   u16(0x1C, 100);    // SPEED
   u16(0x20, 300);    // INTAKEAIRTEMP -> 30 C
   var reply = [0x6C, 0x88].concat(body);
-  var v = MhdMonitor.decodeReply(reply, 'B58');
-  eq(v.rpm, 3000, 'mhd monitor: RPM');
-  near(v.load, 50.0, 1e-6, 'mhd monitor: LOAD (signed, %)');
-  near(v.boost, 1.0, 0.01, 'mhd monitor: BOOST psi->bar');
-  near(v.coolant, 90.0, 1e-6, 'mhd monitor: ENGINETEMP -> coolant');
-  eq(v.gear, 3, 'mhd monitor: GEAR');
-  eq(v.speed, 100, 'mhd monitor: SPEED');
-  near(v.iat, 30.0, 1e-6, 'mhd monitor: INTAKEAIRTEMP -> iat');
-  ok(MhdMonitor.decodeReply([0x7f, 0x2c, 0x31].concat(body), 'B58') === null, 'negative monitor reply -> null');
+  var v = FastLog.decodeReply(reply, 'B58');
+  eq(v.rpm, 3000, 'fast log: RPM');
+  near(v.load, 50.0, 1e-6, 'fast log: LOAD (signed, %)');
+  near(v.boost, 1.0, 0.01, 'fast log: BOOST psi->bar');
+  near(v.coolant, 90.0, 1e-6, 'fast log: ENGINETEMP -> coolant');
+  eq(v.gear, 3, 'fast log: GEAR');
+  eq(v.speed, 100, 'fast log: SPEED');
+  near(v.iat, 30.0, 1e-6, 'fast log: INTAKEAIRTEMP -> iat');
+  ok(FastLog.decodeReply([0x7f, 0x2c, 0x31].concat(body), 'B58') === null, 'negative monitor reply -> null');
 })();
 
 // ---- DoIP (ISO 13400) read transport --------------------------------------

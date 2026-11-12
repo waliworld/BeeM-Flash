@@ -6,24 +6,23 @@ This file is the procedure to fill them in. Until then the app shows
 clearly-labelled demo data and marks these sources unverified so **no wrong
 number is ever displayed or logged**.
 
-## 0. MHD live monitor — the easy path for an MHD-flashed MG1 car
+## 0. Fast UDS block read — the easy path for a tuned MG1 car
 
-If the car is MHD-flashed (B58/S58, MG1), the simplest and most accurate source
-needs **no PID map at all**. MHD's live monitor is one fixed UDS exchange —
+On a supported tuned car (B58/S58, MG1), the simplest and most accurate source
+needs **no PID map at all**. The fast block read is one fixed UDS exchange —
 request `2C 88 01`, reply `6C 88` + a 36-byte little-endian packed block — that
 returns a full live set already correctly scaled: RPM, load, boost / target /
 deviation, coolant, gear, ethanol, WG distribution, mass flow, boost setpoint
 factor, speed, ambient and intake air temp.
 
-`src/mhdmonitor.js` implements it and is the **preferred source** (Settings →
-Data source → *Auto* or *MHD live monitor*; set *Engine platform* to B58 or
+`fastlog.js` implements it and is the **preferred source** (Settings →
+Data source → *Auto* or *fast UDS block read*; set *Engine platform* to B58 or
 S58 so mass flow is read from the right field). The field table and scaling are
-transcribed from MHD's own published TunerPro ADX via the MIT-licensed
-`freebeamer/core`; see `data/SOURCES.md`. It is read-only — the map-switch write
-path is MHD's closed plugin and is not implemented.
+taken from the MIT-licensed `freebeamer/core` project; see `data/SOURCES.md`. It
+is read-only — the vendor map-switch write path is not implemented.
 
 This is the recommended route; the per-PID map below is for stock cars, extra
-channels, or non-MHD setups.
+channels, or non-tuned setups.
 
 ## 1. SOME/IP bus signals (`signalmap.js`)
 
@@ -70,37 +69,37 @@ wastegate, load, knock, EGT…) are read from the DME as measured values over UD
 and scaling are **DME- and tune-specific** and differ between engine families
 and tune revisions — exactly as in any professional logging tool.
 
-The app ships the full **MHD+ class channel catalogue** (~92 channels across
+The app ships the full **extended tuner class channel catalogue** (~92 channels across
 Engine, Air/Boost, Fuel, Ignition incl. per-cylinder timing and knock, Temps,
 Electrical, Cams/VANOS, Dynamics, Port Injection, and Status — see
 `src/channels.js`). What it does not ship is a vendor PID address table; you
 supply that for your DME/tune.
 
-### Matching your MHD log preset (channel selection)
+### Matching your tuner log preset (channel selection)
 
-If you have an MHD Flasher **`LogPresets.csv`** export, convert it into a Wali
+If you have a tuner tool's **`presets.csv`** export, convert it into a Wali
 Datalog preset (an enabled-channel list — just the parameter names and on/off
 flags, no vendor data):
 
 ```bash
-node scripts/preset_from_mhd_csv.js path/to/LogPresets.csv
+node scripts/preset_from_csv.js path/to/presets.csv
 # -> presets/<ECU>.json  (e.g. 00005C64145A05.json)
 ```
 
 Copy that file to the head unit as the app's **`preset.json`** (in the app data
-dir) and the channel selection matches what MHD+ logs on that ECU. The converter
-reports any MHD parameters it does not represent. This sets *which* channels are
+dir) and the channel selection matches what a tuner tool logs on that ECU. The converter
+reports any tuner parameters it does not represent. This sets *which* channels are
 on; the live *values* still come from the DID map below.
 
-> Note: an MHD `LogPresets.csv` and `.xdf`/`.bin` identify the ECU and the
+> Note: an tuner `presets.csv` and `.xdf`/`.bin` identify the ECU and the
 > channel set, but they do **not** contain the runtime measurement DIDs/scaling.
 > Those come from the BMW diagnostic description (SGBD/ISTA) or your tuner — see
-> the `pidmap.json` import below. (MHD application binaries and signing/bundle
+> the `pidmap.json` import below. (tuner application binaries and signing/bundle
 > files are not used by this project.)
 
-### Packed measurement blocks (how MHD+ reads fast)
+### Packed measurement blocks (how the fast block read works)
 
-MHD+ does not read one value per request — it reads a few **wide blocks**: one
+extended does not read one value per request — it reads a few **wide blocks**: one
 `0x22` request returns many values packed at fixed byte offsets, which the app
 unpacks into many channels in a single read. Model that by giving several
 channels the **same `did`** at different `off`. `diag.js` groups reads by DID

@@ -20,14 +20,14 @@
 var fs = require('fs');
 var path = require('path');
 var Channels = require('../apps/wali_datalog/channels');
-var mhd = require('./preset_from_mhd_csv'); // reuse its MHD name map
+var presetmap = require('./preset_from_csv'); // reuse its channel-name map
 
 function norm(s) { return String(s == null ? '' : s).replace(/\s+/g, ' ').trim(); }
 function lc(s) { return norm(s).toLowerCase(); }
 
-// Channel key aliases: MHD names (reused) + common BMW/ISTA (EN + DE) names.
+// Channel key aliases: tuner names (reused) + common BMW/ISTA (EN + DE) names.
 var ALIAS = {};
-Object.keys(mhd.NAME_MAP).forEach(function (k) { ALIAS[lc(k)] = mhd.NAME_MAP[k]; });
+Object.keys(presetmap.NAME_MAP).forEach(function (k) { ALIAS[lc(k)] = presetmap.NAME_MAP[k]; });
 var BMW = {
   'engine speed': 'rpm', 'drehzahl': 'rpm', 'motordrehzahl': 'rpm', 'rpm': 'rpm',
   'vehicle speed': 'speed', 'geschwindigkeit': 'speed', 'speed': 'speed',

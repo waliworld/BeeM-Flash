@@ -8,7 +8,7 @@ ENET-over-WiFi bridge, no security-access unlock).
 
 A read-only connection from the app to the vehicle's own diagnostic network
 (ENET / ISO 13400 DoIP), used to read live data for the logger and the live
-dashboard. It is independent of MHD (see `data/SOURCES.md`).
+dashboard. It is a standard open diagnostic transport (see `data/SOURCES.md`).
 
 ## The gate
 
@@ -52,7 +52,7 @@ screen's **Scan** button needs no manual IP address.
 
 ## What the connection can and cannot do
 
-- **Can:** read measured values via UDS `0x22` / the MHD monitor exchange
+- **Can:** read measured values via UDS `0x22` / the fast block-read exchange
   (`0x2C`) / `ReadMemoryByAddress` (`0x23`) — whatever the rest of the app
   already issues.
 - **Cannot:** write to the engine controller or any other module. There is no

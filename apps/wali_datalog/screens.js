@@ -285,24 +285,6 @@ function labelOf(slots, idx) {
   return '-';
 }
 
-// ------------------------------------------------------------------ MHD -----
-function mhd(cv, t, view) {
-  cv.clear(t.bg);
-  ribbon(cv, t, view, 'MHD Datalog (web)');
-  var mh = view.mhd || {};
-  D.panel(cv, t, 32, 64, 1536, 410);
-  cv.text('Datalog through MHD’s own page', 64, 120, 32, t.text, { weight: 'bold' });
-  cv.text('This opens MHD’s website so you can sign in and use MHD’s own', 64, 168, 24, t.dim, {});
-  cv.text('datalogging. It is a shortcut, not an integration — this app never', 64, 200, 24, t.dim, {});
-  cv.text('sees or stores your MHD login.', 64, 232, 24, t.dim, {});
-  cv.text(mh.url || 'https://www.mhdtuning.com', 64, 300, 24, t.accent, {});
-  if (mh.internet) D.badge(cv, t, 64, 330, 'INTERNET OK', t.good);
-  else {
-    D.badge(cv, t, 64, 330, 'NO INTERNET', t.warn);
-    cv.text('Needs mgu-uplink installed and online.', 300, 352, 20, t.dim, {});
-  }
-  cv.text('A Open site   ·   D Back', 32, 506, 20, t.dim, {});
-}
 
 // Wrap `text` to fit `maxWidth`, drawing each line at `size`/`color` starting
 // at (x,y). Returns the y just below the last line drawn.
@@ -380,10 +362,9 @@ module.exports = {
   datalog: datalog,
   channels: channels,
   maps: maps,
-  mhd: mhd,
   connect: connect,
   cval: cval,
   byName: function (name) {
-    return { live: live, datalog: datalog, channels: channels, maps: maps, mhd: mhd, connect: connect }[name] || live;
+    return { live: live, datalog: datalog, channels: channels, maps: maps, connect: connect }[name] || live;
   }
 };

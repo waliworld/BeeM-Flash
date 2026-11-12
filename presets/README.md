@@ -5,13 +5,13 @@ A preset is a list of channel keys to enable, as a bare JSON array or
 **`preset.json`** and the app enables those channels (unless you've already made
 your own selection, which is saved to `channels.json` and takes priority).
 
-- **`b58_mhdplus.json`** — the channel selection from a B58 MHD Flasher
+- **`b58_extended.json`** — an extended B58 tuner channel selection
   `LogPresets.csv` export (42 channels), as a worked example.
 
-To make one from your own MHD preset:
+To make one from your own tuner log-preset CSV:
 
 ```bash
-node scripts/preset_from_mhd_csv.js path/to/LogPresets.csv
+node scripts/preset_from_csv.js path/to/presets.csv
 ```
 
 This reads only the parameter names and on/off flags and maps them to channel

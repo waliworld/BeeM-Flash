@@ -77,7 +77,7 @@
 | `src/someip.js` | Live bus signals via `ctx.signals.watch`. |
 | `src/diag.js` | UDS poll loop + routine/session/security control. |
 | `src/uds.js` | ISO 14229 request builders and response parser (pure). |
-| `src/mhdmonitor.js` | MHD live-monitor exchange decode (MG1, read-only). |
+| `fastlog.js` | fast UDS block read exchange decode (MG1, read-only). |
 | `src/doip.js` | ISO 13400 (DoIP) read transport + vehicle discovery (pure framing). |
 | `src/enetgate.js` | Vehicle-connection safety gate: acknowledge → enable, never auto-persists "enabled". |
 | `src/mapcontrol.js` | Gated map/cooling switching via DME routines. |

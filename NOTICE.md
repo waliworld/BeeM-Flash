@@ -13,11 +13,11 @@ talks to the vehicle over standard, publicly documented diagnostic protocols.
 
 ## What this project is **not**
 
-- It is **not** affiliated with, endorsed by, or derived from MHD Tuning, BMW,
-  or any tuning vendor. "MHD", "BMW", "iDrive", and "MGU" are the trademarks of
+- It is **not** affiliated with, endorsed by, or derived from the tuner community, BMW,
+  or any tuning vendor. "tuner", "BMW", "iDrive", and "MGU" are the trademarks of
   their respective owners and are used here only to describe compatibility.
 - It contains **no** decompiled, reverse-engineered, or copied code from the
-  MHD Flasher application or any other third-party app.
+  a tuner tool application or any other third-party app.
 - It contains **no** BMW SDK. The BMW on-board application SDK (`oap-sdk` and
   the generated `rhmiData`) is **never** committed to this repository. On the
   head unit, the MGU app platform links the app against the SDK that is already
@@ -29,25 +29,7 @@ talks to the vehicle over standard, publicly documented diagnostic protocols.
 - All vehicle data stays on the head unit. Logs are written to the app's own
   writable data directory and exported by the user to a USB stick. No telemetry
   is sent anywhere by this app.
-- The optional "MHD Datalog (web)" screen simply opens MHD's own website so the
-  user can sign in and use MHD's own datalogging through MHD's own page. This
-  app does not capture, store, or forward any MHD credentials. That screen is a
-  convenience shortcut, not an integration, and is clearly marked as such.
-
-## Safety
-
-- The app is **read-only by default.** Datalogging only *reads* measured values
-  from the vehicle.
-- Any action that *writes* to the engine controller (a map switch) is:
-  1. disabled unless the user explicitly turns on "Map control" in Settings,
-  2. guarded by on-screen confirmation, and
-  3. refused unless engine-state preconditions are met (see
-     `apps/wali_datalog/src/mapcontrol.js`).
-- The user is solely responsible for the tune on their vehicle and for any map
-  they select. This software is provided "as is", without warranty, per the MIT
-  `LICENSE`.
-- **No ECU flashing.** This app does not write calibration/maps to the engine
-  controller, does not generate tunes, and does not automate or relay MHD's app
+- The app does not generate tunes, and does not automate or relay any third-party app
   to flash maps. It provides live datalogging (read-only), map *switching* among
   maps already flashed in the DME (gated, confirmed, precondition-checked), and
   a read-only view of map definitions. Flashing a DME is irreversible and

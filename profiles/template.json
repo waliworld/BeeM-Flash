@@ -2,7 +2,7 @@
   "label": "EXAMPLE packed-block profile (not calibrated)",
   "verified": false,
 
-  "_doc": "Copy this to the head unit as the app's pidmap.json to map MHD+ channels to your DME's measurement blocks. Several channels may share one `did` at different `off` (bytes) — that is a packed block, read once per cycle at high rate. engineering = raw*m + b; `len` bytes big-endian (le:true for little-endian); `signed:true` for two's-complement. The did/off/len/m/b below are PLACEHOLDERS: fill them from your tune's measurement definitions, set verified:true, and the channels go live. Unknown channel keys are ignored. See docs/SIGNALS-AND-DIDS.md.",
+  "_doc": "Copy this to the head unit as the app's pidmap.json to map the extended channels to your DME's measurement blocks. Several channels may share one `did` at different `off` (bytes) — that is a packed block, read once per cycle at high rate. engineering = raw*m + b; `len` bytes big-endian (le:true for little-endian); `signed:true` for two's-complement. The did/off/len/m/b below are PLACEHOLDERS: fill them from your tune's measurement definitions, set verified:true, and the channels go live. Unknown channel keys are ignored. See docs/SIGNALS-AND-DIDS.md.",
 
   "reads": {
     "boost":        { "did": 16640, "off": 0,  "len": 2, "m": 0.001, "b": -1 },

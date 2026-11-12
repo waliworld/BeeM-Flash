@@ -12,7 +12,7 @@
 var SomeipProvider = require('./someip');
 var DiagProvider = require('./diag');
 var Provider = require('./provider');
-var MhdMonitor = require('./mhdmonitor');
+var FastLog = require('./fastlog');
 var LogEngine = require('./logengine');
 var MapControl = require('./mapcontrol');
 var EnetGate = require('./enetgate');
@@ -25,7 +25,7 @@ var screens = require('./screens');
 var surface = require('./surface');
 var F = require('./format');
 
-var SCREEN_ORDER = ['live', 'datalog', 'channels', 'maps', 'mhd', 'connect'];
+var SCREEN_ORDER = ['live', 'datalog', 'channels', 'maps', 'connect'];
 var DEFAULTS = { demo: 'auto', source: 'auto', platform: 'B58', rate: 10, units: 'metric', style: 'tiles', maxtiles: 8, autostart: false, mapcontrol: false };
 var DISPLAY_DEFAULT = ['rpm', 'boost', 'iat', 'coolant', 'oil', 'timing', 'knock', 'speed'];
 
@@ -61,7 +61,7 @@ App.prototype.start = function (ctx) {
   // disabled) connection state, so both start in demo-only mode.
   this._applyEnetState();
   this.provider = new Provider(this.ctx, {
-    someip: this.someip, diag: this.diag, mhd: this.monitor, getSetting: this.getSetting
+    someip: this.someip, diag: this.diag, monitor: this.monitor, getSetting: this.getSetting
   });
 
   // ---- log engine -------------------------------------------------------
@@ -112,7 +112,7 @@ App.prototype._loadEnabled = function () {
   // 1) the user's live channel edits
   var edits = this._readKeyList('channels.json');
   if (edits) return edits;
-  // 2) an imported preset, e.g. converted from an MHD LogPresets.csv
+  // 2) an imported preset, e.g. converted from a channel-list CSV
   var preset = this._readKeyList('preset.json');
   if (preset) return preset;
   // 3) catalogue defaults
@@ -211,10 +211,10 @@ App.prototype._applyEnetState = function () {
 
   var monOpts = { platform: this.getSetting('platform') };
   if (transport) monOpts.transport = transport;
-  this.monitor = new MhdMonitor(this.ctx, monOpts);
+  this.monitor = new FastLog(this.ctx, monOpts);
   if (this.monitor.supported) trySafe(function () { self.monitor.start(); });
 
-  if (this.provider) { this.provider.diag = this.diag; this.provider.mhd = this.monitor; }
+  if (this.provider) { this.provider.diag = this.diag; this.provider.monitor = this.monitor; }
 };
 
 App.prototype._enetAck = function () {
@@ -348,9 +348,6 @@ App.prototype.onButton = function (btn) {
     if (btn === 'BTN_B') return this._mapStep(1);
     if (btn === 'BTN_C') return this._mapApply();
     if (btn === 'BTN_D') { if (this.confirm) { this.confirm = false; return; } return this._show('live'); }
-  } else if (s === 'mhd') {
-    if (btn === 'BTN_A') return this._openMhd();
-    if (btn === 'BTN_D') return this._show('live');
   } else if (s === 'connect') {
     if (btn === 'BTN_A') return this._enetAck();
     if (btn === 'BTN_B') return this._enetToggleEnable();
@@ -430,13 +427,6 @@ App.prototype._mapApply = function () {
   });
 };
 
-App.prototype._openMhd = function () {
-  var url = 'https://www.mhdtuning.com';
-  // DEVICE: open the unit's browser/uplink if available.
-  if (this.ctx.openUrl) trySafe(function () { this.ctx.openUrl(url); }.bind(this));
-  else this._flash('Open ' + url + ' in a connected browser');
-};
-
 App.prototype._flash = function (msg) {
   this._mapMsg = msg; this._mapOk = false;
   if (this.ctx.log && this.ctx.log.info) this.ctx.log.info(msg);
@@ -489,7 +479,6 @@ App.prototype.buildView = function () {
     style: this.style(),
     selection: this.selection,
     maps: maps,
-    mhd: { internet: !!this.ctx.internet, url: 'https://www.mhdtuning.com' },
     enet: this.enet.status()
   };
 };

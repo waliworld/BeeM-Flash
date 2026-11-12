@@ -94,7 +94,7 @@ installed by the Store alongside the app.
 
 ## Internet (optional)
 
-The **MHD Datalog (web)** screen needs the unit online. Without internet the
+The **tuner Datalog (web)** screen needs the unit online. Without internet the
 screen explains that it is unavailable; the rest of the app is fully offline.
 
 ## What is verified off-car vs. needs a unit

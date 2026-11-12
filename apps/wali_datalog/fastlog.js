@@ -1,17 +1,17 @@
 'use strict';
 //
-// mhdmonitor.js — MHD live-monitor datalog source for MG1 DMEs (B58/S58).
+// blockmonitor.js — UDS block live-monitor datalog source for MG1 DMEs (B58/S58).
 //
-// MHD's live monitor is a single fixed UDS exchange: request 0x2C 0x88 0x01
+// UDS block's live monitor is a single fixed UDS exchange: request 0x2C 0x88 0x01
 // (DynamicallyDefineDataIdentifier), positive reply 0x6C 0x88 followed by a
 // 36-byte little-endian packed body of ~19 measured values. This one request
 // yields a full live set, correctly scaled — the efficient, canonical way to
-// datalog an MHD-flashed MG1 car.
+// datalog an UDS block-flashed MG1 car.
 //
 // The field table (offsets, sizes, signedness, scaling) is transcribed from
-// MHD Tuning's own PUBLICLY PUBLISHED TunerPro RT ADX file (MG1.adx), via the
-// MIT-licensed open-source package github.com/freebeamer/core (pkg/mhd). See
-// data/SOURCES.md. Read-only: the write / map-switch path is MHD's closed
+// UDS block Tuning's own PUBLICLY PUBLISHED TunerPro RT ADX file (MG1.adx), via the
+// MIT-licensed open-source package github.com/freebeamer/core (pkg/block). See
+// data/SOURCES.md. Read-only: the write / map-switch path is UDS block's closed
 // plugin and is intentionally not implemented.
 //
 var uds = require('./uds');
@@ -40,7 +40,7 @@ var FIELDS = [
   { name: 'SPEED',          off: 0x1C, bits: 16, signed: false, m: 1,                   channel: 'speed',               uscale: 1 },
   { name: 'AMBIENTTEMP',    off: 0x1E, bits: 16, signed: true,  m: 0.1,                 channel: 'ambientT',            uscale: 1 },
   { name: 'INTAKEAIRTEMP',  off: 0x20, bits: 16, signed: true,  m: 0.1,                 channel: 'iat',                 uscale: 1 },
-  { name: 'MHDMAFCALC',     off: 0x22, bits: 16, signed: false, m: 0.03472225,          channel: null,                  uscale: 1 }
+  { name: 'MAFCALC',     off: 0x22, bits: 16, signed: false, m: 0.03472225,          channel: null,                  uscale: 1 }
 ];
 
 var BODY_LEN = 36;
@@ -92,7 +92,7 @@ function promisifySend(transport) {
   };
 }
 
-function MhdMonitor(ctx, opts) {
+function FastLog(ctx, opts) {
   opts = opts || {};
   this.ctx = ctx || {};
   this.transport = opts.transport || null;
@@ -106,7 +106,7 @@ function MhdMonitor(ctx, opts) {
   this.busy = false;
 }
 
-MhdMonitor.prototype.start = function (scheduler) {
+FastLog.prototype.start = function (scheduler) {
   if (!this.supported) return false;
   var self = this;
   var setI = scheduler || (typeof setInterval === 'function' ? setInterval : null);
@@ -123,23 +123,23 @@ MhdMonitor.prototype.start = function (scheduler) {
   return true;
 };
 
-MhdMonitor.prototype.read = function () {
+FastLog.prototype.read = function () {
   var out = {};
   for (var k in this.cache) if (this.cache.hasOwnProperty(k)) out[k] = this.cache[k];
   return out;
 };
 
-MhdMonitor.prototype.health = function () {
+FastLog.prototype.health = function () {
   return { supported: this.supported, platform: this.platform, fresh: this.supported && (Date.now() - this.lastUpdate) < 1000, lastUpdate: this.lastUpdate };
 };
 
-MhdMonitor.prototype.stop = function () {
+FastLog.prototype.stop = function () {
   if (this.timer && typeof clearInterval === 'function') clearInterval(this.timer);
   this.timer = null;
 };
 
-MhdMonitor.FIELDS = FIELDS;
-MhdMonitor.BODY_LEN = BODY_LEN;
-MhdMonitor.decodeBody = decodeBody;
-MhdMonitor.decodeReply = decodeReply;
-module.exports = MhdMonitor;
+FastLog.FIELDS = FIELDS;
+FastLog.BODY_LEN = BODY_LEN;
+FastLog.decodeBody = decodeBody;
+FastLog.decodeReply = decodeReply;
+module.exports = FastLog;

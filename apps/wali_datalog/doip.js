@@ -1,7 +1,7 @@
 'use strict';
 //
 // doip.js — minimal ISO 13400 (DoIP) client, for the app's own live-data reads
-// over the vehicle's diagnostic Ethernet. Independent of MHD.
+// over the vehicle's diagnostic Ethernet (ISO 13400).
 //
 // SCOPE: read-only transport. It gives our datalogger a standards-based way to
 // reach the DME (routing activation + diagnostic request/response) so it can

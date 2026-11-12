@@ -1,6 +1,6 @@
 'use strict';
 //
-// channels.js — the catalogue of loggable channels (MHD+ class coverage).
+// channels.js — the catalogue of loggable channels (extended tuner-class coverage).
 //
 // Each channel is source-agnostic metadata: where to read it, how to show it on
 // a gauge, how it appears in the CSV, and how to convert to imperial. The
@@ -92,7 +92,7 @@ var BASE = [
   { key: 'gLong', label: 'Longitudinal G', unit: 'g', cat: 'Dynamics', read: diag('gLong'), min: -2, max: 2, dp: 2, dguess: { len: 2, m: 0.001, b: -2, signed: true }, def: false },
   { key: 'gLat', label: 'Lateral G', unit: 'g', cat: 'Dynamics', read: diag('gLat'), min: -2, max: 2, dp: 2, dguess: { len: 2, m: 0.001, b: -2, signed: true }, def: false },
 
-  // ---- Extended boost / wastegate control (B58 / MHD+ class) -------------
+  // ---- Extended boost / wastegate control (B58, extended tuner class) ----
   { key: 'boostDeviation', label: 'Boost deviation', unit: 'bar', iunit: 'psi', toImp: F.barToPsi, cat: 'Air/Boost', read: diag('boostDeviation'), min: -1, max: 1, dp: 2, dguess: { len: 2, m: 0.001, b: -1, signed: true }, def: true },
   { key: 'boostSetpointFactor', label: 'Boost setpoint factor', unit: '', cat: 'Air/Boost', read: diag('boostSetpointFactor'), min: 0, max: 2, dp: 2, dguess: { len: 2, m: 0.001 }, def: true },
   { key: 'compressorAfterPD', label: 'Compressor after P-D', unit: 'bar', iunit: 'psi', toImp: F.barToPsi, cat: 'Air/Boost', read: diag('compressorAfterPD'), min: 0, max: 4, dp: 2, dguess: { len: 2, m: 0.001 }, def: true },

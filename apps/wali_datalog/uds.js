@@ -13,7 +13,7 @@ var SID = {
   TESTER_PRESENT: 0x3E,
   READ_DID: 0x22,
   READ_MEM: 0x23, // ReadMemoryByAddress (read-only; used for A2L address measurements)
-  DDDI: 0x2C, // DynamicallyDefineDataIdentifier (MHD live monitor uses 2C 88 01)
+  DDDI: 0x2C, // DynamicallyDefineDataIdentifier (the fast block read uses 2C 88 01)
   ROUTINE: 0x31
 };
 
@@ -92,7 +92,7 @@ function buildRoutineControl(sub, rid, data) {
   return [SID.ROUTINE, u8(sub), hi(rid), lo(rid)].concat(data || []);
 }
 
-// MHD live-monitor request: DynamicallyDefineDataIdentifier 0x2C 0x88 0x01.
+// Fast block read: DynamicallyDefineDataIdentifier 0x2C 0x88 0x01.
 // Positive reply is 0x6C 0x88 followed by the packed monitor body.
 function buildMonitorRequest() {
   return [SID.DDDI, 0x88, 0x01];

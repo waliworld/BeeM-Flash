@@ -15,9 +15,9 @@ npm run shots   # renders every screen to real pixels (out/shots/*.png)
 - **UDS codec** — `0x22` frame bytes; positive parse + big/little-endian and
   signed integer assembly; `scaleFromSpec`; negative-response NRC decoding;
   `0x31` routine parse (RID `0x611E`).
-- **Channels** — defaults, metric→imperial conversion, unit labels, full MHD+
+- **Channels** — defaults, metric→imperial conversion, unit labels, full extended
   catalogue size (85+ channels incl. per-cylinder + B58 boost/wastegate control).
-- **MHD preset converter** — parses a `LogPresets.csv` (names + flags only),
+- **tuner preset converter** — parses a `presets.csv` (names + flags only),
   maps selected parameters to channel keys, reports unmapped ones.
 - **Measurement importer** — maps a measurement table (English/German BMW/ISTA
   names, hex or decimal DIDs) to channel keys, groups shared DIDs into packed
@@ -44,7 +44,7 @@ npm run shots   # renders every screen to real pixels (out/shots/*.png)
 - **A2L parser** — parses a MEASUREMENT + its RAT_FUNC COMPU_METHOD, deriving the
   linear scale (f/b), data type (UWORD→u16), endianness (MSB_LAST→little) and
   ECU address; plus the UDS ReadMemoryByAddress (`0x23`) frame.
-- **MHD live-monitor decode** — a synthetic `6C 88` + 36-byte little-endian reply
+- **fast UDS block read decode** — a synthetic `6C 88` + 36-byte little-endian reply
   decodes to the right channels/scaling (RPM 3000, LOAD 50 %, BOOST→1.00 bar,
   ENGINETEMP→90 °C, GEAR 3, SPEED 100, IAT 30 °C); a negative reply → null.
 - **Enhanced-PID dataset + pidmap composition** — data-type → len/signed; curated
@@ -76,7 +76,7 @@ CSV header and sample rows.
 ### `npm run shots` confirms
 
 Every screen (live in 3 styles, datalog REC + DONE, channels x2, maps
-enabled/off/confirm, MHD, and Connect in its locked/enabled/connected states)
+enabled/off/confirm, and Connect in its locked/enabled/connected states)
 renders to pixels through the **real app modules** (bundled and run in a
 browser canvas), with zero page/console errors. Screenshots are in
 `out/shots/`.
@@ -111,4 +111,3 @@ about its state until finished on a vehicle.
   channels read `--`.
 - The map-switch job and any required seed/key are confirmed per DME; the seed→key
   algorithm is intentionally not bundled.
-- The MHD web screen opens MHD's site; it does not scrape or automate it.

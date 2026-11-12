@@ -14,21 +14,21 @@ scaling for datalogging. Every row carries its `source` and `verified=false`.
   vendored wholesale — we generate our own schema and keep the derivation script
   for provenance.
 
-## MHD live-monitor protocol (`src/mhdmonitor.js`)
+## fast UDS block read protocol (`fastlog.js`)
 
-The MHD live-monitor exchange — request `2C 88 01`
+The fast UDS block read exchange — request `2C 88 01`
 (DynamicallyDefineDataIdentifier), reply `6C 88` + a 36-byte little-endian
 packed block — and its field table (offsets, sizes, signedness, scaling) are
 transcribed from:
 
-- **MHD Tuning's own publicly published TunerPro RT ADX file** (`MG1.adx`) for
+- **the tuner community's own publicly published TunerPro RT ADX file** (`MG1.adx`) for
   the live monitor, via
-- **`github.com/freebeamer/core`** (**MIT License**), package `pkg/mhd`, which
+- **`github.com/freebeamer/core`** (**MIT License**), its block-layout package, which
   documents the exchange field-by-field.
 
 Copyright (c) the `freebeamer/core` authors; used under the MIT License. We port
 the factual field/scaling table (not the Go code) and map the fields to our
-channel keys. Read-only: the write / map-switch path is MHD's closed plugin and
+channel keys. Read-only: the write / map-switch path is tuner's closed plugin and
 is intentionally not implemented, consistent with that source.
 
 ## MGFlasher A2L / XDF map packs (integrated: measurements)
@@ -47,7 +47,7 @@ is intentionally not implemented, consistent with that source.
   Rows are `verified=false`.
 - The CHARACTERISTIC (map/table) side is used only for a planned **read-only map
   viewer**. This project does **not** implement ECU flashing / calibration
-  writing, a virtual map generator, or automation of MHD's app — see the project
+  writing, a virtual map generator, or automation of any third-party app — see the project
   README/NOTICE.
 
 ## Referenced but NOT used
@@ -72,7 +72,7 @@ is intentionally not implemented, consistent with that source.
 
 An original, read-only ISO 13400 (DoIP) client gives the datalogger a
 standards-based way to read live data from the DME over the vehicle's own
-diagnostic Ethernet, independent of MHD. It is **not** a gateway/bridge: it opens
+diagnostic Ethernet, a standard open diagnostic transport. It is **not** a gateway/bridge: it opens
 no external listener, forwards no third-party traffic, and contains no flashing,
 calibration-write, or seed/key code. A **virtual ENET-over-WiFi bridge** that
 would expose the vehicle's diagnostic network to external tools is deliberately
@@ -94,7 +94,7 @@ same acknowledge-then-enable state rather than a silent auto-connect.
 
 ## What this project does **not** include
 
-No BMW SGBD/EDIABAS files, no ISTA/INPA binaries, no MHD application code or
+No BMW SGBD/EDIABAS files, no ISTA/INPA binaries, no proprietary tuning-application code or
 signing material. The enhanced-PID list above is open community reference data
 about the vehicle, used for interoperability and clearly attributed.
 

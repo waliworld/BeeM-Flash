@@ -1,11 +1,11 @@
 'use strict';
 //
-// preset_from_mhd_csv.js — convert an MHD Flasher "LogPresets.csv" export into a
+// preset_from_csv.js — convert a tuner log-preset CSV (channel names + flags) into a
 // Wali Datalog preset (an enabled-channel list). This reads only the parameter
 // NAMES and their on/off flags from the user's own exported preset; it maps them
 // to our neutral channel keys. It copies no vendor code or scaling.
 //
-// Usage: node scripts/preset_from_mhd_csv.js <LogPresets.csv> [out.json]
+// Usage: node scripts/preset_from_csv.js <presets.csv> [out.json]
 //
 var fs = require('fs');
 var path = require('path');
@@ -13,7 +13,7 @@ var Channels = require('../apps/wali_datalog/channels');
 
 function norm(s) { return String(s).replace(/\s+/g, ' ').trim(); }
 
-// MHD parameter name (normalised) -> our channel key.
+// Tuner parameter name (normalised) -> our channel key.
 var NAME_MAP = {
   'Accel Ped. Pos.': 'pedal', 'Amb. temp.': 'ambientT', 'Battery volt.': 'battery',
   'Boost': 'boost', 'Boost (mani)': 'boostAbs', 'Boost deviation': 'boostDeviation',
@@ -28,7 +28,7 @@ var NAME_MAP = {
   'Lambda 1': 'lambda', 'Lambda 2': 'lambda2', 'Lambda target': 'lambdaTarget',
   'Load act.': 'load', 'Load req.': 'loadReq', 'LTFT 1': 'ltft',
   'MAF': 'maf', 'MAF REQ (P corr.)': 'mafReq', 'MAF req. WGDC': 'mafReqWg',
-  'MHD+ LC Status': 'launchStatus',
+  'LC Status': 'launchStatus',
   'Oil pressure': 'oilPressure', 'Oil temp': 'oil',
   'PI+ Direct Inj IDC': 'diInjIdc', 'PI+ Diff. Fuel Press': 'diffFuelPress',
   'PI+ Fuel Mass (Total)': 'fuelMassTotal', 'PI+ LPFP Actual': 'lpfp', 'PI+ LPFP Setpoint': 'lpfpTarget',
@@ -79,9 +79,9 @@ function convert(csvText) {
 
 if (require.main === module) {
   var csvPath = process.argv[2];
-  if (!csvPath) { console.error('usage: node scripts/preset_from_mhd_csv.js <LogPresets.csv> [out.json]'); process.exit(2); }
+  if (!csvPath) { console.error('usage: node scripts/preset_from_csv.js <presets.csv> [out.json]'); process.exit(2); }
   var res = convert(fs.readFileSync(csvPath, 'utf8'));
-  var out = { label: 'MHD preset ' + (res.ecu || 'unknown'), ecu: res.ecu, enabled: res.enabled };
+  var out = { label: 'Imported preset ' + (res.ecu || 'unknown'), ecu: res.ecu, enabled: res.enabled };
   var outPath = process.argv[3] || path.join('presets', (res.ecu || 'preset') + '.json');
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   fs.writeFileSync(outPath, JSON.stringify(out, null, 2) + '\n');
@@ -89,7 +89,7 @@ if (require.main === module) {
   console.log('mapped names: ' + res.mapped + ' | enabled channels: ' + res.enabled.length);
   console.log('wrote ' + outPath);
   if (res.unmappedSelected.length) {
-    console.log('\nSelected in MHD but not represented (' + res.unmappedSelected.length + '):');
+    console.log('\nSelected but not represented (' + res.unmappedSelected.length + '):');
     console.log('  ' + res.unmappedSelected.join('\n  '));
   }
 }
