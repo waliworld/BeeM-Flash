@@ -447,23 +447,33 @@ function flash(cv, t, view, R) {
   }
   var d = f.descriptor;
   cv.text('CALIBRATION READY', R.x + 24, py + 36, 24, t.text, { weight: 'bold' });
-  // what's on the car now (so you confirm you're flashing the right base)
-  if (f.tune) {
-    var oc = (f.tune.detected || f.tune.modified === true);
-    cv.text('ON CAR: ' + (f.tune.calId || '—') + (f.tune.detected ? '  (looks like ' + f.tune.detected + ')' : ''), R.x + R.w - 24, py + 36, 18, oc ? t.crit : t.dim, { align: 'r', weight: oc ? 'bold' : 'normal' });
-  }
+  // left column: the write parameters
   var rows = [['Address', d.addressHex || '—'], ['Size', (d.size || 0) + ' bytes'], ['Security', d.security || 'none'],
     ['Erase', d.erase || 'none'], ['Verify', d.verify || 'none']];
   for (var i = 0; i < rows.length; i++) {
-    var yy = py + 60 + i * 24;
+    var yy = py + 72 + i * 26;
     cv.text(rows[i][0].toUpperCase(), R.x + 24, yy, 15, t.faint, { weight: 'bold' });
     cv.text(rows[i][1], R.x + 200, yy, 19, t.text, {});
   }
-  // image fingerprint — is this calibration a known stock / MHD+ image?
+  // right column: what's on the car, the image fingerprint, and checksum status
+  var rx = R.x + Math.round(R.w * 0.52);
+  if (f.tune) {
+    var oc = (f.tune.detected || f.tune.modified === true);
+    cv.text('ON CAR', rx, py + 46, 15, t.faint, { weight: 'bold' });
+    cv.text((f.tune.calId || '—') + (f.tune.detected ? '  (looks like ' + f.tune.detected + ')' : ''), rx, py + 72, 19, oc ? t.crit : t.dim, { weight: oc ? 'bold' : 'normal' });
+  }
   if (d.fingerprint) {
     var fk = d.fingerprint.kind, fcol = (fk === 'stock') ? t.text : (fk === 'mhdplus' ? t.accent : t.dim);
-    cv.text('IMAGE', R.x + 24, py + 184, 15, t.faint, { weight: 'bold' });
-    cv.text(d.fingerprint.text, R.x + 200, py + 184, 19, fcol, { weight: fk ? 'bold' : 'normal' });
+    cv.text('IMAGE', rx, py + 110, 15, t.faint, { weight: 'bold' });
+    cv.text(d.fingerprint.text, rx, py + 136, 19, fcol, { weight: fk ? 'bold' : 'normal' });
+  }
+  if (d.checksum) {
+    var cz = d.checksum, czText, czCol;
+    if (cz.ok) { czText = 'valid (' + cz.count + ' block' + (cz.count === 1 ? '' : 's') + ')'; czCol = t.text; }
+    else if (cz.correct) { czText = cz.bad + ' of ' + cz.count + ' invalid — will CORRECT on flash'; czCol = t.accent; }
+    else { czText = cz.bad + ' of ' + cz.count + ' INVALID — correction off (flash blocked)'; czCol = t.crit; }
+    cv.text('CHECKSUMS', rx, py + 174, 15, t.faint, { weight: 'bold' });
+    cv.text(czText, rx, py + 200, 19, czCol, { weight: cz.ok ? 'normal' : 'bold' });
   }
   if (f.result) cv.text(f.result.message, R.x + 24, py + ph - 12, 18, f.result.ok ? (f.result.confirmed ? t.good : t.accent) : t.crit, { weight: 'bold' });
   else cv.text('Tap FLASH, then confirm. Charged battery, stable connection, do not interrupt.', R.x + 24, py + ph - 12, 18, t.crit, {});

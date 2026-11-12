@@ -140,6 +140,43 @@ a calibration you have read out of the car to confirm, byte-for-byte, whether th
 car is running stock. (Fingerprints cover full DME images; a partial calibration
 section won't match a full-image hash.)
 
+## Checksums — checked and corrected before flashing
+
+A modified calibration must have its internal checksums recomputed, or the DME
+rejects it (or won't run). If you supply a **checksum scheme** (in the descriptor
+as `checksum`, or in `config.checksum`), BeeM-Flash:
+
+1. **checks** the calibration's checksums when it loads it (the Flash tab shows
+   `valid` / `N of M invalid`), and
+2. before writing, **corrects** them when correction is enabled (the default), or
+   **refuses to flash** an invalid calibration when it is not — so you never
+   write a cal the ECU will reject.
+
+The scheme is owner-supplied (nothing is bundled — the exact MG1 layout is
+DME-specific; get it from your tuning tool / A2L / community). It is a list of
+blocks; each names an algorithm, the byte ranges it covers (which must **not**
+include the checksum's own bytes), and where the value is stored:
+
+```json
+{
+  "checksum": {
+    "blocks": [
+      { "name": "cal", "algo": "crc32",
+        "ranges": [[1052672, 2097148]],
+        "store": { "at": 2097148, "size": 4, "endian": "le" } }
+    ]
+  },
+  "correctChecksums": true
+}
+```
+
+Algorithms: `crc32`, `crc16` (`params.preset` = `crc16`/`crc16ccitt`/`crc16modbus`,
+or your own `poly`/`init`/`refin`/`refout`/`xorout`), `sum16`, `sum32`, `xor8`,
+and `sumcomp` (additive complement to `params.target`). The CRC engine is the
+standard one (validated against the usual CRC-32 / CRC-16 test vectors). The
+read-out verifier (`binverify`) and this checksum engine are complementary:
+one confirms the whole image, the other keeps the ECU's own integrity checks valid.
+
 ## Before you flash — a checklist
 
 - **Right section, right address.** A calibration written to the wrong address,

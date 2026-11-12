@@ -18,6 +18,16 @@ UI: one canvas screen with internal paging driven by four HMI bar buttons
 
 ## Beta 2 — v2.x.x
 
+### v2.6.0
+- **Checksum check + correction before flashing** — a new `checksum` engine
+  (standard CRC-32, CRC-16 CCITT/XMODEM/MODBUS, additive sum/xor and
+  additive-complement, validated against the usual CRC test vectors). When a
+  checksum scheme is supplied (descriptor `checksum` or `config.checksum`), the
+  Flash tab shows the calibration's checksum status on load, and before writing
+  the flasher **corrects** the checksums (default) or **refuses to flash** an
+  invalid calibration — so you never write a cal the DME would reject. The scheme
+  (algorithm + regions) is owner-supplied; nothing MG1-specific is bundled.
+
 ### v2.5.0  (all additive — nothing removed)
 - **Smaller fonts** — every screen's text is scaled down uniformly (default 0.85,
   `config.fontScale`) so nothing overlaps or runs off the head-unit screen.

@@ -757,6 +757,9 @@ App.prototype._flashRun = function () {
   this.flash.running = true; this.flash.progress = 0; this.flash.step = 'starting'; this.flash.result = null;
   var opts = {}; for (var k in this.flash.opts) opts[k] = this.flash.opts[k];
   opts.acknowledged = true;
+  // A checksum scheme can also come from app.json config (not just the descriptor).
+  var cfg = this._config();
+  if (!opts.checksum && cfg.checksum) { opts.checksum = cfg.checksum; opts.correctChecksums = (cfg.correctChecksums !== false); }
   return gw.activate().then(function () {
     return flash.flashCalibration(function (b) { return gw.send(b); }, opts, function (step) {
       self.flash.step = step;

@@ -523,6 +523,27 @@ function makeFakeDiscoverySocket(respond) {
   ok(vr.match === false && /^[0-9a-f]{64}$/.test(vr.sha256), 'binverify: unknown image -> no match, reports its hash');
 })();
 
+// ---- checksum engine: CRC vectors + check/correct --------------------------
+(function () {
+  var cs = require(A + 'checksum');
+  var s = '123456789'.split('').map(function (c) { return c.charCodeAt(0); });
+  eq(cs.crcWith(s, cs.PRESETS.crc32) >>> 0, 0xCBF43926, 'checksum: CRC32 standard vector');
+  eq(cs.crcWith(s, cs.PRESETS.crc16modbus) & 0xffff, 0x4B37, 'checksum: CRC16/MODBUS vector');
+  eq(cs.crcWith(s, cs.PRESETS.crc16ccitt) & 0xffff, 0x31C3, 'checksum: CRC16/XMODEM vector');
+  // scheme: crc32 over [0,16) stored LE at 16
+  var bin = []; for (var i = 0; i < 20; i++) bin.push(i);
+  var scheme = { blocks: [{ name: 'cal', algo: 'crc32', ranges: [[0, 16]], store: { at: 16, size: 4, endian: 'le' } }] };
+  ok(cs.check(bin, scheme).ok === false, 'checksum: detects an invalid checksum');
+  var cor = cs.correct(bin, scheme);
+  ok(cor.check.ok && cor.changed.length === 1, 'checksum: correction makes the bin valid');
+  eq(cs.readStore(cor.bin, scheme.blocks[0].store) >>> 0, cs.crcWith(bin.slice(0, 16), cs.PRESETS.crc32) >>> 0, 'checksum: stored value is the CRC32');
+  ok(bin[16] === 16, 'checksum: correct() does not mutate the original bin');
+  // additive complement: sum(range) + stored == target
+  var bin2 = [10, 20, 30, 40, 0, 0, 0, 0];
+  var sc = { blocks: [{ name: 's', algo: 'sumcomp', ranges: [[0, 4]], store: { at: 4, size: 4, endian: 'le' }, params: { target: 0x10000 } }] };
+  ok(cs.correct(bin2, sc).check.ok, 'checksum: sum-complement correction is valid');
+})();
+
 // ---- OBD-II source: PID decode + both boost PIDs (additional source) --------
 (function () {
   var obd = require(A + 'obd');
@@ -1059,6 +1080,32 @@ Promise.resolve()
       // read-only: ecuinfo issues only 0x22 requests
       var onlyReads = sim.log.every(function (r) { return r[0] === uds.SID.READ_DID; });
       ok(onlyReads, 'ecuinfo: only ReadDataByIdentifier (0x22) issued — read-only');
+    });
+  })
+  .then(function () {
+    // ---- flashing with checksum check + correction -------------------------
+    var flash = require(A + 'flash');
+    var cs = require(A + 'checksum');
+    var EcuSim = require('./ecusim').EcuSim;
+    var cal = []; for (var i = 0; i < 64; i++) cal.push((i * 5 + 1) & 0xff);
+    cal = cal.concat([0, 0, 0, 0]); // 4-byte checksum slot (currently wrong)
+    var scheme = { blocks: [{ name: 'cal', algo: 'crc32', ranges: [[0, 64]], store: { at: 64, size: 4, endian: 'le' } }] };
+    // without correction -> refuse to flash an invalid calibration
+    return flash.flashCalibration(new EcuSim().transport(), { acknowledged: true, data: cal, address: 0xA0000000, checksum: scheme }).then(function (r) {
+      ok(r.ok === false && /checksums are INVALID/i.test(r.message), 'flash: refuses a calibration with invalid checksums');
+      // with correction -> corrects, then flashes; the DME receives the fixed bytes
+      var sim = new EcuSim({ maxBlock: 40 });
+      return flash.flashCalibration(sim.transport(), { acknowledged: true, data: cal, address: 0xA0000000, checksum: scheme, correctChecksums: true }).then(function (r2) {
+        ok(r2.ok === true && r2.checksum && r2.checksum.corrected, 'flash: corrects checksums then flashes');
+        var expect = cs.crcWith(cal.slice(0, 64), cs.PRESETS.crc32) >>> 0;
+        eq(cs.readStore(sim.flashed, { at: 64, size: 4, endian: 'le' }) >>> 0, expect, 'flash: DME received the corrected CRC32');
+        // a valid calibration flashes with no correction needed
+        var good = cs.correct(cal, scheme).bin;
+        var sim2 = new EcuSim({ maxBlock: 40 });
+        return flash.flashCalibration(sim2.transport(), { acknowledged: true, data: good, address: 0xA0000000, checksum: scheme }).then(function (r3) {
+          ok(r3.ok === true && r3.checksum && r3.checksum.corrected === false, 'flash: a valid calibration flashes without correction');
+        });
+      });
     });
   })
   .then(function () {

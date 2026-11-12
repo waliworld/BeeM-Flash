@@ -26,6 +26,7 @@
 //
 var uds = require('./uds');
 var seedkey = require('./seedkey');
+var checksum = require('./checksum');
 
 // flashCalibration(send, opts, onProgress) -> Promise<{ ok, confirmed, message, steps }>
 //   opts (all caller-supplied; nothing defaulted to a real ECU):
@@ -53,6 +54,22 @@ function flashCalibration(send, opts, onProgress) {
   if (typeof send !== 'function') return Promise.resolve(fail('No diagnostic transport available.'));
 
   var data = opts.data;
+  // Checksum safety: a modified calibration must have valid internal checksums or
+  // the DME rejects it. If a checksum scheme is supplied, verify them first; if
+  // they are wrong, correct them (when allowed) or REFUSE to flash.
+  var csResult = null;
+  if (opts.checksum && opts.checksum.blocks && opts.checksum.blocks.length) {
+    var chk = checksum.check(data, opts.checksum);
+    if (chk.ok) { csResult = { ok: true, corrected: false }; note('checksum ok'); }
+    else if (opts.correctChecksums) {
+      var cor = checksum.correct(data, opts.checksum);
+      if (!cor.check.ok) return Promise.resolve(fail('Checksum correction failed to produce a valid calibration — check the scheme (config.checksum).'));
+      data = cor.bin; csResult = { ok: true, corrected: true, changed: cor.changed.length };
+      note('checksum corrected (' + cor.changed.length + ')');
+    } else {
+      return Promise.resolve(fail('Calibration checksums are INVALID (' + chk.blocks.filter(function (b) { return !b.ok; }).length + ' of ' + chk.count + '). Enable checksum correction or fix the file before flashing.'));
+    }
+  }
   var size = opts.size || data.length;
   var session = opts.session || 0x02;          // programmingSession
   var addrBytes = opts.addrBytes || 4, sizeBytes = opts.sizeBytes || 4;
@@ -118,11 +135,12 @@ function flashCalibration(send, opts, onProgress) {
     return sa(uds.buildEcuReset(opts.reset || 0x01), uds.SID.ECU_RESET).then(function () { return verify; });
   }).then(function (verify) {
     var confirmed = !!verify.confirmed;
+    var csNote = csResult && csResult.corrected ? ' (checksums corrected)' : (csResult ? ' (checksums ok)' : '');
     return {
-      ok: true, confirmed: confirmed, steps: steps,
-      message: confirmed
-        ? ('Calibration flashed and verified (' + size + ' bytes).')
-        : ('Calibration flashed (' + size + ' bytes), but ' + (opts.checkRid == null ? 'no verify routine was configured' : ('the DME did not confirm it' + (verify.checkMsg ? ': ' + verify.checkMsg : ''))) + ' — confirm the car starts and runs correctly before driving.')
+      ok: true, confirmed: confirmed, steps: steps, checksum: csResult,
+      message: (confirmed
+        ? ('Calibration flashed and verified (' + size + ' bytes)' + csNote + '.')
+        : ('Calibration flashed (' + size + ' bytes)' + csNote + ', but ' + (opts.checkRid == null ? 'no verify routine was configured' : ('the DME did not confirm it' + (verify.checkMsg ? ': ' + verify.checkMsg : ''))) + ' — confirm the car starts and runs correctly before driving.'))
     };
   }).catch(function (e) {
     var where = steps.length ? steps[steps.length - 1] : 'start';

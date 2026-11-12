@@ -16,6 +16,7 @@
 //
 var flash = require('./flash');
 var binverify = require('./binverify');
+var checksum = require('./checksum');
 
 function parseHex(s) {
   var h = String(s).replace(/[^0-9a-fA-F]/g, ''), out = [];
@@ -38,6 +39,18 @@ function loadDescriptor(storage) {
   var norm = flash.normalizeDescriptor(desc, data);
   if (norm.error) return { ok: false, error: norm.error, status: norm.error };
   var o = norm.opts;
+  // Checksum scheme (owner-supplied) — verify now so the UI can show status, and
+  // carry it + the correct-on-flash flag into the flash options.
+  var csInfo = null;
+  if (desc.checksum && desc.checksum.blocks && desc.checksum.blocks.length) {
+    o.checksum = desc.checksum;
+    o.correctChecksums = (desc.correctChecksums !== false); // default: correct on flash
+    try {
+      var chk = checksum.check(data, desc.checksum);
+      var bad = chk.blocks.filter(function (b) { return !b.ok; }).length;
+      csInfo = { ok: chk.ok, count: chk.count, bad: bad, correct: o.correctChecksums };
+    } catch (e) { csInfo = { ok: false, error: 'checksum scheme invalid' }; }
+  }
   // Fingerprint the calibration being loaded, so the UI can say whether you are
   // about to flash a known STOCK image, a known MHD+ base, or an unknown/custom
   // calibration. (Most useful when the data is a full DME image.)
@@ -48,7 +61,8 @@ function loadDescriptor(storage) {
     security: (o.securityLevel != null) ? ('level 0x' + o.securityLevel.toString(16) + (o.keyFn ? ' + key' : '')) : 'none',
     erase: (o.eraseRid != null) ? ('routine 0x' + o.eraseRid.toString(16)) : 'none',
     verify: (o.checkRid != null) ? ('routine 0x' + o.checkRid.toString(16)) : 'none',
-    fingerprint: fp ? { kind: fp.kind, id: fp.id, match: fp.match, text: binverify.describe(fp) } : null
+    fingerprint: fp ? { kind: fp.kind, id: fp.id, match: fp.match, text: binverify.describe(fp) } : null,
+    checksum: csInfo
   };
   return { ok: true, descriptor: info, opts: o };
 }
