@@ -103,6 +103,26 @@ flash.flashCalibration(send, norm.opts);
 A descriptor is normalized with `acknowledged: false` on purpose — acknowledging
 the risk is always a separate, deliberate act, never baked into a file.
 
+## On the head unit (the Flash tab)
+
+Beta 2 adds a gated **Flash** tab over this engine:
+
+1. The flash engine is an explicit **ON/OFF** switch, **OFF** by default — nothing
+   can be written while it is OFF.
+2. Turn it **ON**: the app loads your descriptor from the app data dir
+   (`flash/descriptor.json`, plus the calibration bytes via `data` / `dataHex` /
+   `binHex` — see below) and shows the address, size, security, erase and verify
+   routines it will use. Nothing is bundled; if no descriptor is present it says so.
+3. Connect to the car first (the **Connect** tab).
+4. Tap **FLASH** — the first press only arms a confirmation; a modal spells out
+   that this writes to the DME and can brick it. Tap **FLASH** again to confirm.
+5. A progress bar shows erase → transfer % → verify. Interrupting it can brick the
+   ECU. The result is reported honestly (verified / written-but-unconfirmed /
+   failed-at-step).
+
+The engine remains callable directly as a library (below) for off-car and
+scripted use; the tab is just the gated on-car front end over the same code.
+
 ## Before you flash — a checklist
 
 - **Right section, right address.** A calibration written to the wrong address,

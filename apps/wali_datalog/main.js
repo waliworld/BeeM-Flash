@@ -22,14 +22,37 @@ var storageMod = require('./storage');
 var dme = require('./dme_profiles');
 var dtc = require('./dtc');
 var modules = require('./modules');
+var flash = require('./flash');
+var flashrun = require('./flashrun');
 var theme = require('./theme');
 var screens = require('./screens');
 var surface = require('./surface');
 var F = require('./format');
 
-var SCREEN_ORDER = ['live', 'datalog', 'channels', 'maps', 'connect'];
+// The tabs shown along the top, in order. `key` is the page; `label` is the tab.
+var TABS = [
+  { key: 'live', label: 'LIVE' }, { key: 'log', label: 'LOG' },
+  { key: 'channels', label: 'CHANNELS' }, { key: 'maps', label: 'MAPS' },
+  { key: 'connect', label: 'CONNECT' }, { key: 'codes', label: 'CODES' },
+  { key: 'flash', label: 'FLASH' }, { key: 'setup', label: 'SETUP' }
+];
+var SCREEN_ORDER = ['live', 'log', 'channels', 'maps', 'connect', 'codes', 'flash', 'setup'];
 var DEFAULTS = { demo: 'auto', source: 'auto', platform: 'B58', rate: 10, units: 'metric', style: 'tiles', maxtiles: 8, autostart: false, mapcontrol: 'off' };
 var DISPLAY_DEFAULT = ['rpm', 'boost', 'iat', 'coolant', 'oil', 'timing', 'knock', 'speed'];
+
+// Settings schema for the in-app SETUP tab (mirrors app.json "settings"). Each
+// entry cycles through its options (bool toggles) via ctx.settings.set.
+var SETTINGS_SCHEMA = [
+  { key: 'units', label: 'Units', hint: 'metric / imperial', options: ['metric', 'imperial'] },
+  { key: 'style', label: 'Live display', hint: 'gauge style', options: ['tiles', 'bars', 'dials'] },
+  { key: 'maxtiles', label: 'Max live gauges', options: [6, 8, 10, 12] },
+  { key: 'rate', label: 'Sample rate', hint: 'Hz', options: [5, 10, 20, 50] },
+  { key: 'demo', label: 'Demo data', options: ['auto', 'on', 'off'] },
+  { key: 'source', label: 'Data source', options: ['auto', 'fast', 'someip', 'diag'] },
+  { key: 'platform', label: 'Engine platform', options: ['B58', 'S58'] },
+  { key: 'autostart', label: 'Auto-start on drive', bool: true },
+  { key: 'mapcontrol', label: 'Map control', hint: 'writes to the DME', options: ['off', 'armed'], danger: true }
+];
 
 function App() {}
 
@@ -41,6 +64,7 @@ App.prototype.start = function (ctx) {
   // ---- settings ---------------------------------------------------------
   this.getSetting = function (k) {
     var v;
+    if (self._localSettings && self._localSettings[k] !== undefined) return self._localSettings[k]; // units without ctx.settings.set
     if (self.ctx.settings && self.ctx.settings.get) v = self.ctx.settings.get(k);
     return v === undefined || v === null ? DEFAULTS[k] : v;
   };
@@ -85,12 +109,16 @@ App.prototype.start = function (ctx) {
   });
 
   // ---- ui state ---------------------------------------------------------
-  this.screen = 'live';
+  this.tab = 'live';
   this.selection = 0;
+  this.setupSel = 0;
   this.latest = { values: {}, demo: false, live: false };
   this.confirm = false;
   // Fault-code (DTC) page state.
   this.codes = { scope: 'all', scanning: false, result: null, msg: '', confirmClear: false, clearing: false, lastClear: null };
+  // Calibration-flash page state. The engine is OFF by default; nothing can be
+  // written until the user turns it ON and then confirms a flash.
+  this.flash = { armed: false, descriptor: null, opts: null, status: '', confirm: false, running: false, progress: 0, step: '', result: null };
 
   // react to settings changes live
   if (this.ctx.settings && this.ctx.settings.onChange) {
@@ -101,10 +129,20 @@ App.prototype.start = function (ctx) {
 
   this._surface = this._makeSurface();
   this._bindButtons();
+  // Hide the confusing A/B/C/D hardware button bar where the kit can: the
+  // controls live on-screen now (the bottom action bar). The hardware buttons
+  // still fire the same actions as a fallback on units that keep the bar.
+  if (this.ctx.hideButton) {
+    ['BTN_A', 'BTN_B', 'BTN_C', 'BTN_D'].forEach(function (b) { trySafe(function () { self.ctx.hideButton(b, true); }); });
+  }
   this._relabel();
-  // DEVICE: touch — the web link on the Live page (guarded; absent in sim).
+  // DEVICE: touch — tabs (top) + action bar (bottom) + in-page taps.
   if (this.ctx.onTap) {
     trySafe(function () { self.ctx.onTap(function (x, y) { try { self._onTap(x, y); } catch (e) { self._fail('tap', e); } }); });
+  }
+  // DEVICE: a sideways finger drag switches tabs.
+  if (this.ctx.onSwipe) {
+    trySafe(function () { self.ctx.onSwipe(function (dx) { try { self._onSwipe(dx); return true; } catch (e) { self._fail('swipe', e); return false; } }); });
   }
   this._startRuntime();
   return this;
@@ -288,9 +326,9 @@ App.prototype._startRuntime = function () {
       var d = self.ctx.display;
       if (d && d.sheet) return null;
       try {
-        self.render(self._surface, self.screen);
+        self.render(self._surface, self.tab);
       } catch (e) {
-        self._fail('render ' + self.screen, e);
+        self._fail('render ' + self.tab, e);
         try { self._errorCard(self._surface, self._lastError); } catch (e2) { return null; }
       }
       return self._present();
@@ -298,23 +336,14 @@ App.prototype._startRuntime = function () {
   }
 };
 
-// Per-page labels for the 4 HMI bar buttons; relabelled on every page switch so
-// the bar matches what the buttons do on the current page (ctx.ui.text).
-var PAGE_LABELS = {
-  live:     ['Datalog', 'Maps', 'Channels', 'Diag'],
-  datalog:  ['Rec', 'Marker', 'Export', 'Back'],
-  channels: ['Log', 'Show', 'Clear', 'Back'],
-  maps:     ['Prev', 'Next', 'Apply', 'Back'],
-  diag:     ['Connect', 'Codes', 'Flash', 'Back'],
-  connect:  ['Ack', 'Enable', 'Scan', 'Back'],
-  codes:    ['Scan', 'Clear', 'Scope', 'Back']
-};
+// The HMI hardware buttons (where still shown) mirror the on-screen action bar,
+// so pressing one does the same as tapping the button under it.
 App.prototype._relabel = function () {
   var ui = this.ctx.ui;
   if (!ui || typeof ui.text !== 'function') return; // sim/preview: no HMI bar
-  var labels = PAGE_LABELS[this.screen] || PAGE_LABELS.live;
+  var acts = this._actions();
   ['BTN_A', 'BTN_B', 'BTN_C', 'BTN_D'].forEach(function (b, i) {
-    trySafe(function () { ui.text(b, labels[i]); });
+    trySafe(function () { ui.text(b, (acts[i] && acts[i].label) || ''); });
   });
 };
 
@@ -362,51 +391,94 @@ App.prototype._bindButtons = function () {
   });
 };
 
-App.prototype.onButton = function (btn) {
-  var s = this.screen;
-  if (s === 'live') {
-    if (btn === 'BTN_A') return this._show('datalog');
-    if (btn === 'BTN_B') return this._show('maps');
-    if (btn === 'BTN_C') return this._show('channels');
-    if (btn === 'BTN_D') return this._show('diag');
-  } else if (s === 'diag') {
-    if (btn === 'BTN_A') return this._show('connect');
-    if (btn === 'BTN_B') return this._show('codes');
-    if (btn === 'BTN_C') return this._flash('Calibration flashing is set up off-car (descriptor + BIN) — see docs/FLASHING.md.');
-    if (btn === 'BTN_D') return this._show('live');
-  } else if (s === 'datalog') {
-    if (btn === 'BTN_A') return this._toggleRecord();
-    if (btn === 'BTN_B') return this.marker('mark');
-    if (btn === 'BTN_C') return this._export();
-    if (btn === 'BTN_D') return this._show('live');
-  } else if (s === 'channels') {
-    if (btn === 'BTN_A') return this._toggleLog();
-    if (btn === 'BTN_B') return this._toggleShow();
-    if (btn === 'BTN_C') return this._clearShown();
-    if (btn === 'BTN_D') { this._saveEnabled(); this._saveDisplayed(); return this._show('live'); }
-  } else if (s === 'maps') {
-    if (btn === 'BTN_A') return this._mapStep(-1);
-    if (btn === 'BTN_B') return this._mapStep(1);
-    if (btn === 'BTN_C') return this._mapApply();
-    if (btn === 'BTN_D') { if (this.confirm) { this.confirm = false; return; } return this._show('live'); }
-  } else if (s === 'connect') {
-    if (btn === 'BTN_A') return this._enetAck();
-    if (btn === 'BTN_B') return this._enetToggleEnable();
-    if (btn === 'BTN_C') return this._enetScan();
-    if (btn === 'BTN_D') return this._show('diag');
-  } else if (s === 'codes') {
-    if (btn === 'BTN_A') return this._codesScan();
-    if (btn === 'BTN_B') return this._codesClear();
-    if (btn === 'BTN_C') return this._codesToggleScope();
-    if (btn === 'BTN_D') { if (this.codes.confirmClear) { this.codes.confirmClear = false; return; } return this._show('diag'); }
+// The per-tab action bar (≤4). Each: { label, sub?, fn, active?, danger?, disabled? }.
+// The on-screen bottom bar draws these; hardware BTN_A..D fire them by index.
+App.prototype._actions = function () {
+  var self = this, s = this.tab;
+  var logging = this.engine.state === LogEngine.STATE.LOGGING;
+  if (s === 'live') return [
+    { label: logging ? 'STOP' : 'RECORD', active: logging, fn: function () { self._toggleRecord(); } },
+    { label: 'MARK', disabled: !logging, fn: function () { self.marker('mark'); } },
+    { label: 'STYLE', fn: function () { self._cycleSettingKey('style'); } },
+    { label: 'UNITS', fn: function () { self._cycleSettingKey('units'); } }
+  ];
+  if (s === 'log') return [
+    { label: logging ? 'STOP' : 'START', active: logging, fn: function () { self._toggleRecord(); } },
+    { label: 'MARKER', disabled: !logging, fn: function () { self.marker('mark'); } },
+    { label: 'EXPORT', fn: function () { self._export(); } }
+  ];
+  if (s === 'channels') return [
+    { label: 'LOG', fn: function () { self._toggleLog(); } },
+    { label: 'SHOW', fn: function () { self._toggleShow(); } },
+    { label: 'CLEAR', fn: function () { self._clearShown(); } },
+    { label: 'PAGE', fn: function () { self._channelsPage(1); } }
+  ];
+  if (s === 'maps') return [
+    { label: 'PREV', disabled: !this.map.enabled, fn: function () { self._mapStep(-1); } },
+    { label: 'NEXT', disabled: !this.map.enabled, fn: function () { self._mapStep(1); } },
+    { label: this.confirm ? 'CONFIRM' : 'APPLY', danger: this.confirm, disabled: !this.map.enabled, fn: function () { self._mapApply(); } },
+    { label: 'CANCEL', disabled: !this.confirm, fn: function () { self.confirm = false; } }
+  ];
+  if (s === 'connect') return [
+    { label: 'ACK', active: this.enet.acknowledged, fn: function () { self._enetAck(); } },
+    { label: this.enet.enabled ? 'DISABLE' : 'ENABLE', active: this.enet.enabled, fn: function () { self._enetToggleEnable(); } },
+    { label: 'SCAN', disabled: !this.enet.enabled, fn: function () { self._enetScan(); } }
+  ];
+  if (s === 'codes') return [
+    { label: 'SCAN', disabled: this.codes.scanning, fn: function () { self._codesScan(); } },
+    { label: this.codes.confirmClear ? 'CONFIRM' : 'CLEAR', danger: true, fn: function () { self._codesClear(); } },
+    { label: this.codes.scope === 'dme' ? 'ALL' : 'ENGINE', fn: function () { self._codesToggleScope(); } }
+  ];
+  if (s === 'flash') {
+    var ready = this.flash.armed && this.flash.descriptor && !this.flash.running;
+    return [
+      { label: this.flash.armed ? 'ENGINE ON' : 'ENGINE OFF', active: this.flash.armed, fn: function () { self._flashToggle(); } },
+      { label: 'RELOAD', disabled: !this.flash.armed || this.flash.running, fn: function () { self._flashReload(); } },
+      { label: this.flash.confirm ? 'CONFIRM' : 'FLASH', danger: true, disabled: !ready, fn: function () { self._flashAction(); } },
+      { label: 'CANCEL', disabled: !this.flash.confirm, fn: function () { self.flash.confirm = false; } }
+    ];
   }
+  if (s === 'setup') return [
+    { label: 'CHANGE', fn: function () { self._cycleSetting(self.setupSel); } },
+    { label: 'PREV', fn: function () { self._setupMove(-1); } },
+    { label: 'NEXT', fn: function () { self._setupMove(1); } }
+  ];
+  return [];
 };
 
-// Rotary selection on the channels screen (optional controller support).
+App.prototype.onButton = function (btn) {
+  var i = { BTN_A: 0, BTN_B: 1, BTN_C: 2, BTN_D: 3 }[btn];
+  if (i == null) return;
+  var acts = this._actions();
+  var a = acts[i];
+  if (a && !a.disabled && typeof a.fn === 'function') a.fn();
+};
+
+// A sideways finger drag switches tabs (dx > 0: finger went left -> next tab).
+App.prototype._onSwipe = function (dx) {
+  if (Math.abs(dx) < 40) return;
+  this._tabStep(dx > 0 ? 1 : -1);
+};
+App.prototype._tabStep = function (dir) {
+  var i = this._tabIndex();
+  i = (i + dir + TABS.length) % TABS.length;
+  this._show(TABS[i].key);
+};
+App.prototype._tabIndex = function () {
+  for (var i = 0; i < TABS.length; i++) if (TABS[i].key === this.tab) return i;
+  return 0;
+};
+
+// Rotary/scroll support: move the selection on list tabs, else cycle tabs.
 App.prototype.onRotate = function (delta) {
-  if (this.screen !== 'channels') return;
-  var n = Channels.all().length;
-  this.selection = ((this.selection + delta) % n + n) % n;
+  if (this.tab === 'channels') {
+    var n = Channels.all().length;
+    this.selection = ((this.selection + delta) % n + n) % n;
+  } else if (this.tab === 'setup') {
+    this._setupMove(delta);
+  } else {
+    this._tabStep(delta > 0 ? 1 : -1);
+  }
 };
 
 // ---- actions ------------------------------------------------------------
@@ -542,6 +614,84 @@ App.prototype._codesClear = function () {
   });
 };
 
+// ---- settings (SETUP tab) ----------------------------------------------
+App.prototype._setupMove = function (d) {
+  var n = SETTINGS_SCHEMA.length;
+  this.setupSel = ((this.setupSel + d) % n + n) % n;
+};
+App.prototype._cycleSetting = function (i) {
+  var def = SETTINGS_SCHEMA[i]; if (!def) return;
+  this._cycleSettingKey(def.key);
+};
+// Advance a setting to its next option (bool -> toggle) and persist via ctx.settings.
+App.prototype._cycleSettingKey = function (key) {
+  var def = null;
+  for (var i = 0; i < SETTINGS_SCHEMA.length; i++) if (SETTINGS_SCHEMA[i].key === key) def = SETTINGS_SCHEMA[i];
+  if (!def) return;
+  var cur = this.getSetting(key), next;
+  if (def.bool) { next = !(cur === true || cur === 'true'); }
+  else {
+    var opts = def.options || [], idx = 0;
+    for (var j = 0; j < opts.length; j++) if (String(opts[j]) === String(cur)) idx = j;
+    next = opts[(idx + 1) % opts.length];
+  }
+  if (this.ctx.settings && this.ctx.settings.set) { trySafe((function (k, v) { return function () { this.ctx.settings.set(k, v); }; })(key, next).bind(this)); }
+  else { this._localSettings = this._localSettings || {}; this._localSettings[key] = next; }
+  try { this._applySettings(); } catch (e) {}
+};
+App.prototype._channelsPage = function (dir) {
+  var all = Channels.all(), perPage = 15, pages = Math.ceil(all.length / perPage);
+  var page = Math.floor((this.selection || 0) / perPage);
+  page = (page + dir + pages) % pages;
+  this.selection = page * perPage;
+};
+
+// ---- calibration flash (FLASH tab) -------------------------------------
+// The engine is an explicit on/off switch. OFF: nothing can be written. ON:
+// load the user's descriptor; a flash still needs an explicit confirm.
+App.prototype._flashToggle = function () {
+  if (this.flash.running) return;
+  this.flash.armed = !this.flash.armed;
+  this.flash.confirm = false;
+  if (this.flash.armed) this._flashReload();
+  else { this.flash.descriptor = null; this.flash.opts = null; this.flash.status = ''; }
+};
+App.prototype._flashReload = function () {
+  if (!this.flash.armed) return;
+  var r = flashrun.loadDescriptor(this.storage);
+  if (r.ok) { this.flash.descriptor = r.descriptor; this.flash.opts = r.opts; this.flash.status = ''; this.flash.result = null; }
+  else { this.flash.descriptor = null; this.flash.opts = null; this.flash.status = r.status || r.error || 'No calibration found.'; }
+};
+App.prototype._flashAction = function () {
+  if (!this.flash.armed || this.flash.running || !this.flash.descriptor || !this.flash.opts) return Promise.resolve();
+  if (!this.flash.confirm) { this.flash.confirm = true; return Promise.resolve(); }
+  this.flash.confirm = false;
+  return this._flashRun();
+};
+App.prototype._flashRun = function () {
+  var self = this;
+  var gw = this._makeGateway();
+  if (!gw) { this.flash.status = 'Connect to the vehicle first (CONNECT tab).'; this.flash.result = { ok: false, message: this.flash.status }; return Promise.resolve(); }
+  this.flash.running = true; this.flash.progress = 0; this.flash.step = 'starting'; this.flash.result = null;
+  var opts = {}; for (var k in this.flash.opts) opts[k] = this.flash.opts[k];
+  opts.acknowledged = true;
+  return gw.activate().then(function () {
+    return flash.flashCalibration(function (b) { return gw.send(b); }, opts, function (step) {
+      self.flash.step = step;
+      var m = /transfer (\d+)%/.exec(step); if (m) self.flash.progress = Number(m[1]);
+      else if (step === 'requestDownload') self.flash.progress = 5;
+      else if (step === 'transferExit') self.flash.progress = 97;
+      else if (step === 'verify' || step === 'reset') self.flash.progress = 99;
+    });
+  }).then(function (res) {
+    self.flash.result = res; self.flash.progress = res.ok ? 100 : self.flash.progress;
+  }).catch(function (e) {
+    self.flash.result = { ok: false, confirmed: false, message: 'Flash error: ' + ((e && e.message) || e) };
+  }).then(function () {
+    self.flash.running = false; try { gw.close(); } catch (x) {}
+  });
+};
+
 // ---- view model + render ------------------------------------------------
 App.prototype.buildView = function () {
   var eng = this.engine;
@@ -600,8 +750,29 @@ App.prototype.buildView = function () {
       result: this.codes.result,
       moduleCount: this._codeModules().length
     },
+    flash: {
+      armed: this.flash.armed, running: this.flash.running, confirm: this.flash.confirm,
+      progress: this.flash.progress, step: this.flash.step, status: this.flash.status,
+      descriptor: this.flash.descriptor, result: this.flash.result
+    },
+    setup: this._setupItems(), setupSel: this.setupSel,
+    tab: this.tab, tabs: TABS, actions: this._actions(),
     webUrl: this._config().webUrl || ''
   };
+};
+
+// Build the SETUP tab rows from the schema + current values.
+App.prototype._setupItems = function () {
+  var self = this;
+  return SETTINGS_SCHEMA.map(function (d) {
+    var v = self.getSetting(d.key), disp;
+    if (d.bool) disp = (v === true || v === 'true') ? 'ON' : 'OFF';
+    else if (v === false) disp = 'OFF';
+    else if (v === true) disp = 'ON';
+    else if (d.key === 'maxtiles' || d.key === 'rate') disp = String(v) + (d.key === 'rate' ? ' Hz' : '');
+    else disp = String(v).toUpperCase();
+    return { key: d.key, label: d.label, hint: d.hint, value: v, display: disp, danger: d.danger };
+  });
 };
 
 // app.json "config" at runtime (car_vitals-style). The user sets config.webUrl
@@ -630,16 +801,79 @@ App.prototype._openWeb = function () {
   if (this.ctx.openUrl) trySafe(function () { this.ctx.openUrl(url); }.bind(this)); // DEVICE: unit browser/uplink
   else this._flash('Open ' + url + ' in a connected browser');
 };
+// Touch routing: top tab strip, then the bottom action bar, then in-page taps.
 App.prototype._onTap = function (x, y) {
-  if (this.screen === 'live' && this._config().webUrl &&
-      x >= WEB_REGION.x && x <= WEB_REGION.x + WEB_REGION.w && y >= WEB_REGION.y && y <= WEB_REGION.y + WEB_REGION.h) {
-    return this._openWeb();
+  // tabs
+  var trects = screens.tabRects(TABS.length);
+  for (var i = 0; i < trects.length; i++) {
+    if (hit(trects[i], x, y)) { this._show(TABS[i].key); return; }
   }
+  // action bar
+  var acts = this._actions();
+  var brects = screens.barRects(acts.length);
+  for (var j = 0; j < brects.length; j++) {
+    if (hit(brects[j], x, y)) { var a = acts[j]; if (a && !a.disabled && a.fn) a.fn(); return; }
+  }
+  // in-page taps
+  this._contentTap(x, y);
 };
 
-App.prototype.render = function (cv, screenName) {
+// Page-specific touch targets inside the content band (screens.CONTENT).
+App.prototype._contentTap = function (x, y) {
+  var R = screens.CONTENT, s = this.tab;
+  if (s === 'channels') return this._channelsTap(x, y, R);
+  if (s === 'setup') return this._setupTap(x, y, R);
+  if (s === 'maps') return this._mapsTap(x, y, R);
+  if (s === 'connect') return this._connectTap(x, y, R);
+  if (s === 'flash') return this._flashTap(x, y, R);
+};
+
+App.prototype._channelsTap = function (x, y, R) {
+  var all = Channels.all(), perPage = 15, page = Math.floor((this.selection || 0) / perPage);
+  var cols = 3, gx = 16, gy = 10, cw = (R.w - (cols - 1) * gx) / cols, chh = 58;
+  for (var p = 0; p < perPage; p++) {
+    var gi = page * perPage + p; if (gi >= all.length) break;
+    var col = p % cols, row = Math.floor(p / cols);
+    var cx = R.x + col * (cw + gx), cy = R.y + 8 + row * (chh + gy);
+    if (!hit({ x: cx, y: cy, w: cw, h: chh }, x, y)) continue;
+    this.selection = gi;
+    if (x >= cx + 12 && x <= cx + 38) this._toggleLog();          // L box
+    else if (x >= cx + 44 && x <= cx + 70) this._toggleShow();    // S box
+    return;
+  }
+};
+App.prototype._setupTap = function (x, y, R) {
+  var items = SETTINGS_SCHEMA, cols = 2, gx = 16, gy = 12, cw = (R.w - gx) / cols, rh = 56, perCol = Math.ceil(items.length / cols);
+  for (var i = 0; i < items.length; i++) {
+    var col = Math.floor(i / perCol), row = i % perCol;
+    var ix = R.x + col * (cw + gx), iy = R.y + row * (rh + gy);
+    if (hit({ x: ix, y: iy, w: cw, h: rh }, x, y)) { this.setupSel = i; this._cycleSetting(i); return; }
+  }
+};
+App.prototype._mapsTap = function (x, y, R) {
+  if (!this.map.enabled) return;
+  var slots = this.map.maps || [], chipW = 150, chipH = 84, gap = 14;
+  for (var i = 0; i < slots.length; i++) {
+    var cx = R.x + i * (chipW + gap);
+    if (hit({ x: cx, y: R.y, w: chipW, h: chipH }, x, y)) { this.map.requested = slots[i].index; this.confirm = false; return; }
+  }
+};
+App.prototype._connectTap = function (x, y, R) {
+  var by = R.y + R.h - 52; // the acknowledge checkbox row
+  if (x >= R.x + 24 && x <= R.x + 460 && y >= by - 6 && y <= by + 34) this._enetAck();
+};
+App.prototype._flashTap = function (x, y, R) {
+  // the ON/OFF toggle lives top-right of the content header
+  var tx = R.x + R.w - 150;
+  if (x >= tx && x <= tx + 126 && y >= R.y + 18 && y <= R.y + 56) this._flashToggle();
+};
+
+function hit(r, x, y) { return r && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h; }
+
+App.prototype.render = function (cv, tabName) {
   var view = this.buildView();
-  screens.byName(screenName || this.screen)(cv, this.t, view);
+  screens.chrome(cv, this.t, view);
+  screens.content(tabName || this.tab)(cv, this.t, view, screens.CONTENT);
 };
 
 // ---- device shims -------------------------------------------------------
@@ -658,11 +892,14 @@ App.prototype._present = function (name) {
   return null;
 };
 App.prototype._show = function (name) {
-  // Switch the current page. There is ONE RHMI canvas screen ('MAIN'); changing
-  // page is just a redraw of the next frame (no ui.open / state change), which
-  // is what makes navigation reliable on the head unit. Relabel the bar buttons.
-  this.screen = name;
+  // Switch the active tab. There is ONE RHMI canvas screen ('MAIN'); changing
+  // tab is just a redraw of the next frame (no ui.open / state change), which is
+  // what makes navigation reliable on the head unit. Relabel the HMI buttons so
+  // any still-visible hardware bar mirrors the new tab's action bar.
+  this.tab = name;
   this.confirm = false;
+  this.codes.confirmClear = false;
+  this.flash.confirm = false;
   this._relabel();
 };
 App.prototype._mediaDir = function () {

@@ -63,94 +63,50 @@
     return now;
   }
 
+  // Each case sets up an App, selects a tab, and renders one frame.
+  function withEnet(app) {
+    drive(app, 6);
+    app.enet.acknowledge(); app.enet.setEnabled(true);
+    app.enet.setVehicle({ vin: 'WBA00000000000001', host: '169.254.1.1', logicalAddress: 0x1000 });
+    return app;
+  }
+  var SAMPLE_CODES = { scanned: 4, reached: 3, totalDtcs: 4, modules: [
+    { module: { name: 'DME / DDE (engine)' }, ok: true, dtcs: [ { code: 'P0300', status: { confirmed: true } }, { code: 'P052A', status: { confirmed: false } } ] },
+    { module: { name: 'EGS (transmission)' }, ok: true, dtcs: [ { code: 'P17BA', status: { confirmed: true } } ] },
+    { module: { name: 'DSC (stability / brakes)' }, ok: true, dtcs: [ { code: 'C0501', status: { confirmed: true } } ] },
+    { module: { name: 'EPS (steering)' }, ok: false, dtcs: [] } ] };
+  var SAMPLE_DESC = { addressHex: '0xA0010000', size: 65536, security: 'level 0x11 + key', erase: 'routine 0xFF00', verify: 'routine 0xFF01' };
+
   window.renderScreen = function (name) {
     var app, cap = name;
-    if (name === 'live') {
-      app = makeApp({ style: 'tiles' }); drive(app, 210); app.render(cv, 'live');
-      cap = 'LIVE — Tiles style';
-    } else if (name === 'live-bars') {
-      app = makeApp({ style: 'bars' }); drive(app, 210); app.render(cv, 'live');
-      cap = 'LIVE — Bars style';
-    } else if (name === 'live-dials') {
-      app = makeApp({ style: 'dials' }); drive(app, 210); app.render(cv, 'live');
-      cap = 'LIVE — Dials style';
-    } else if (name === 'datalog') {
-      app = makeApp();
-      var now = 1700000000000; app.engine.clock = function () { return now; };
-      app._startLog();
-      for (var i = 0; i < 140; i++) { now += 50; app.tick(now); if (i === 60) app.marker('pull-1'); }
-      app._stopLog();
-      app.render(cv, 'datalog');
-      cap = 'DATALOG — session saved (DONE state)';
-    } else if (name === 'datalog-rec') {
-      app = makeApp();
-      var n2 = 1700000000000; app.engine.clock = function () { return n2; };
-      app._startLog();
-      for (var j = 0; j < 90; j++) { n2 += 50; app.tick(n2); }
-      app.render(cv, 'datalog');
-      cap = 'DATALOG — recording (REC state)';
-    } else if (name === 'channels') {
-      app = makeApp(); drive(app, 40); app.selection = 10; app.render(cv, 'channels');
-      cap = 'CHANNELS — picker (page 1)';
-    } else if (name === 'channels-p2') {
-      app = makeApp(); drive(app, 40); app.selection = 46; app.render(cv, 'channels');
-      cap = 'CHANNELS — per-cylinder PIDs (later page)';
-    } else if (name === 'maps') {
-      app = makeApp({ mapcontrol: true }); drive(app, 6); app.map.requested = 2; app.render(cv, 'maps');
-      cap = 'MAP CONTROL — enabled, stationary';
-    } else if (name === 'maps-confirm') {
-      app = makeApp({ mapcontrol: true }); drive(app, 6); app.map.requested = 2; app.confirm = true; app.render(cv, 'maps');
-      cap = 'MAP CONTROL — confirm overlay';
-    } else if (name === 'maps-off') {
-      app = makeApp({ mapcontrol: false }); drive(app, 6); app.render(cv, 'maps');
-      cap = 'MAP CONTROL — off (safe default)';
-    } else if (name === 'mhd') {
-      app = makeApp(); drive(app, 6); app.render(cv, 'mhd');
-      cap = 'MHD DATALOG (web) link';
-    } else if (name === 'connect-locked') {
-      app = makeApp(); drive(app, 6); app.render(cv, 'connect');
-      cap = 'CONNECT — locked (default: not acknowledged, not enabled)';
-    } else if (name === 'connect-enabled') {
-      app = makeApp(); drive(app, 6);
-      app.enet.acknowledge(); app.enet.setEnabled(true);
-      app.render(cv, 'connect');
-      cap = 'CONNECT — enabled, no vehicle found yet';
-    } else if (name === 'connect-connected') {
-      app = makeApp(); drive(app, 6);
-      app.enet.acknowledge(); app.enet.setEnabled(true);
-      app.enet.setVehicle({ vin: 'WBA00000000000001', host: '169.254.1.1', logicalAddress: 0x1000 });
-      app.render(cv, 'connect');
-      cap = 'CONNECT — connected (read-only)';
-    } else if (name === 'diag') {
-      app = makeApp(); drive(app, 6);
-      app.enet.acknowledge(); app.enet.setEnabled(true);
-      app.enet.setVehicle({ vin: 'WBA00000000000001', host: '169.254.1.1', logicalAddress: 0x1000 });
-      app.render(cv, 'diag');
-      cap = 'DIAGNOSTICS hub — Connect, Fault Codes, Calibration Flash';
-    } else if (name === 'codes') {
-      app = makeApp(); drive(app, 6); app.render(cv, 'codes');
-      cap = 'FAULT CODES — before a scan';
-    } else if (name === 'codes-result') {
-      app = makeApp(); drive(app, 6);
-      app.codes.result = { scanned: 4, reached: 3, totalDtcs: 4, modules: [
-        { module: { name: 'DME / DDE (engine)' }, ok: true, dtcs: [
-          { code: 'P0300', status: { confirmed: true } }, { code: 'P052A', status: { confirmed: false } } ] },
-        { module: { name: 'EGS (transmission)' }, ok: true, dtcs: [ { code: 'P17BA', status: { confirmed: true } } ] },
-        { module: { name: 'DSC (stability / brakes)' }, ok: true, dtcs: [ { code: 'C0501', status: { confirmed: true } } ] },
-        { module: { name: 'EPS (steering)' }, ok: false, dtcs: [] }
-      ] };
-      app.codes.msg = '4 codes across 3/4 modules';
-      app.render(cv, 'codes');
-      cap = 'FAULT CODES — whole-vehicle scan result';
-    } else if (name === 'codes-confirm') {
-      app = makeApp(); drive(app, 6);
-      app.codes.confirmClear = true;
-      app.codes.msg = 'Press Clear again to ERASE fault memory on all reached modules.';
-      app.render(cv, 'codes');
-      cap = 'FAULT CODES — clear confirmation (erases fault memory)';
-    } else {
-      app = makeApp(); app.render(cv, 'live');
+    if (name === 'live') { app = makeApp({ style: 'tiles' }); drive(app, 210); app.tab = 'live'; app.render(cv); cap = 'LIVE — tiles'; }
+    else if (name === 'live-bars') { app = makeApp({ style: 'bars' }); drive(app, 210); app.tab = 'live'; app.render(cv); cap = 'LIVE — bars'; }
+    else if (name === 'live-dials') { app = makeApp({ style: 'dials' }); drive(app, 210); app.tab = 'live'; app.render(cv); cap = 'LIVE — dials'; }
+    else if (name === 'log') {
+      app = makeApp(); var now = 1700000000000; app.engine.clock = function () { return now; };
+      app._startLog(); for (var i = 0; i < 140; i++) { now += 50; app.tick(now); if (i === 60) app.marker('pull-1'); } app._stopLog();
+      app.tab = 'log'; app.render(cv); cap = 'LOG — session saved';
     }
+    else if (name === 'log-rec') {
+      app = makeApp(); var n2 = 1700000000000; app.engine.clock = function () { return n2; };
+      app._startLog(); for (var j = 0; j < 90; j++) { n2 += 50; app.tick(n2); }
+      app.tab = 'log'; app.render(cv); cap = 'LOG — recording';
+    }
+    else if (name === 'channels') { app = makeApp(); drive(app, 40); app.selection = 4; app.tab = 'channels'; app.render(cv); cap = 'CHANNELS'; }
+    else if (name === 'maps-off') { app = makeApp({ mapcontrol: 'off' }); drive(app, 6); app.tab = 'maps'; app.render(cv); cap = 'MAPS — off (safe default)'; }
+    else if (name === 'maps') { app = makeApp({ mapcontrol: 'armed' }); drive(app, 6); app.map.requested = 2; app.tab = 'maps'; app.render(cv); cap = 'MAPS — armed'; }
+    else if (name === 'maps-confirm') { app = makeApp({ mapcontrol: 'armed' }); drive(app, 6); app.map.requested = 2; app.confirm = true; app.tab = 'maps'; app.render(cv); cap = 'MAPS — confirm'; }
+    else if (name === 'connect') { app = withEnet(makeApp()); app.tab = 'connect'; app.render(cv); cap = 'CONNECT — connected (read-only)'; }
+    else if (name === 'connect-locked') { app = makeApp(); drive(app, 6); app.tab = 'connect'; app.render(cv); cap = 'CONNECT — locked'; }
+    else if (name === 'codes') { app = withEnet(makeApp()); app.codes.msg = ''; app.tab = 'codes'; app.render(cv); cap = 'CODES — before scan'; }
+    else if (name === 'codes-result') { app = withEnet(makeApp()); app.codes.result = SAMPLE_CODES; app.codes.msg = '4 codes across 3/4 modules'; app.tab = 'codes'; app.render(cv); cap = 'CODES — scan result'; }
+    else if (name === 'codes-confirm') { app = withEnet(makeApp()); app.codes.result = SAMPLE_CODES; app.codes.confirmClear = true; app.codes.msg = 'Press CLEAR again to ERASE fault memory.'; app.tab = 'codes'; app.render(cv); cap = 'CODES — clear confirm'; }
+    else if (name === 'flash-off') { app = withEnet(makeApp()); app.flash.armed = false; app.tab = 'flash'; app.render(cv); cap = 'FLASH — engine OFF (safe)'; }
+    else if (name === 'flash-ready') { app = withEnet(makeApp()); app.flash.armed = true; app.flash.descriptor = SAMPLE_DESC; app.tab = 'flash'; app.render(cv); cap = 'FLASH — calibration ready'; }
+    else if (name === 'flash-confirm') { app = withEnet(makeApp()); app.flash.armed = true; app.flash.descriptor = SAMPLE_DESC; app.flash.confirm = true; app.tab = 'flash'; app.render(cv); cap = 'FLASH — confirm write'; }
+    else if (name === 'flash-running') { app = withEnet(makeApp()); app.flash.armed = true; app.flash.descriptor = SAMPLE_DESC; app.flash.running = true; app.flash.progress = 62; app.flash.step = 'transfer 62%'; app.tab = 'flash'; app.render(cv); cap = 'FLASH — writing'; }
+    else if (name === 'setup') { app = makeApp(); drive(app, 6); app.setupSel = 1; app.tab = 'setup'; app.render(cv); cap = 'SETUP — in-app settings'; }
+    else { app = makeApp(); app.tab = 'live'; app.render(cv); }
     document.getElementById('cap').textContent = cap;
     return true;
   };

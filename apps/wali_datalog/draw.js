@@ -21,20 +21,37 @@ var GAUGE_A1 = 390; // 240-degree sweep, open at the bottom
 
 function clamp01(x) { return x < 0 ? 0 : (x > 1 ? 1 : x); }
 
+// A hard-edged panel/card (Lambo look: near-square corners, optional accent edge).
 function panel(cv, t, x, y, w, h, opts) {
   opts = opts || {};
-  cv.roundRect(x, y, w, h, opts.r || 14, opts.fill || t.panel);
+  cv.roundRect(x, y, w, h, opts.r == null ? 4 : opts.r, opts.fill || t.panel);
+  if (opts.accent) cv.fillRect(x, y, 4, h, opts.accentColor || t.accent); // left accent bar
   if (opts.title) {
-    cv.text(opts.title, x + 18, y + 30, 20, t.dim, { weight: 'bold' });
+    cv.text(opts.title, x + (opts.accent ? 22 : 18), y + 30, 18, opts.titleColor || t.dim, { weight: 'bold' });
   }
 }
 
+// An angular status chip (square-ish corners).
 function badge(cv, t, x, y, text, color, textColor) {
   var padX = 12;
   var w = cv.textWidth(text, 18, 'bold') + padX * 2;
-  cv.roundRect(x, y, w, 30, 15, color);
-  cv.text(text, x + w / 2, y + 21, 18, textColor || '#07121a', { align: 'c', weight: 'bold' });
+  cv.roundRect(x, y, w, 30, 3, color);
+  cv.text(text, x + w / 2, y + 21, 18, textColor || (t && t.ink) || '#0a0a0a', { align: 'c', weight: 'bold' });
   return w;
+}
+
+// A hard-edged action/tab button. States: active (yellow fill, ink text),
+// idle (dark face, light text), disabled (faint). Optional top hairline accent.
+function cutButton(cv, t, x, y, w, h, label, o) {
+  o = o || {};
+  var active = !!o.active, disabled = !!o.disabled;
+  var face = active ? (o.activeColor || t.accent) : (o.face || t.panel3);
+  cv.roundRect(x, y, w, h, o.r == null ? 3 : o.r, face);
+  if (!active && o.edge !== false) cv.fillRect(x, y, w, 3, disabled ? t.line : (o.edgeColor || t.accent)); // top accent
+  var col = disabled ? t.faint : (active ? (o.inkColor || t.ink) : (o.textColor || t.text));
+  var size = o.size || 22;
+  cv.text(label, x + w / 2, y + h / 2 + size * 0.34, size, col, { align: 'c', weight: 'bold' });
+  if (o.sub) cv.text(o.sub, x + w / 2, y + h - 8, 14, disabled ? t.faint : (active ? t.ink : t.dim), { align: 'c' });
 }
 
 function recDot(cv, t, x, y, on, label) {
@@ -97,6 +114,7 @@ function barMeter(cv, t, x, y, w, h, o) {
 module.exports = {
   panel: panel,
   badge: badge,
+  cutButton: cutButton,
   recDot: recDot,
   statTile: statTile,
   radial: radial,

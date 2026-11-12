@@ -579,10 +579,8 @@ Promise.resolve()
       var modMap = {}; modMap[0x1000] = dmeSim; modMap[0x1800] = egsSim;
       ctx.diagSocket = function () { return dmeSim.doipSocket({ modules: modMap }); };
       ctx.spec = ctx.spec || {}; ctx.spec.config = { modules: [{ name: 'DME', address: 0x1000 }, { name: 'EGS', address: 0x1800 }] };
-      app._show('diag');
-      eq(app.screen, 'diag', 'app: Live → D opens the Diag hub');
-      app.onButton('BTN_B'); // Codes
-      eq(app.screen, 'codes', 'app: Diag → B opens the Codes page');
+      app._show('codes');
+      eq(app.tab, 'codes', 'app: CODES tab opens');
       return app._codesScan().then(function () {
         ok(app.codes.result && app.codes.result.totalDtcs === 3, 'app: Codes scan reads 3 codes across modules');
         ok(/3 codes across 2\/2/.test(app.codes.msg), 'app: Codes status line summarizes the scan');
@@ -595,7 +593,42 @@ Promise.resolve()
         ok(dmeSim.cleared === 1 && egsSim.cleared === 1, 'app: confirmed Clear erases each module');
         ok(app.codes.confirmClear === false, 'app: confirmation resets after clearing');
 
-        app._show('connect');
+        // ---- Flash tab: engine on/off switch + gated flash over DoIP --------
+        app._show('flash');
+        // Engine OFF by default: the FLASH action does nothing.
+        ok(app.flash.armed === false, 'app: flash engine is OFF by default');
+        app._flashAction();
+        ok(app.flash.confirm === false && dmeSim.flashed === null, 'app: FLASH is inert while the engine is OFF');
+        // Supply a user descriptor in storage, then turn the engine ON.
+        var cal = []; for (var q = 0; q < 300; q++) cal.push((q * 11 + 5) & 0xff);
+        var h = app.storage.open('flash/descriptor.json');
+        app.storage.append(h, JSON.stringify({ address: '0xA0010000', data: cal }));
+        app.storage.close(h);
+        app._flashToggle();
+        ok(app.flash.armed === true && app.flash.descriptor && app.flash.descriptor.size === 300, 'app: engine ON loads the user descriptor (300 bytes)');
+        // First FLASH press arms the confirm; nothing written yet.
+        app._flashAction();
+        ok(app.flash.confirm === true && dmeSim.flashed === null, 'app: first FLASH press only arms confirmation');
+        // Confirmed press writes the calibration to the DME.
+        return app._flashAction().then(function () {
+          ok(app.flash.result && app.flash.result.ok === true, 'app: confirmed FLASH completes');
+          var same = dmeSim.flashed && dmeSim.flashed.length === 300 && dmeSim.flashed.every(function (b, k) { return b === cal[k]; });
+          ok(same, 'app: DME received exactly the calibration bytes via the Flash tab');
+          ok(app.flash.progress === 100, 'app: flash progress reaches 100%');
+          // Turning the engine OFF drops the loaded calibration.
+          app._flashToggle();
+          ok(app.flash.armed === false && app.flash.descriptor === null, 'app: engine OFF clears the loaded calibration');
+
+          // ---- Setup tab: cycling a setting persists + applies --------------
+          app._show('setup');
+          var before = app.getSetting('units');
+          app._cycleSettingKey('units');
+          var after = app.getSetting('units');
+          ok(before !== after && (after === 'metric' || after === 'imperial'), 'app: SETUP cycles a setting value');
+
+          app._show('connect');
+        });
+      }).then(function () {
         app.onButton('BTN_B'); // Disable
         ok(!app.diag.supported && !app.monitor.supported, 'app: disabling tears the transport back out');
 

@@ -8,7 +8,13 @@ app, and it is built from scratch — see [`NOTICE.md`](NOTICE.md).
 
 > Independent and unaffiliated open-source project. No BMW or tuning-vendor code is used; "BMW", "iDrive" and
 > "iDrive" are used only to describe compatibility. The app is **read-only by
-> default**; writing maps to the engine is off unless you explicitly enable it.
+> default**; writing to the engine (map switch, calibration flash) is off unless you explicitly enable it.
+
+> **Beta 2** (v2.x) — redesigned UI: tabs along the top, in-tab controls along
+> the bottom (no more A/B/C/D button bar), a Lamborghini-influenced dark/yellow
+> theme, an in-app **Settings** tab, and a gated on-car **Flash** tab over the
+> calibration-flash engine. The previous line is preserved as **Stable Beta 1**
+> (v0.5.0, git tag `stable-beta-1`). See [`CHANGELOG.md`](CHANGELOG.md).
 
 ![Live gauges](out/shots/live.png)
 
