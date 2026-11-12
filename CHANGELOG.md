@@ -18,6 +18,29 @@ UI: one canvas screen with internal paging driven by four HMI bar buttons
 
 ## Beta 2 — v2.x.x
 
+### v2.8.2 — install fix (SOME/IP manifest)
+- **Fixes the on-car install failure** `the app manager could not install … :
+  generateSomeipInterfaces … nothing is installed`. BMW's interface generator
+  refuses the **whole** app if the manifest asks for one access a field doesn't
+  support. Our `app.json` requested **`rs`** (read + subscribe) on
+  `de.bmw.infrastructure.VehicleInformation.DataPowerTrain2` and
+  `de.bmw.infrastructure.EnvironmentalInformation.ExteriorTemperature`, but those
+  fields are **subscribe-only** on the car (notifier, no getter) — exactly as the
+  shipping iDrive 7 apps (`live_data`, `car_vitals`) declare them. Both are now
+  **`s`**, matching the car's catalog, so the generator accepts the app.
+- **Bus signals are now `_optional`.** The five supplementary vehicle/infrastructure
+  bus interfaces (CDS, CDS2, Vehicle2, VehicleInformation, EnvironmentalInformation)
+  are marked optional, so a unit whose firmware lacks one installs the app
+  **without** it (recorded in `meta.json` `optional`, the field the community
+  installer prunes against) instead of refusing the whole app. The UDS transport
+  (`InternalTasu`) stays required — it's present on these units and the
+  UDS/OBD data paths depend on it. The runtime already degrades gracefully when a
+  signal interface is absent, so the datalogger keeps working from its UDS/OBD
+  sources.
+- Verified against the car-tested `cauliflowermossgrape/idrive7-apps` SDK: every
+  interface and field BeeM-Flash uses is used by shipping iDrive 7 apps; only the
+  two access flags were wrong.
+
 ### v2.8.1
 - **Flash-protocol research written up** (`docs/FLASH-PROTOCOL.md`) — studied the
   open S58/MG1 flash tooling. **MBTune/mgctl** (Apache-2.0) independently confirms

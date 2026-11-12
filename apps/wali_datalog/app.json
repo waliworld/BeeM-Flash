@@ -2,7 +2,7 @@
   "id": "wali_datalog",
   "title": "BeeM-Flash",
   "description": "BeeM-Flash — live datalogging, whole-vehicle diagnostics, fault-code read/clear, read-only ECU info, map switching and gated calibration flashing for tuned BMW (B58/S58) on the MGU head unit. Independent open-source app, read-only by default.",
-  "version": "2.8.1",
+  "version": "2.8.2",
   "license": "MIT",
   "vendor": "TunedByWali",
   "loggingId": "BMFL",
@@ -15,20 +15,25 @@
   "signals": {
     "de.bmw.infotainment.vehicle.CDS": {
       "statusEngineSpeed2": "rs",
-      "statusEngineTemperature": "rs"
+      "statusEngineTemperature": "rs",
+      "_optional": "engine rpm / coolant temp from the bus (the UDS and OBD-II sources still provide them)"
     },
     "de.bmw.infotainment.vehicle.Vehicle2": {
-      "statusCarSpeed2": "rs"
+      "statusCarSpeed2": "rs",
+      "_optional": "vehicle speed from the bus"
     },
     "de.bmw.infotainment.vehicle.CDS2": {
       "statusLongitudinalAccelerationMassCenter": "rs",
-      "statusLateralAccelerationMassCenter": "rs"
+      "statusLateralAccelerationMassCenter": "rs",
+      "_optional": "longitudinal / lateral g used by the dyno power estimate"
     },
     "de.bmw.infrastructure.VehicleInformation": {
-      "DataPowerTrain2": "rs"
+      "DataPowerTrain2": "s",
+      "_optional": "drivetrain status from the bus"
     },
     "de.bmw.infrastructure.EnvironmentalInformation": {
-      "ExteriorTemperature": "rs"
+      "ExteriorTemperature": "s",
+      "_optional": "ambient temperature from the bus"
     },
     "com.harman.infotainment.systemfunctions.tasu.tasu.InternalTasu": {
       "_instances": "SystemFunctionsInternalTasuInst1",
