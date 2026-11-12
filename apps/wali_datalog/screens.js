@@ -356,7 +356,7 @@ function connect(cv, t, view, R) {
   if (e.acknowledged) cv.text('✓', R.x + 38, by + 21, 20, t.ink, { align: 'c', weight: 'bold' });
   cv.text('I have read and understand this warning', R.x + 64, by + 21, 20, t.text, { weight: 'bold' });
   var stateTxt, stateColor;
-  if (!e.acknowledged) { stateTxt = 'LOCKED — tap ACK'; stateColor = t.dim; }
+  if (!e.acknowledged) { stateTxt = 'LOCKED — tap ACCEPT'; stateColor = t.dim; }
   else if (e.connected) { stateTxt = 'CONNECTED (read-only)'; stateColor = t.good; }
   else if (e.enabled) { stateTxt = 'ENABLED — tap SCAN'; stateColor = t.warn; }
   else { stateTxt = 'DISABLED — tap ENABLE'; stateColor = t.dim; }
@@ -423,10 +423,11 @@ function flash(cv, t, view, R) {
       cv.text('Open INFO → READ, then come back here.', R.x + 24, py + 156, 19, t.accent, { weight: 'bold' });
       return;
     }
-    cv.text('ENGINE OFF — SAFE', R.x + 24, py + 50, 26, t.text, { weight: 'bold' });
-    cv.text('Nothing can be written to the DME while the flash engine is OFF.', R.x + 24, py + 86, 20, t.dim, {});
-    if (f.tune) cv.text('On the car now: ' + (f.tune.calId || '—') + (f.tune.detected ? '  (looks like ' + f.tune.detected + ')' : ''), R.x + 24, py + 118, 19, (f.tune.detected || f.tune.modified === true) ? t.crit : t.dim, { weight: (f.tune.detected || f.tune.modified === true) ? 'bold' : 'normal' });
-    else cv.text('Turn it ON to review your calibration descriptor and flash. Your vehicle, your data, your responsibility.', R.x + 24, py + 118, 19, t.faint, {});
+    cv.text('ENGINE OFF — SAFE', R.x + 24, py + 48, 26, t.text, { weight: 'bold' });
+    cv.text('Nothing can be written to the DME while the flash engine is OFF.', R.x + 24, py + 82, 19, t.dim, {});
+    cv.text('For an ALREADY-UNLOCKED DME (flashed tune). This app does not unlock the DME or', R.x + 24, py + 112, 18, t.faint, {});
+    cv.text('bypass its signature — a locked, signature-checked ECU will reject the write.', R.x + 24, py + 136, 18, t.faint, {});
+    if (f.tune) cv.text('On the car now: ' + (f.tune.calId || '—') + (f.tune.detected ? '  (looks like ' + f.tune.detected + ')' : ''), R.x + 24, py + 168, 19, (f.tune.detected || f.tune.modified === true) ? t.crit : t.dim, { weight: (f.tune.detected || f.tune.modified === true) ? 'bold' : 'normal' });
     return;
   }
   // armed

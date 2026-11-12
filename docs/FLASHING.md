@@ -16,14 +16,26 @@ It lives in `apps/wali_datalog/flash.js` and rides the same open ENET/DoIP
 transport (`doip.js`) and pluggable SecurityAccess framework (`seedkey.js`) as
 the rest of the app.
 
+## For an ALREADY-UNLOCKED DME only
+
+This flasher targets a DME that is **already unlocked** (a car running a flashed
+tune, whose bootloader already accepts a calibration write). It does **not**
+unlock a DME and it does **not** forge or bypass the DME's cryptographic
+**signature**. On BMW MG1CS the calibration carries a ~256-byte RSA/ECC signature
+the ECU verifies (see `data/checksum_schemes/README.md`); a locked,
+signature-checked ECU will **reject** a write from this app, by design. Defeating
+that signature is out of scope and this project will not build it. On an unlocked
+DME, correcting the calibration **checksums** (below) is the important step this
+app does handle.
+
 ## What this is **not**
 
 - It bundles **no** calibration data, **no** ECU memory addresses, and **no**
   security key or algorithm. You supply all of them, for your own ECU.
 - It does **not** generate, validate, or modify a tune. The bytes it writes are
   exactly the bytes you give it.
-- It is **not** a magic recovery tool. If the ECU needs a full bootloader flash
-  or a first-time unlock, this calibration-only path will not do it.
+- It does **not** unlock a DME, flash a bootloader, or bypass a signature. If the
+  ECU is locked / signature-checked, this calibration-only path will not do it.
 
 Nothing in this repository acts on a car by itself. The flasher refuses to do
 anything without explicit, per-flash acknowledgment **and** your data.

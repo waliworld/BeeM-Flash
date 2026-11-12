@@ -18,6 +18,15 @@ UI: one canvas screen with internal paging driven by four HMI bar buttons
 
 ## Beta 2 — v2.x.x
 
+### v2.8.0
+- **Connect label fix** — the acknowledge button now reads **ACCEPT** (was the
+  cryptic "ACK"); navigation is via the top tabs, there is no Back button.
+- **Flasher scope made explicit** — the Flash tab and `docs/FLASHING.md` now state
+  plainly that this is for an **already-unlocked DME** (a car running a flashed
+  tune): the app does **not** unlock a DME or bypass the DME's RSA/ECC signature,
+  so a locked/signature-checked ECU will reject the write by design. Checksum
+  correction remains the important step on an unlocked DME.
+
 ### v2.7.0
 - **DME checksum-scheme research** (`data/checksum_schemes/`) — the BMW MG1CS
   A2Ls declare the checksum method as **`XCP_CRC_32` (standard CRC-32)** over the

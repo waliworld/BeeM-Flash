@@ -436,7 +436,7 @@ App.prototype._actions = function () {
     { label: 'CANCEL', disabled: !this.confirm, fn: function () { self.confirm = false; } }
   ];
   if (s === 'connect') return [
-    { label: 'ACK', active: this.enet.acknowledged, fn: function () { self._enetAck(); } },
+    { label: 'ACCEPT', active: this.enet.acknowledged, fn: function () { self._enetAck(); } },
     { label: this.enet.enabled ? 'DISABLE' : 'ENABLE', active: this.enet.enabled, fn: function () { self._enetToggleEnable(); } },
     { label: 'SCAN', disabled: !this.enet.enabled, fn: function () { self._enetScan(); } }
   ];
