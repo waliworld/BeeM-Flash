@@ -69,8 +69,8 @@ assets to the `catalog` release with `gh release upload … --clobber`.
 
 ## 4. Install on the head unit
 
-1. In the **Store** on the car: **Settings → Add source**, enter this repository
-   (`owner/name`), choose **Releases**.
+1. In the **Store** on the car: **Settings → Add source**, enter
+   **`waliworld/beem-flash`**, choose **Releases**.
 2. Install **Wali Datalog**, then **restart the head unit**.
 3. The app appears in the head unit's app list as **Wali Datalog**.
 

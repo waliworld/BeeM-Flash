@@ -20,7 +20,7 @@ and the iDrive 8 source package never contained it.
 import argparse, gzip, hashlib, io, json, os, shutil, sys, tarfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-REPO = 'waliworld/MGU-MHD'
+REPO = 'waliworld/beem-flash'
 APP = 'wali_datalog'
 
 # One Store entry per head unit, built from the same app. `requires` names the infrastructure components the Store
