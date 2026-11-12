@@ -75,6 +75,11 @@ Provider.prototype.read = function (nowMs) {
 
   // Fill derived from whatever live values we have.
   this._derive(values);
+  // Relative boost = manifold absolute - barometric (both bar), when not read
+  // directly. The DME exposes absolute manifold pressure + baro, not gauge boost.
+  if (!isFinite(values.boost) && isFinite(values.boostAbs) && isFinite(values.baro)) {
+    values.boost = values.boostAbs - values.baro;
+  }
   return { values: values, demo: false, live: live };
 };
 

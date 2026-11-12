@@ -54,6 +54,27 @@ function near(a, b, eps, msg) { ok(Math.abs(a - b) <= eps, msg + ' (got ' + a + 
   eq(g['de.bmw.infotainment.vehicle.CDS'].fields.statusEngineTemperature.sort().join(','), 'coolantTemp,oilTemp', 'coolant+oil grouped on one field');
 })();
 
+// ---- bmw_obd DME profile (car-tested DIDs) + relative-boost derivation ------
+(function () {
+  var p = dme.get('bmw_obd');
+  ok(p.verified === true, 'bmw_obd profile is verified (shown live, not suppressed)');
+  eq(p.ecu, 0x12, 'bmw_obd targets the DME control unit (0x12)');
+  var r = p.reads;
+  near(90 * r.iat.m + r.iat.b, 50, 1e-9, 'bmw_obd iat: raw 90 -> 50 C (offset -40)');
+  near(148 * r.timing.m + r.timing.b, 10, 1e-9, 'bmw_obd timing: raw 148 -> 10 BTDC (x0.5, offset -64)');
+  near(3200 * r.boostAbs.m + r.boostAbs.b, 1.0, 1e-6, 'bmw_obd manifold abs: raw 3200 -> 1.0 bar');
+  near(101 * r.baro.m + r.baro.b, 1.01, 1e-6, 'bmw_obd baro: raw 101 -> 1.01 bar');
+  near(2000 * r.railPressure.m + r.railPressure.b, 200, 1e-9, 'bmw_obd rail: raw 2000 -> 200 bar');
+  // relative boost derived in the provider when not read directly (manifold - baro)
+  var prov = new Provider({}, {
+    getSetting: function (k) { return { demo: 'off', source: 'diag' }[k]; },
+    diag: { read: function () { return { boostAbs: 2.5, baro: 1.0 }; } }
+  });
+  var out = prov.read(1000);
+  near(out.values.boost, 1.5, 1e-9, 'relative boost derived = manifold (2.5) - baro (1.0)');
+  ok(out.live === true, 'diag live values mark the sample live');
+})();
+
 // ---- format ---------------------------------------------------------------
 eq(F.csvRow(['a', 'b,c', 'd"e']), 'a,"b,c","d""e"', 'csv escaping');
 eq(F.mmss(65000), '01:05', 'mmss');

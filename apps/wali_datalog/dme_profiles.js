@@ -53,6 +53,27 @@ var PROFILES = {
     label: 'Generic template (CALIBRATE)',
     verified: false,
     reads: buildTemplate()
+  },
+  // Car-tested BMW DME reads (UDS 0x22), DME control unit 0x12. DIDs + scaling
+  // taken from the car-proven config.dme of cauliflowermossgrape's car_vitals.
+  // One value per DID here (not packed blocks); unit conversions folded into m
+  // (kPa->bar = /100, so 1/32 kPa/bit -> 0.0003125 bar/bit). Relative boost is
+  // derived (boostAbs - baro) in the provider. Values validate on a car; knock
+  // retard has no standard DID and stays uncalibrated.
+  bmw_obd: {
+    label: 'BMW DME (UDS 0x22, car-tested)',
+    verified: true,
+    ecu: 0x12,
+    reads: {
+      iat:      { did: 0xF40F, off: 0, len: 1, m: 1,         b: -40 }, // charge air temp, deg C
+      timing:   { did: 0xF40E, off: 0, len: 1, m: 0.5,       b: -64 }, // ignition timing, deg BTDC
+      boostAbs: { did: 0xF470, off: 3, len: 2, m: 0.0003125, b: 0 },   // manifold abs pressure, bar (1/32 kPa/bit)
+      baro:     { did: 0xF433, off: 0, len: 1, m: 0.01,      b: 0 },   // barometric pressure, bar (kPa)
+      load:     { did: 0x5813, off: 0, len: 1, m: 0.75,      b: 0 },   // actual relative air charge, %
+      loadReq:  { did: 0x480C, off: 0, len: 2, m: 0.0234375, b: 0 },   // requested relative air charge, %
+      railPressure: { did: 0xF423, off: 0, len: 2, m: 0.1,  b: 0 },   // HPFP rail pressure, bar (10 kPa/bit)
+      lpfp:     { did: 0xF40A, off: 0, len: 1, m: 0.03,      b: 0 }    // LPFP pressure, bar (3 kPa/bit)
+    }
   }
 };
 

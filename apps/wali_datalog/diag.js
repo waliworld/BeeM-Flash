@@ -36,10 +36,42 @@ function promisifySend(transport) {
 
 // Best-effort adapter over ctx. Real MGU diagnostic access is wired here on the
 // unit; absent that, it reports unsupported and the provider falls back.
-function makeCtxTransport(ctx) {
+// Transport over the head unit's OWN SOME/IP diagnostic gateway (BMW "Tasu"),
+// using the kit's read-only diagnostic link (kit/readonly-diag). This is how an
+// on-car app reads the DME with no ENET adapter: the request rides the bus the
+// head unit is already on. The kit sits beside the app in the built package
+// (javascript/kit/); in the sim/tests it is absent, so the require is guarded
+// and this returns null and the provider falls back. Read-only by construction:
+// ReadOnlyDiag refuses every service except 0x22 / OBD 0x01 / 0x09.
+function signalsTransport(ctx, ecu) {
+  if (!ctx || !ctx.signals) return null;
+  var mod;
+  try { mod = require('./kit/' + 'readonly-diag'); } catch (e) { return null; }
+  if (!mod || !mod.ReadOnlyDiag) return null;
+  var link;
+  try { link = new mod.ReadOnlyDiag(ctx.signals, ctx.log); } catch (e) { return null; }
+  var ready = link.init().then(function () { return true; }, function () { return false; });
+  return {
+    supported: true, // optimistic: reads return null until the DME answers
+    kind: 'signals',
+    send: function (bytes, cb) {
+      ready.then(function (ok) {
+        if (!ok) { cb && cb(new Error('diag link not ready')); return; }
+        var data = Array.prototype.slice.call(bytes, 1);
+        link.physical(ecu, bytes[0], data).then(function (resp) { cb && cb(null, resp || null); },
+          function (e) { cb && cb(e); });
+      }, function (e) { cb && cb(e); });
+    }
+  };
+}
+
+function makeCtxTransport(ctx, ecu) {
   if (ctx && ctx.diag && typeof ctx.diag.send === 'function') {
     return { supported: true, send: ctx.diag.send.bind(ctx.diag) };
   }
+  // The head unit's own diagnostic gateway (preferred on-car).
+  var st = signalsTransport(ctx, ecu || 0x12);
+  if (st) return st;
   // Read-only DoIP transport over the vehicle's diagnostic Ethernet, when the
   // host provides a DoIP config ({host,port,targetAddr,...} or {socket}).
   if (ctx && ctx.doip) {
@@ -51,9 +83,9 @@ function makeCtxTransport(ctx) {
 function DiagProvider(ctx, opts) {
   opts = opts || {};
   this.ctx = ctx || {};
-  this.transport = opts.transport || makeCtxTransport(ctx);
-  this.send = promisifySend(this.transport);
   this.profile = opts.profile || dme.get(opts.profileName || 'generic_template');
+  this.transport = opts.transport || makeCtxTransport(ctx, this.profile.ecu);
+  this.send = promisifySend(this.transport);
   this.strict = opts.strict !== false;
   this.pollMs = opts.pollMs || 50;
   this.blocks = dme.byDid(this.profile); // packed measurement blocks (one read per DID)

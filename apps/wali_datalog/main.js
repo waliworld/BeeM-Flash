@@ -204,7 +204,8 @@ App.prototype._applyEnetState = function () {
 
   var profile = this._loadPidProfile();
   var diagOpts = {};
-  if (profile) diagOpts.profile = profile;
+  if (profile) diagOpts.profile = profile;       // a user-supplied per-tune pidmap.json wins
+  else diagOpts.profileName = 'bmw_obd';         // else the car-tested BMW DME profile (UDS 0x22)
   if (transport) diagOpts.transport = transport;
   this.diag = new DiagProvider(this.ctx, diagOpts);
   if (this.diag.supported) trySafe(function () { self.diag.start(); });

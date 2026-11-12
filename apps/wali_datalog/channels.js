@@ -39,7 +39,7 @@ var BASE = [
   { key: 'boostAbs', label: 'Manifold pressure', unit: 'bar', iunit: 'psi', toImp: F.barToPsi, cat: 'Air/Boost', read: diag('boostAbs'), min: 0, max: 4, dp: 2, dguess: { len: 2, m: 0.001 }, def: false },
   { key: 'putp', label: 'Pre-throttle press.', unit: 'bar', iunit: 'psi', toImp: F.barToPsi, cat: 'Air/Boost', read: diag('putp'), min: 0, max: 4, dp: 2, dguess: { len: 2, m: 0.001 }, def: false },
   { key: 'baro', label: 'Barometric press.', unit: 'bar', iunit: 'psi', toImp: F.barToPsi, cat: 'Air/Boost', read: diag('baro'), min: 0, max: 1.2, dp: 2, dguess: { len: 2, m: 0.001 }, def: false },
-  { key: 'iat', label: 'Charge air temp', unit: '°C', iunit: '°F', toImp: F.cToF, cat: 'Air/Boost', read: diag('iat'), min: -20, max: 90, dp: 0, warn: 60, crit: 75, dguess: { len: 2, m: 0.1, b: -40, signed: true }, def: true },
+  { key: 'iat', label: 'Charge air temp', unit: '°C', iunit: '°F', toImp: F.cToF, cat: 'Air/Boost', read: diag('iat'), min: -20, max: 90, dp: 0, warn: 60, crit: 75, dguess: { len: 1, m: 1, b: -40 }, def: true },
   { key: 'ambientT', label: 'Ambient air temp', unit: '°C', iunit: '°F', toImp: F.cToF, cat: 'Air/Boost', read: diag('ambientT'), min: -40, max: 60, dp: 0, dguess: { len: 1, m: 1, b: -40, signed: true }, def: false },
   { key: 'maf', label: 'MAF actual', unit: 'kg/h', cat: 'Air/Boost', read: diag('maf'), min: 0, max: 1200, dp: 0, dguess: { len: 2, m: 0.1 }, def: false },
   { key: 'mafSpec', label: 'MAF specified', unit: 'kg/h', cat: 'Air/Boost', read: diag('mafSpec'), min: 0, max: 1200, dp: 0, dguess: { len: 2, m: 0.1 }, def: false },
@@ -64,7 +64,7 @@ var BASE = [
   { key: 'ethanol', label: 'Ethanol content', unit: '%', cat: 'Fuel', read: diag('ethanol'), min: 0, max: 100, dp: 0, dguess: { len: 1, m: 0.5 }, def: false },
 
   // ---- Ignition (overall; per-cylinder appended below) -------------------
-  { key: 'timing', label: 'Ignition timing', unit: '°', cat: 'Ignition', read: diag('timing'), min: -10, max: 40, dp: 1, dguess: { len: 1, m: 0.5, b: -24, signed: true }, def: true },
+  { key: 'timing', label: 'Ignition timing', unit: '°', cat: 'Ignition', read: diag('timing'), min: -10, max: 40, dp: 1, dguess: { len: 1, m: 0.5, b: -64 }, def: true },
   { key: 'knock', label: 'Knock retard', unit: '°', cat: 'Ignition', read: diag('knock'), min: 0, max: 12, dp: 1, warn: 2, crit: 5, dguess: { len: 1, m: 0.1 }, def: true },
 
   // ---- Temperatures ------------------------------------------------------
@@ -129,7 +129,7 @@ var BASE = [
 // Per-cylinder ignition timing and knock (1..6).
 var CYL = 6;
 for (var cyl = 1; cyl <= CYL; cyl++) {
-  BASE.push({ key: 'timingCyl' + cyl, label: 'Timing cyl ' + cyl, unit: '°', cat: 'Ignition', read: diag('timingCyl' + cyl), min: -10, max: 40, dp: 1, dguess: { len: 1, m: 0.5, b: -24, signed: true }, def: false });
+  BASE.push({ key: 'timingCyl' + cyl, label: 'Timing cyl ' + cyl, unit: '°', cat: 'Ignition', read: diag('timingCyl' + cyl), min: -10, max: 40, dp: 1, dguess: { len: 1, m: 0.5, b: -64 }, def: false });
 }
 for (var cyl2 = 1; cyl2 <= CYL; cyl2++) {
   BASE.push({ key: 'knockCyl' + cyl2, label: 'Knock cyl ' + cyl2, unit: '°', cat: 'Ignition', read: diag('knockCyl' + cyl2), min: 0, max: 15, dp: 1, warn: 2, crit: 5, dguess: { len: 1, m: 0.1 }, def: false });

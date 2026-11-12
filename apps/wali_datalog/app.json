@@ -2,7 +2,7 @@
   "id": "wali_datalog",
   "title": "Wali Datalog",
   "description": "Live datalogging and map switching for tuned BMW vehicles on the MGU head unit. Reads engine data for logging; optionally requests a map switch on an already-tuned car. Independent app, read-only by default.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "license": "MIT",
   "vendor": "TunedByWali",
   "loggingId": "WDLG",
@@ -19,6 +19,15 @@
     },
     "de.bmw.infotainment.vehicle.Vehicle2": {
       "statusCarSpeed2": "rs"
+    },
+    "com.harman.infotainment.systemfunctions.tasu.tasu.InternalTasu": {
+      "_instances": "SystemFunctionsInternalTasuInst1",
+      "_methods": [
+        "sendTasuRequest"
+      ],
+      "_broadcasts": [
+        "sendTasuResponse"
+      ]
     }
   },
   "screens": [
