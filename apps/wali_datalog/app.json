@@ -1,16 +1,16 @@
 {
   "id": "wali_datalog",
-  "title": "Wali Datalog",
-  "description": "Live datalogging and map switching for tuned BMW vehicles on the MGU head unit. Reads engine data for logging; optionally requests a map switch on an already-tuned car. Independent app, read-only by default.",
-  "version": "2.1.0",
+  "title": "BeeM-Flash",
+  "description": "BeeM-Flash — live datalogging, whole-vehicle diagnostics, fault-code read/clear, read-only ECU info, map switching and gated calibration flashing for tuned BMW (B58/S58) on the MGU head unit. Independent open-source app, read-only by default.",
+  "version": "2.2.0",
   "license": "MIT",
   "vendor": "TunedByWali",
-  "loggingId": "WDLG",
+  "loggingId": "BMFL",
   "iconGlyph": "gauge",
   "id8": {
     "id": "wali_datalog8",
-    "loggingId": "WDL8",
-    "description": "Live datalogging and map switching for tuned BMW vehicles on the MGU head unit. Reads engine data for logging; optionally requests a map switch on an already-tuned car. Independent app, read-only by default. iDrive 8 (touch; GPU renderer)."
+    "loggingId": "BMF8",
+    "description": "BeeM-Flash — live datalogging, whole-vehicle diagnostics, fault-code read/clear, read-only ECU info, map switching and gated calibration flashing for tuned BMW (B58/S58) on the MGU head unit. Independent open-source app, read-only by default. iDrive 8 (touch; GPU renderer)."
   },
   "signals": {
     "de.bmw.infotainment.vehicle.CDS": {

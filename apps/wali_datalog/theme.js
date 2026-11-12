@@ -6,27 +6,29 @@
 // We keep our own superset so the look is identical in the simulator and on
 // the car; main.js can overlay any values ctx.theme() returns.
 //
-// LAMBO — the Beta 2 look: minimalist, hard sleek lines, dark, bold type,
-// yellow-on-black (Lamborghini "Giallo" yellow). Yellow is reserved for the
-// brand, the active tab, selection and primary actions; status uses amber/red.
+// LAMBO — strict black / yellow / red. Two accents only:
+//   YELLOW is the brand / active / selection / caution accent,
+//   RED is danger and anything important the user must not miss.
+// There is NO orange and no green. Emphasis is shown with BOLD + slightly larger
+// text (and solid fills), not by switching a label to a different hue.
 var LAMBO = {
-  bg: '#0a0a0a',        // near-black background
-  panel: '#121212',     // card
-  panel2: '#181818',    // raised card / tile
-  panel3: '#1f1f1f',    // control / button face
-  line: '#2b2b2b',      // hairline
-  text: '#f6f6f4',      // bold near-white
-  dim: '#9a9a97',       // secondary
-  faint: '#5c5c5a',     // tertiary / disabled
-  accent: '#ffe600',    // bright Giallo yellow — brand / active / primary (punchy on black)
-  accentHi: '#fff45a',  // highlight / hover sheen
+  bg: '#000000',        // dark black
+  panel: '#0c0c0c',     // card
+  panel2: '#141414',    // raised card / tile
+  panel3: '#1c1c1c',    // control / button face
+  line: '#2a2a2a',      // hairline
+  text: '#ffffff',      // bright white
+  dim: '#b2b2b2',       // secondary
+  faint: '#6a6a6a',     // tertiary / disabled
+  accent: '#ffe600',    // bright yellow — brand / active / selection / caution
+  accentHi: '#fff23d',  // yellow highlight
   accentDim: '#4a4300',  // yellow at rest (inactive accent fill)
-  ink: '#0a0a0a',       // text drawn ON yellow
-  good: '#8bd450',      // confirmed / ok (yellow-green, used sparingly)
-  warn: '#ff9f0a',      // warning
-  crit: '#ff3b30',      // critical / danger
-  cold: '#8a8a88',      // below-range
-  rec: '#ff3b30'        // recording dot
+  ink: '#000000',       // text drawn ON yellow
+  good: '#ffffff',      // positive/confirmed — white; emphasised with bold, not a new hue
+  warn: '#ffe600',      // caution — yellow (no orange)
+  crit: '#ff2a1f',      // danger / important — bright red
+  cold: '#7a7a7a',      // below-range
+  rec: '#ff2a1f'        // recording dot — red
 };
 
 // Kept as an alias so existing references to DARK resolve to the new look.

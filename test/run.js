@@ -441,6 +441,27 @@ function makeFakeDiscoverySocket(respond) {
   ['ethanol', 'flexFactor', 'fuelTemp', 'portRailPressure', 'portInjSplit', 'portInjActive'].forEach(function (k) {
     ok(!!Channels.get(k), 'channels: ' + k + ' in the catalogue');
   });
+  // both OBD boost PIDs available; 0x0B saturates at 2.55 bar, 0x70 does not
+  ok(!!Channels.get('boostObd0B') && !!Channels.get('boostObd70'), 'channels: both OBD boost PIDs (0x0B and 0x70) available');
+  ok(s.boostObd0B <= 2.5500001 && s.boostObd70 >= s.boostObd0B - 1e-6, 'demo: OBD 0x0B saturates while 0x70 does not');
+})();
+
+// ---- tune detection (computeTune heuristic) --------------------------------
+(function () {
+  var ecuinfo = require(A + 'ecuinfo');
+  function item(did, value) { return { did: did, value: value, ok: true }; }
+  // signature match
+  var t1 = ecuinfo.computeTune([item(0xF17C, 'CAL_MHD_STG2'), item(0xF194, '00008051')], {});
+  ok(t1.detected === 'MHD' && t1.modified === true, 'tune: MHD signature detected in calibration ID');
+  // stock list match -> looks stock
+  var t2 = ecuinfo.computeTune([item(0xF17C, 'STOCK_ABC')], { stockCalIds: ['STOCK_ABC'] });
+  ok(t2.modified === false && !t2.detected, 'tune: calibration ID in stock list -> looks stock');
+  // not in stock list -> modified
+  var t3 = ecuinfo.computeTune([item(0xF17C, 'WEIRD_XYZ')], { stockCalIds: ['STOCK_ABC'] });
+  ok(t3.modified === true, 'tune: calibration ID not in stock list -> looks modified');
+  // unknown (no list, no signature) -> honest null
+  var t4 = ecuinfo.computeTune([item(0xF17C, 'SOME_CAL')], {});
+  ok(t4.modified === null && /compare/i.test(t4.note), 'tune: unknown without a stock reference, reported honestly');
 })();
 
 // error path: storage that throws on open -> engine error state
@@ -624,7 +645,9 @@ Promise.resolve()
 
       // ---- Codes page wired to the connected vehicle -----------------------
       var EcuSim = require('./ecusim').EcuSim;
-      var dmeSim = new EcuSim({ dtcs: [{ bytes: [0x12, 0x34, 0x68], status: 0x08 }, { bytes: [0x45, 0x67, 0x00], status: 0x04 }] });
+      function asc(s) { return s.split('').map(function (ch) { return ch.charCodeAt(0); }); }
+      var dmeDids = {}; dmeDids[0xF17C] = asc('CAL_MHD_STG1'); dmeDids[0xF190] = asc('WBATESTVIN0000001');
+      var dmeSim = new EcuSim({ dids: dmeDids, dtcs: [{ bytes: [0x12, 0x34, 0x68], status: 0x08 }, { bytes: [0x45, 0x67, 0x00], status: 0x04 }] });
       var egsSim = new EcuSim({ dtcs: [{ bytes: [0xC1, 0x23, 0x00], status: 0x08 }] });
       var modMap = {}; modMap[0x1000] = dmeSim; modMap[0x1800] = egsSim;
       ctx.diagSocket = function () { return dmeSim.doipSocket({ modules: modMap }); };
@@ -642,20 +665,26 @@ Promise.resolve()
       }).then(function () {
         ok(dmeSim.cleared === 1 && egsSim.cleared === 1, 'app: confirmed Clear erases each module');
         ok(app.codes.confirmClear === false, 'app: confirmation resets after clearing');
+        // the codes scan also read the DME's calibration / last flash
+        ok(app.codes.tune && app.codes.tune.detected === 'MHD', 'app: codes scan surfaces the tune on the car (MHD detected)');
 
-        // ---- Flash tab: engine on/off switch + gated flash over DoIP --------
-        app._show('flash');
-        // Engine OFF by default: the FLASH action does nothing.
-        ok(app.flash.armed === false, 'app: flash engine is OFF by default');
-        app._flashAction();
-        ok(app.flash.confirm === false && dmeSim.flashed === null, 'app: FLASH is inert while the engine is OFF');
-        // Supply a user descriptor in storage, then turn the engine ON.
+        // ---- Flash prerequisite: must read the ECU (INFO) first --------------
         var cal = []; for (var q = 0; q < 300; q++) cal.push((q * 11 + 5) & 0xff);
         var h = app.storage.open('flash/descriptor.json');
         app.storage.append(h, JSON.stringify({ address: '0xA0010000', data: cal }));
         app.storage.close(h);
-        app._flashToggle();
-        ok(app.flash.armed === true && app.flash.descriptor && app.flash.descriptor.size === 300, 'app: engine ON loads the user descriptor (300 bytes)');
+        app._show('flash');
+        ok(app.flash.armed === false && app.info.done === false, 'app: flash engine OFF and INFO not yet read');
+        app._flashToggle(); // blocked — INFO not read
+        ok(app.flash.armed === false && /INFO tab first/i.test(app.flash.status), 'app: flash is locked until the ECU is read on INFO');
+        // read the ECU on the INFO tab (prerequisite), then flash
+        app._show('info');
+        return app._infoRead().then(function () {
+          ok(app.info.done === true, 'app: INFO read satisfies the flash prerequisite');
+          ok(app.info.tune && app.info.tune.detected === 'MHD', 'app: INFO read detects the MHD tune');
+          app._show('flash');
+          app._flashToggle();
+          ok(app.flash.armed === true && app.flash.descriptor && app.flash.descriptor.size === 300, 'app: engine ON after INFO loads the user descriptor (300 bytes)');
         // First FLASH press arms the confirm; nothing written yet.
         app._flashAction();
         ok(app.flash.confirm === true && dmeSim.flashed === null, 'app: first FLASH press only arms confirmation');
@@ -677,6 +706,7 @@ Promise.resolve()
           ok(before !== after && (after === 'metric' || after === 'imperial'), 'app: SETUP cycles a setting value');
 
           app._show('connect');
+        });
         });
       }).then(function () {
         app.onButton('BTN_B'); // Disable

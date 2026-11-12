@@ -46,6 +46,12 @@ var BASE = [
   { key: 'wastegate', label: 'Wastegate duty', unit: '%', cat: 'Air/Boost', read: diag('wastegate'), min: 0, max: 100, dp: 0, dguess: { len: 1, m: 0.5 }, def: false },
   { key: 'wastegateTarget', label: 'Wastegate target', unit: '%', cat: 'Air/Boost', read: diag('wastegateTarget'), min: 0, max: 100, dp: 0, dguess: { len: 1, m: 0.5 }, def: false },
   { key: 'wastegatePos', label: 'Wastegate position', unit: '%', cat: 'Air/Boost', read: diag('wastegatePos'), min: 0, max: 100, dp: 0, dguess: { len: 1, m: 0.5 }, def: false },
+  // Two OBD-II boost sources kept side-by-side to CONFIRM on-car which reads
+  // correctly on a high-boost car: the standard manifold-pressure PID 0x0B
+  // saturates at 255 kPa (~2.55 bar absolute), while the boost-control PID 0x70
+  // does not. Map both (pidmap / OBD source) and compare. See docs.
+  { key: 'boostObd0B', label: 'Manifold (OBD 0x0B)', unit: 'bar', iunit: 'psi', toImp: F.barToPsi, cat: 'Air/Boost', read: diag('boostObd0B'), min: 0, max: 3, dp: 2, dguess: { len: 1, m: 0.01 }, def: false },
+  { key: 'boostObd70', label: 'Boost ctrl (OBD 0x70)', unit: 'bar', iunit: 'psi', toImp: F.barToPsi, cat: 'Air/Boost', read: diag('boostObd70'), min: 0, max: 4, dp: 2, dguess: { len: 2, m: 0.001 }, def: false },
 
   // ---- Fuel --------------------------------------------------------------
   { key: 'lambda', label: 'Lambda actual (B1)', unit: 'λ', cat: 'Fuel', read: diag('lambda'), min: 0.6, max: 1.3, dp: 3, dguess: { len: 2, m: 0.0001 }, def: true },

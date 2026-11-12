@@ -19,7 +19,9 @@ var D = require('./draw');
 
 var W = 1600, H = 520;
 var TAB_Y = 46, TAB_H = 50;
-var CONTENT = { x: 24, y: 104, w: W - 48, h: 324 };
+// Content sits well below the tab baseline so each page's small header line never
+// collides with the tabs.
+var CONTENT = { x: 24, y: 126, w: W - 48, h: 300 };
 var BAR = { x: 24, y: 438, w: W - 48, h: 74 };
 
 // ---- geometry (shared with main.js hit-testing) ---------------------------
@@ -81,21 +83,24 @@ function chrome(cv, t, view) {
 
   // brand: a yellow slab mark + the app name (kept minimal)
   cv.fillRect(24, 8, 40, 26, t.accent);
-  cv.text('W', 44, 30, 22, t.ink, { align: 'c', weight: 'bold' });
-  cv.text('WALI', 76, 30, 22, t.text, { weight: 'bold' });
-  var wwali = cv.textWidth('WALI', 22, 'bold');
-  cv.text('DATALOG', 76 + wwali + 10, 30, 22, t.dim, { weight: 'bold' });
+  cv.text('B', 44, 30, 22, t.ink, { align: 'c', weight: 'bold' });
+  cv.text('BeeM', 76, 30, 22, t.text, { weight: 'bold' });
+  var wbeem = cv.textWidth('BeeM', 22, 'bold');
+  cv.text('FLASH', 76 + wbeem + 10, 30, 22, t.accent, { weight: 'bold' });
 
   // status (right)
   var sx = W - 24;
   cv.text(view.units === 'imperial' ? 'IMPERIAL' : 'METRIC', sx, 29, 16, t.faint, { align: 'r', weight: 'bold' });
   sx -= cv.textWidth(view.units === 'imperial' ? 'IMPERIAL' : 'METRIC', 16, 'bold') + 18;
-  if (view.rec && view.rec.logging) { var rw = D.badge(cv, t, sx - 118, 6, 'REC ' + F.mmss(view.rec.durationMs), t.rec, '#fff'); sx -= 118 + 12; }
+  if (view.rec && view.rec.logging) { D.badge(cv, t, sx - 118, 6, 'REC ' + F.mmss(view.rec.durationMs), t.rec, '#fff'); sx -= 118 + 12; }
+  // DEMO is neutral (grey), LIVE is the yellow accent, NO DATA is faint.
   var slabel = view.demo ? 'DEMO' : (view.live ? 'LIVE' : 'NO DATA');
-  var scol = view.demo ? t.warn : (view.live ? t.accent : t.faint);
-  D.badge(cv, t, sx - (cv.textWidth(slabel, 18, 'bold') + 24), 6, slabel, scol, t.ink);
+  var scol = view.demo ? t.faint : (view.live ? t.accent : t.panel3);
+  var stc = view.demo ? t.text : (view.live ? t.ink : t.dim);
+  D.badge(cv, t, sx - (cv.textWidth(slabel, 18, 'bold') + 24), 6, slabel, scol, stc);
 
-  // tab strip
+  // tab strip — the active tab is emphasised with a solid fill, a yellow underline,
+  // and BOLDER/LARGER text (not a different colour).
   var tabs = view.tabs || [];
   var rects = tabRects(tabs.length);
   cv.fillRect(24, TAB_Y + TAB_H, W - 48, 2, t.line); // baseline hairline
@@ -106,7 +111,7 @@ function chrome(cv, t, view) {
       cv.fillRect(r.x, r.y + r.h - 4, r.w, 4, t.accent); // yellow underline
     }
     if (i > 0) cv.fillRect(r.x, r.y + 10, 1, r.h - 20, t.line); // separator
-    cv.text(tabs[i].label, r.x + r.w / 2, r.y + r.h / 2 + 7, 20, active ? t.accent : t.dim, { align: 'c', weight: 'bold' });
+    cv.text(tabs[i].label, r.x + r.w / 2, r.y + r.h / 2 + (active ? 8 : 7), active ? 23 : 19, active ? t.accent : t.dim, { align: 'c', weight: 'bold' });
   }
 
   // action bar
@@ -287,7 +292,7 @@ function maps(cv, t, view, R) {
   cv.text('Requested: ' + labelOf(slots, m.requested), sx, py + 112, 20, t.text, {});
   var active = (m.selected == null) ? 'unknown (not read back)' : (labelOf(slots, m.selected) + (m.confirmed ? '  ✓ confirmed' : ''));
   cv.text('Active: ' + active, sx, py + 144, 20, (m.selected == null) ? t.dim : t.text, {});
-  if (m.confirm) overlay(cv, t, 'CONFIRM MAP SWITCH', 'Switch to "' + labelOf(slots, m.requested) + '" — this writes to the DME.', 'Tap APPLY to confirm, BACK to cancel.', t.warn);
+  if (m.confirm) overlay(cv, t, 'CONFIRM MAP SWITCH', 'Switch to "' + labelOf(slots, m.requested) + '" — this writes to the DME.', 'Tap APPLY to confirm, BACK to cancel.', t.crit);
 }
 
 // A centered modal confirmation overlay.
@@ -364,6 +369,14 @@ function codes(cv, t, view, R) {
     }
     y += rowH; shown++;
   }
+  // DME calibration / last flash — helps spot an MHD or other tune.
+  var tn = c.tune;
+  if (tn) {
+    var tcol = (tn.detected || tn.modified === true) ? t.crit : t.text;
+    var tstr = 'DME CAL: ' + (tn.calId || '—') + (tn.programmingDate ? '   ·   programmed ' + tn.programmingDate : '') +
+      (tn.detected ? '   ·   looks like ' + tn.detected : (tn.modified === true ? '   ·   looks modified' : (tn.modified === false ? '   ·   looks stock' : '')));
+    cv.text(tstr, R.x + 28, R.y + R.h - 46, 18, tcol, { weight: (tn.detected || tn.modified === true) ? 'bold' : 'normal' });
+  }
   cv.text('“?” = pending (not confirmed).  Total: ' + res.totalDtcs + ' across ' + res.reached + '/' + res.scanned + ' modules.', R.x + 28, R.y + R.h - 20, 17, t.faint, {});
 }
 
@@ -381,9 +394,18 @@ function flash(cv, t, view, R) {
   var py = R.y + 84, ph = R.h - 84;
   D.panel(cv, t, R.x, py, hw, ph, { accent: true, accentColor: t.crit });
   if (!f.armed) {
+    if (f.blocked) {
+      // Prerequisite: the ECU must be read on the INFO tab first.
+      cv.text('READ THE ECU FIRST', R.x + 24, py + 52, 28, t.crit, { weight: 'bold' });
+      cv.text('Flashing is locked until you read the car on the INFO tab — you must see', R.x + 24, py + 90, 20, t.text, {});
+      cv.text('its current software and calibration (and any tune) before writing to it.', R.x + 24, py + 118, 20, t.text, {});
+      cv.text('Open INFO → READ, then come back here.', R.x + 24, py + 156, 19, t.accent, { weight: 'bold' });
+      return;
+    }
     cv.text('ENGINE OFF — SAFE', R.x + 24, py + 50, 26, t.text, { weight: 'bold' });
     cv.text('Nothing can be written to the DME while the flash engine is OFF.', R.x + 24, py + 86, 20, t.dim, {});
-    cv.text('Turn it ON to review your calibration descriptor and flash. Your vehicle, your data, your responsibility.', R.x + 24, py + 118, 19, t.faint, {});
+    if (f.tune) cv.text('On the car now: ' + (f.tune.calId || '—') + (f.tune.detected ? '  (looks like ' + f.tune.detected + ')' : ''), R.x + 24, py + 118, 19, (f.tune.detected || f.tune.modified === true) ? t.crit : t.dim, { weight: (f.tune.detected || f.tune.modified === true) ? 'bold' : 'normal' });
+    else cv.text('Turn it ON to review your calibration descriptor and flash. Your vehicle, your data, your responsibility.', R.x + 24, py + 118, 19, t.faint, {});
     return;
   }
   // armed
@@ -403,16 +425,21 @@ function flash(cv, t, view, R) {
     return;
   }
   var d = f.descriptor;
-  cv.text('CALIBRATION READY', R.x + 24, py + 42, 24, t.text, { weight: 'bold' });
+  cv.text('CALIBRATION READY', R.x + 24, py + 36, 24, t.text, { weight: 'bold' });
+  // what's on the car now (so you confirm you're flashing the right base)
+  if (f.tune) {
+    var oc = (f.tune.detected || f.tune.modified === true);
+    cv.text('ON CAR: ' + (f.tune.calId || '—') + (f.tune.detected ? '  (looks like ' + f.tune.detected + ')' : ''), R.x + R.w - 24, py + 36, 18, oc ? t.crit : t.dim, { align: 'r', weight: oc ? 'bold' : 'normal' });
+  }
   var rows = [['Address', d.addressHex || '—'], ['Size', (d.size || 0) + ' bytes'], ['Security', d.security || 'none'],
     ['Erase', d.erase || 'none'], ['Verify', d.verify || 'none']];
   for (var i = 0; i < rows.length; i++) {
-    var yy = py + 74 + i * 28;
+    var yy = py + 66 + i * 26;
     cv.text(rows[i][0].toUpperCase(), R.x + 24, yy, 15, t.faint, { weight: 'bold' });
     cv.text(rows[i][1], R.x + 200, yy, 19, t.text, {});
   }
-  if (f.result) cv.text(f.result.message, R.x + 24, py + ph - 14, 18, f.result.ok ? (f.result.confirmed ? t.good : t.warn) : t.crit, { weight: 'bold' });
-  else cv.text('Tap FLASH, then confirm. Charged battery, stable connection, do not interrupt.', R.x + 24, py + ph - 14, 18, t.warn, {});
+  if (f.result) cv.text(f.result.message, R.x + 24, py + ph - 12, 18, f.result.ok ? (f.result.confirmed ? t.good : t.accent) : t.crit, { weight: 'bold' });
+  else cv.text('Tap FLASH, then confirm. Charged battery, stable connection, do not interrupt.', R.x + 24, py + ph - 12, 18, t.crit, {});
   if (f.confirm) overlay(cv, t, 'WRITE TO THE DME?', 'This writes ' + (d.size || 0) + ' bytes to ' + (d.addressHex || 'the calibration section') + '. It can damage or brick the ECU. Your vehicle, your data, your responsibility.', 'Tap FLASH to confirm, BACK to cancel.', t.crit);
 }
 
@@ -450,11 +477,22 @@ function info(cv, t, view, R) {
   var cols = 2, cw = (R.w - 40) / cols, perCol = Math.ceil(items.length / cols);
   for (var i = 0; i < items.length; i++) {
     var col = Math.floor(i / perCol), row = i % perCol;
-    var x = R.x + 28 + col * cw, y = R.y + 70 + row * 42;
+    var x = R.x + 28 + col * cw, y = R.y + 62 + row * 37;
     var it = items[i];
     cv.text(it.label.toUpperCase(), x, y, 15, t.faint, { weight: 'bold' });
     cv.text(it.value, x + 230, y, 20, it.ok ? t.text : t.faint, { weight: it.ok ? 'bold' : 'normal' });
-    cv.fillRect(x, y + 12, cw - 24, 1, t.line);
+    cv.fillRect(x, y + 11, cw - 24, 1, t.line);
+  }
+  // Tune / last-flash status line.
+  var tn = f.tune;
+  if (tn) {
+    var oc = (tn.detected || tn.modified === true);
+    cv.fillRect(R.x + 24, R.y + R.h - 44, R.w - 48, 1, t.line);
+    cv.text('TUNE', R.x + 28, R.y + R.h - 18, 15, t.faint, { weight: 'bold' });
+    var msg = tn.detected ? ('Looks like ' + tn.detected + ' — ' + (tn.calId || '')) :
+      (tn.modified === true ? ('Looks modified — ' + (tn.calId || '')) :
+      (tn.modified === false ? ('Looks stock — ' + (tn.calId || '')) : tn.note));
+    cv.text(msg, R.x + 110, R.y + R.h - 18, 18, oc ? t.crit : t.text, { weight: oc ? 'bold' : 'normal' });
   }
 }
 

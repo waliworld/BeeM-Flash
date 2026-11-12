@@ -1,8 +1,9 @@
-# Wali Datalog — MGU (iDrive 7/8) datalogging for tuned BMWs
+# BeeM-Flash — MGU (iDrive 7/8) datalogging, diagnostics & flashing for tuned BMWs
 
 An independent app for the BMW **MGU** head unit (iDrive 7 and iDrive 8) that
-**datalogs** a tuned car on the car's own screen and, optionally, **switches
-tune maps**. It installs through the community iDrive app store
+**datalogs** a tuned car on the car's own screen, reads **diagnostics / fault
+codes / ECU info**, **switches tune maps**, and does gated **calibration
+flashing**. It installs through the community iDrive app store
 ([mgu-store](https://github.com/robertnisipeanu/mgu-store)) like any other MGU
 app, and it is built from scratch — see [`NOTICE.md`](NOTICE.md).
 

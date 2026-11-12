@@ -94,6 +94,7 @@ App.prototype.start = function (ctx) {
   // ---- log engine -------------------------------------------------------
   this.engine = new LogEngine({
     storage: this.storage,
+    appId: 'beem_flash', // log filenames: beem_flash_<stamp>.csv
     vehicle: this._config().vehicle || {}, // { massKg, cda, crr, drivetrain } for pull power estimates
     onError: function (msg) { if (self.ctx.log && self.ctx.log.error) self.ctx.log.error(msg); }
   });
@@ -117,12 +118,13 @@ App.prototype.start = function (ctx) {
   this.latest = { values: {}, demo: false, live: false };
   this.confirm = false;
   // Fault-code (DTC) page state.
-  this.codes = { scope: 'all', scanning: false, result: null, msg: '', confirmClear: false, clearing: false, lastClear: null };
+  this.codes = { scope: 'all', scanning: false, result: null, msg: '', confirmClear: false, clearing: false, lastClear: null, tune: null };
   // Calibration-flash page state. The engine is OFF by default; nothing can be
   // written until the user turns it ON and then confirms a flash.
   this.flash = { armed: false, descriptor: null, opts: null, status: '', confirm: false, running: false, progress: 0, step: '', result: null };
-  // Read-only ECU identification / calibration info page.
-  this.info = { reading: false, items: null, msg: '' };
+  // Read-only ECU identification / calibration info page. A successful read is a
+  // prerequisite for flashing (you must see what's on the car first).
+  this.info = { reading: false, items: null, tune: null, done: false, msg: '' };
 
   // react to settings changes live
   if (this.ctx.settings && this.ctx.settings.onChange) {
@@ -365,11 +367,11 @@ App.prototype._errorCard = function (cv, msg) {
   if (!cv) return;
   var t = this.t || {};
   cv.clear(t.bg || '#0b0f14');
-  cv.text('Wali Datalog hit an error', 40, 60, 30, t.text || '#dde', { weight: 'bold' });
+  cv.text('BeeM-Flash hit an error', 40, 60, 30, t.text || '#dde', { weight: 'bold' });
   cv.text('The app kept running; please screenshot this.', 40, 104, 22, t.dim || '#9ab');
   var lines = String(msg || 'unknown').match(/.{1,70}/g) || [''];
   for (var i = 0; i < lines.length && i < 8; i++) {
-    cv.text(lines[i], 40, 150 + i * 30, 22, t.warn || '#f2a33c');
+    cv.text(lines[i], 40, 150 + i * 30, 22, t.crit || '#ff2a1f');
   }
 };
 
@@ -437,9 +439,9 @@ App.prototype._actions = function () {
     { label: 'READ', disabled: this.info.reading, fn: function () { self._infoRead(); } }
   ];
   if (s === 'flash') {
-    var ready = this.flash.armed && this.flash.descriptor && !this.flash.running;
+    var ready = this.flash.armed && this.flash.descriptor && !this.flash.running && this.info.done;
     return [
-      { label: this.flash.armed ? 'ENGINE ON' : 'ENGINE OFF', active: this.flash.armed, fn: function () { self._flashToggle(); } },
+      { label: this.info.done ? (this.flash.armed ? 'ENGINE ON' : 'ENGINE OFF') : 'NEED INFO', active: this.flash.armed, fn: function () { self._flashToggle(); } },
       { label: 'RELOAD', disabled: !this.flash.armed || this.flash.running, fn: function () { self._flashReload(); } },
       { label: this.flash.confirm ? 'CONFIRM' : 'FLASH', danger: true, disabled: !ready, fn: function () { self._flashAction(); } },
       { label: 'CANCEL', disabled: !this.flash.confirm, fn: function () { self.flash.confirm = false; } }
@@ -593,6 +595,13 @@ App.prototype._codesScan = function () {
   }).then(function (res) {
     self.codes.result = res;
     self.codes.msg = res.totalDtcs + ' code' + (res.totalDtcs === 1 ? '' : 's') + ' across ' + res.reached + '/' + res.scanned + ' module' + (res.scanned === 1 ? '' : 's');
+    // Also read the DME's calibration / last-flash so the codes view shows what
+    // tune is on the car (helps spot an MHD or other tune).
+    var cfg = self._config();
+    var tuneDids = ecuinfo.DEFAULT_DIDS.filter(function (d) { return d.did === 0xF194 || d.did === 0xF199 || d.did === 0xF17C; });
+    return ecuinfo.read(function (b) { return gw.send(b); }, { dids: tuneDids, stockCalIds: cfg.stockCalIds, tuneSignatures: cfg.tuneSignatures }).then(function (ir) {
+      self.codes.tune = ir.tune; if (self.info && !self.info.tune) self.info.tune = ir.tune;
+    }).catch(function () {});
   }).catch(function (e) {
     self.codes.msg = 'Scan failed: ' + ((e && e.message) || e);
   }).then(function () {
@@ -628,11 +637,14 @@ App.prototype._infoRead = function () {
   var gw = this._makeGateway();
   if (!gw) { this.info.msg = 'Connect to the vehicle first (CONNECT tab).'; return Promise.resolve(); }
   this.info.reading = true; this.info.msg = 'Reading identification…';
-  var dids = (this._config().infoDids) || undefined; // per-vehicle override
+  var cfg = this._config();
+  var opts = { dids: cfg.infoDids || undefined, stockCalIds: cfg.stockCalIds, tuneSignatures: cfg.tuneSignatures };
   return gw.activate().then(function () {
-    return ecuinfo.read(function (b) { return gw.send(b); }, { dids: dids }, function (d, i, n) { self.info.msg = 'Reading ' + d.label + ' (' + i + '/' + n + ')…'; });
+    return ecuinfo.read(function (b) { return gw.send(b); }, opts, function (d, i, n) { self.info.msg = 'Reading ' + d.label + ' (' + i + '/' + n + ')…'; });
   }).then(function (res) {
     self.info.items = res.items || [];
+    self.info.tune = res.tune || null;
+    self.info.done = true; // prerequisite for flashing is now satisfied
     var got = self.info.items.filter(function (x) { return x.ok; }).length;
     self.info.msg = got + ' of ' + self.info.items.length + ' identifiers read';
   }).catch(function (e) {
@@ -679,6 +691,10 @@ App.prototype._channelsPage = function (dir) {
 // load the user's descriptor; a flash still needs an explicit confirm.
 App.prototype._flashToggle = function () {
   if (this.flash.running) return;
+  if (!this.flash.armed && !this.info.done) { // prerequisite: read ECU INFO first
+    this.flash.status = 'Read the ECU on the INFO tab first — you must see what is on the car before flashing.';
+    return;
+  }
   this.flash.armed = !this.flash.armed;
   this.flash.confirm = false;
   if (this.flash.armed) this._flashReload();
@@ -691,7 +707,7 @@ App.prototype._flashReload = function () {
   else { this.flash.descriptor = null; this.flash.opts = null; this.flash.status = r.status || r.error || 'No calibration found.'; }
 };
 App.prototype._flashAction = function () {
-  if (!this.flash.armed || this.flash.running || !this.flash.descriptor || !this.flash.opts) return Promise.resolve();
+  if (!this.flash.armed || this.flash.running || !this.flash.descriptor || !this.flash.opts || !this.info.done) return Promise.resolve();
   if (!this.flash.confirm) { this.flash.confirm = true; return Promise.resolve(); }
   this.flash.confirm = false;
   return this._flashRun();
@@ -778,14 +794,16 @@ App.prototype.buildView = function () {
       confirmClear: this.codes.confirmClear,
       msg: this.codes.msg,
       result: this.codes.result,
+      tune: this.codes.tune,
       moduleCount: this._codeModules().length
     },
     flash: {
       armed: this.flash.armed, running: this.flash.running, confirm: this.flash.confirm,
       progress: this.flash.progress, step: this.flash.step, status: this.flash.status,
-      descriptor: this.flash.descriptor, result: this.flash.result
+      descriptor: this.flash.descriptor, result: this.flash.result,
+      blocked: !this.info.done, tune: this.info.tune
     },
-    info: { reading: this.info.reading, items: this.info.items, msg: this.info.msg },
+    info: { reading: this.info.reading, items: this.info.items, tune: this.info.tune, done: this.info.done, msg: this.info.msg },
     setup: this._setupItems(), setupSel: this.setupSel,
     tab: this.tab, tabs: TABS, actions: this._actions(),
     webUrl: this._config().webUrl || ''

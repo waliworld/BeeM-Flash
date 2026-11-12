@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Wali Datalog — preview</title>
+<title>BeeM-Flash — preview</title>
 <style>
   html, body { margin: 0; background: #05080b; color: #cdd; font-family: Arial, sans-serif; }
   #wrap { padding: 16px; }
@@ -76,6 +76,8 @@
     { module: { name: 'DSC (stability / brakes)' }, ok: true, dtcs: [ { code: 'C0501', status: { confirmed: true } } ] },
     { module: { name: 'EPS (steering)' }, ok: false, dtcs: [] } ] };
   var SAMPLE_DESC = { addressHex: '0xA0010000', size: 65536, security: 'level 0x11 + key', erase: 'routine 0xFF00', verify: 'routine 0xFF01' };
+  var SAMPLE_TUNE = { calId: 'CAL_MHD_STG2', programmingDate: '2023-09-01', detected: 'MHD', modified: true, note: 'Signature match — looks like MHD.' };
+  function readInfo(app) { app.info.done = true; app.info.tune = SAMPLE_TUNE; return app; }
 
   window.renderScreen = function (name) {
     var app, cap = name;
@@ -99,12 +101,13 @@
     else if (name === 'connect') { app = withEnet(makeApp()); app.tab = 'connect'; app.render(cv); cap = 'CONNECT — connected (read-only)'; }
     else if (name === 'connect-locked') { app = makeApp(); drive(app, 6); app.tab = 'connect'; app.render(cv); cap = 'CONNECT — locked'; }
     else if (name === 'codes') { app = withEnet(makeApp()); app.codes.msg = ''; app.tab = 'codes'; app.render(cv); cap = 'CODES — before scan'; }
-    else if (name === 'codes-result') { app = withEnet(makeApp()); app.codes.result = SAMPLE_CODES; app.codes.msg = '4 codes across 3/4 modules'; app.tab = 'codes'; app.render(cv); cap = 'CODES — scan result'; }
+    else if (name === 'codes-result') { app = withEnet(makeApp()); app.codes.result = SAMPLE_CODES; app.codes.tune = SAMPLE_TUNE; app.codes.msg = '4 codes across 3/4 modules'; app.tab = 'codes'; app.render(cv); cap = 'CODES — scan result + tune on car'; }
     else if (name === 'codes-confirm') { app = withEnet(makeApp()); app.codes.result = SAMPLE_CODES; app.codes.confirmClear = true; app.codes.msg = 'Press CLEAR again to ERASE fault memory.'; app.tab = 'codes'; app.render(cv); cap = 'CODES — clear confirm'; }
-    else if (name === 'flash-off') { app = withEnet(makeApp()); app.flash.armed = false; app.tab = 'flash'; app.render(cv); cap = 'FLASH — engine OFF (safe)'; }
-    else if (name === 'flash-ready') { app = withEnet(makeApp()); app.flash.armed = true; app.flash.descriptor = SAMPLE_DESC; app.tab = 'flash'; app.render(cv); cap = 'FLASH — calibration ready'; }
-    else if (name === 'flash-confirm') { app = withEnet(makeApp()); app.flash.armed = true; app.flash.descriptor = SAMPLE_DESC; app.flash.confirm = true; app.tab = 'flash'; app.render(cv); cap = 'FLASH — confirm write'; }
-    else if (name === 'flash-running') { app = withEnet(makeApp()); app.flash.armed = true; app.flash.descriptor = SAMPLE_DESC; app.flash.running = true; app.flash.progress = 62; app.flash.step = 'transfer 62%'; app.tab = 'flash'; app.render(cv); cap = 'FLASH — writing'; }
+    else if (name === 'flash-blocked') { app = withEnet(makeApp()); app.flash.armed = false; app.tab = 'flash'; app.render(cv); cap = 'FLASH — locked until ECU read (prerequisite)'; }
+    else if (name === 'flash-off') { app = readInfo(withEnet(makeApp())); app.flash.armed = false; app.tab = 'flash'; app.render(cv); cap = 'FLASH — engine OFF (ECU read; tune shown)'; }
+    else if (name === 'flash-ready') { app = readInfo(withEnet(makeApp())); app.flash.armed = true; app.flash.descriptor = SAMPLE_DESC; app.tab = 'flash'; app.render(cv); cap = 'FLASH — calibration ready'; }
+    else if (name === 'flash-confirm') { app = readInfo(withEnet(makeApp())); app.flash.armed = true; app.flash.descriptor = SAMPLE_DESC; app.flash.confirm = true; app.tab = 'flash'; app.render(cv); cap = 'FLASH — confirm write'; }
+    else if (name === 'flash-running') { app = readInfo(withEnet(makeApp())); app.flash.armed = true; app.flash.descriptor = SAMPLE_DESC; app.flash.running = true; app.flash.progress = 62; app.flash.step = 'transfer 62%'; app.tab = 'flash'; app.render(cv); cap = 'FLASH — writing'; }
     else if (name === 'log-run') {
       app = makeApp(); var nr = 1700000000000; app.engine.clock = function () { return nr; };
       app._startLog(); for (var ri = 0; ri < 400; ri++) { nr += 50; app.tick(nr); } app._stopLog();
@@ -122,8 +125,9 @@
         { did: 0xF18B, label: 'Manufacturing date', value: '2021-04-18', ok: true },
         { did: 0xF17C, label: 'Calibration ID', value: 'CAL_B58_STG2', ok: true }
       ];
-      app.info.msg = '7 of 10 identifiers read';
-      app.tab = 'info'; app.render(cv); cap = 'INFO — ECU identification (read-only)';
+      app.info.msg = '8 of 11 identifiers read';
+      app.info.tune = SAMPLE_TUNE; app.info.done = true;
+      app.tab = 'info'; app.render(cv); cap = 'INFO — ECU identification + tune status (read-only)';
     }
     else if (name === 'setup') { app = makeApp(); drive(app, 6); app.setupSel = 1; app.tab = 'setup'; app.render(cv); cap = 'SETUP — in-app settings'; }
     else { app = makeApp(); app.tab = 'live'; app.render(cv); }

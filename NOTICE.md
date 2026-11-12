@@ -2,7 +2,7 @@
 
 ## What this project is
 
-**Wali Datalog** is an independent, open-source application for the BMW **MGU**
+**BeeM-Flash** is an independent, open-source application for the BMW **MGU**
 head unit (iDrive 7 and iDrive 8). It reads live vehicle data for datalogging,
 reads and clears fault codes (DTCs) across the car's modules, requests a tune
 **map switch** on a car already tuned by its owner, and provides an open

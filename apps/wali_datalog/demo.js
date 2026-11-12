@@ -164,6 +164,9 @@ Demo.prototype.step = function (dt) {
   out.ethanolTarget = 10;
   out.flexFactor = clamp(1 + (out.ethanol / 100) * 0.6, 0.9, 2);
   out.fuelTemp = clamp(30 + load * 0.05, 18, 80);
+  // Two OBD boost sources: 0x0B saturates at 2.55 bar abs; 0x70 does not.
+  out.boostObd0B = clamp(boostAbs, 0, 2.55);
+  out.boostObd70 = clamp(boostAbs, 0, 4);
   out.knockAdapt = clamp(-knock * 0.5 + 0.3 * Math.sin(this.t), -5, 5);
   out.throttleReq = clamp(this.throttle + 2, 0, 100);
   out.torqueLimiter = 0;

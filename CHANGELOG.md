@@ -18,6 +18,24 @@ UI: one canvas screen with internal paging driven by four HMI bar buttons
 
 ## Beta 2 — v2.x.x
 
+### v2.2.0
+- **Renamed to BeeM-Flash** (brand, titles, log filenames; internal package id
+  kept for install continuity).
+- **Strict black / yellow / red theme** — pure-black background, one bright
+  yellow accent, bright red for danger and anything important; **no orange, no
+  green**. Emphasis (e.g. the active tab) is shown with **bolder, larger** text,
+  not by changing colour. Fixed the header/tab text overlaps.
+- **Both OBD boost PIDs kept available** — `boostObd0B` (manifold, saturates at
+  ~2.55 bar) and `boostObd70` (boost control, doesn't) so you can confirm on-car
+  which reads correctly on a high-boost car.
+- **ECU INFO is now a flashing prerequisite** — you cannot arm the flash engine
+  until you have read the car on the INFO tab (you must see its current software
+  and calibration first).
+- **Tune / last-flash detection** — the INFO read and the CODES scan now read the
+  DME's calibration ID + programming date and heuristically flag a possible tune
+  (e.g. MHD) so you can see what's on the car; stock list and tune signatures are
+  configurable.
+
 ### v2.1.0
 - **Brighter theme accent** — the Giallo yellow is punchier (`#ffe600`) for a
   cleaner pop on black.
