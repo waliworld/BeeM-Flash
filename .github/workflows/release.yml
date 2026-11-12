@@ -50,11 +50,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Ensure the "catalog" release exists, then (re)upload every asset.
+          # Ensure the "catalog" release exists.
           if ! gh release view catalog >/dev/null 2>&1; then
             gh release create catalog \
               --title 'MGU Store catalog' \
               --notes 'Wali Datalog for the MGU head unit (iDrive 7 and iDrive 8). Add this repository as a source in the Store (Settings, Add source, Releases), install Wali Datalog and restart the head unit.' \
               --latest=false
           fi
+          # Prune stale assets (old versions) so only the current catalog remains,
+          # then upload the freshly built set.
+          gh release view catalog --json assets -q '.assets[].name' 2>/dev/null | while read -r a; do
+            [ -n "$a" ] && gh release delete-asset catalog "$a" -y || true
+          done
           gh release upload catalog dist/release/* --clobber

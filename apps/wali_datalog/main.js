@@ -480,7 +480,13 @@ App.prototype._present = function (name) {
 App.prototype._show = function (name) {
   this.screen = name;
   this.confirm = false;
-  if (this.ctx.show) trySafe(function () { this.ctx.show(name); }.bind(this)); // DEVICE
+  // DEVICE: switch the HMI to this screen's RHMI state. The kit's screen switch
+  // is ui.open(stateName) (kit/runtime/mgu.js) — there is no ctx.show. Without
+  // this, a button press changed only internal state and the head unit never
+  // navigated. The sim/preview render the current screen directly, so ui.open
+  // is simply absent there.
+  var ui = this.ctx.ui;
+  if (ui && typeof ui.open === 'function') trySafe(function () { ui.open(name); });
 };
 App.prototype._mediaDir = function () {
   return this.ctx.mediaDir || '/media/usb'; // DEVICE: USB mount point
