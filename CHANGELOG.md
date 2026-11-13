@@ -18,6 +18,28 @@ UI: one canvas screen with internal paging driven by four HMI bar buttons
 
 ## Beta 2 — v2.x.x
 
+### v2.11.4 — real fault codes (not 833), and read more of the DME's identity
+From the on-car CODES and INFO screens:
+- **CODES was returning ~833 "codes", all pending, with no meaning.** The scan
+  asked for status mask **0xFF**, which makes every module dump every DTC that has
+  ANY status bit set — including "test not completed this cycle" — i.e. hundreds
+  of non-faults. Now it asks for **confirmed | pending (0x0C)** by default (what
+  BMW's own tools and the reference scanner use) and filters out anything that
+  doesn't match, so the list shows actual faults. A **SETUP** option / `config`
+  can switch to "all" (0xFF) when you want the full dump. This should turn 833
+  into the handful of codes the car really has.
+- **INFO read only 3 of 13 identifiers** (and VIN came and went). The MG1 DME
+  answers only a limited set in the default diagnostic session and refuses the
+  rest; the app now enters the **extended session (0x10 0x03)** first — a
+  read-only session — so VIN, software number and the calibration ID have the
+  best chance to read. (If the DME still refuses the cal ID, flashing correctly
+  stays blocked — that gate is working.)
+
+Still ahead (the honest list): human-readable **fault text** for the codes (the
+MIT fault-text database), and the remaining live channels that need ordered
+fallback DIDs or an owner pidmap — those are the next focus. CODES showing real
+faults and INFO reading the cal ID are the prerequisites that had to land first.
+
 ### v2.11.3 — the DME's real identifiers (cal ID reads; flashing unblocks)
 From the on-car INFO screen we learned the MG1CS DME does NOT answer the generic
 ISO identifiers this app was asking for. Backed by a DID study against our A2L

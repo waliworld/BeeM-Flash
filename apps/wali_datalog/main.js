@@ -757,7 +757,13 @@ App.prototype._infoRead = function () {
   if (!gw) { this.info.msg = this._noLinkReason(); return Promise.resolve(); }
   this.info.reading = true; this.info.msg = 'Reading identification…';
   var cfg = this._config();
-  var opts = { dids: cfg.infoDids || undefined, stockCalIds: cfg.stockCalIds, tuneSignatures: cfg.tuneSignatures };
+  // Enter the EXTENDED diagnostic session (0x10 0x03) first: the MG1 DME answers
+  // only a limited identifier set in the default session (serial, build date,
+  // SGBD index) and refuses the rest (VIN, software number, calibration ID) with
+  // an NRC. Extended is a read session (not programming 0x02), so this stays
+  // read-only. Configurable/omittable via config.infoSession.
+  var opts = { dids: cfg.infoDids || undefined, stockCalIds: cfg.stockCalIds, tuneSignatures: cfg.tuneSignatures,
+    session: (cfg.infoSession != null ? cfg.infoSession : 3) };
   return gw.activate().then(function () {
     return ecuinfo.read(function (b) { return gw.send(b); }, opts, function (d, i, n) { self.info.msg = 'Reading ' + d.label + ' (' + i + '/' + n + ')…'; });
   }).then(function (res) {

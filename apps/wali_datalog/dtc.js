@@ -66,6 +66,7 @@ function parseRecords(data) {
       failureType: b3,
       hex: '0x' + dtcHex(b1, b2, b3),
       bytes: [b1, b2, b3],
+      statusByte: st,
       status: decodeStatus(st)
     });
   }
@@ -80,10 +81,18 @@ function parseRecords(data) {
 function readDtcs(send, opts) {
   opts = opts || {};
   if (typeof send !== 'function') return Promise.resolve({ ok: false, dtcs: [], error: 'no diagnostic transport' });
+  // Default to confirmed|pending (0x08|0x04 = 0x0C), like BMW's own tools and the
+  // reference scanner. Mask 0xFF returns every DTC with ANY status bit set -
+  // including "test not completed this cycle" - which is hundreds of meaningless
+  // entries per module, not actual faults. 'all' scope opts back into 0xFF.
+  var mask = (opts.statusMask != null) ? opts.statusMask : (opts.scope === 'all' ? 0xFF : 0x0C);
   function doRead() {
-    return seedkey.sendAwait(send, uds.buildReadDtc(opts.sub, opts.statusMask), uds.SID.READ_DTC, opts).then(function (p) {
+    return seedkey.sendAwait(send, uds.buildReadDtc(opts.sub, mask), uds.SID.READ_DTC, opts).then(function (p) {
       if (!p.positive) return { ok: false, dtcs: [], error: p.nrcName || p.error, nrcName: p.nrcName };
       var dtcs = parseRecords(p.data);
+      // Some modules ignore the request mask and return their whole table; keep
+      // only DTCs whose status actually intersects the mask we asked for.
+      if (mask !== 0xFF) dtcs = dtcs.filter(function (d) { return (d.statusByte & mask) !== 0; });
       return { ok: true, dtcs: dtcs, availabilityMask: p.statusAvailabilityMask,
         message: dtcs.length ? (dtcs.length + ' code' + (dtcs.length === 1 ? '' : 's')) : 'no stored codes' };
     });

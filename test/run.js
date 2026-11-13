@@ -1022,6 +1022,7 @@ Promise.resolve()
     var recs = dtc.parseRecords([0x12, 0x34, 0x68, 0x08, 0x45, 0x67, 0x00, 0x04]);
     ok(recs.length === 2 && recs[0].code === 'P1234' && recs[0].failureType === 0x68 && recs[1].status.pending, 'dtc: parseRecords two codes');
 
+
     // module catalog: uses BMW's 1-byte diagnostic addresses (DME 0x12, EGS 0x18),
     // the scheme the head unit's TASU link actually answers, and is configurable.
     var defMods = modules.list({});
@@ -1034,7 +1035,19 @@ Promise.resolve()
 
     // read codes from one module
     var sim = new EcuSim({ dtcs: [{ bytes: [0x12, 0x34, 0x68], status: 0x08 }, { bytes: [0x45, 0x67, 0x00], status: 0x0A }] });
-    return dtc.readDtcs(sim.transport(), {}).then(function (r) {
+    // mask: default scan asks confirmed|pending (0x0C) and drops test-status-only
+    // entries, so a module that ignores the mask and dumps its whole table does not
+    // show hundreds of meaningless 'codes'.
+    var mixed = [0x59, 0x02, 0xFF, 0x03,0x0E,0x52,0x08, 0x21,0x82,0x01,0x04, 0x11,0x11,0x11,0x20, 0x22,0x22,0x22,0x40];
+    var sendMix = function (b) { return Promise.resolve(b[0] === 0x19 ? mixed : [0x7f, b[0], 0x11]); };
+    return dtc.readDtcs(sendMix, {}).then(function (rm) {
+      eq(rm.dtcs.length, 2, 'dtc: default mask keeps only confirmed|pending (drops test-status noise)');
+      ok(rm.dtcs.every(function (d) { return (d.statusByte & 0x0C) !== 0; }), 'dtc: kept DTCs intersect the 0x0C mask');
+      return dtc.readDtcs(sendMix, { scope: 'all' });
+    }).then(function (ra) {
+      eq(ra.dtcs.length, 4, 'dtc: scope=all keeps every entry (0xFF)');
+      return dtc.readDtcs(sim.transport(), {});
+    }).then(function (r) {
       ok(r.ok && r.dtcs.length === 2 && r.dtcs[0].code === 'P1234', 'dtc: read two codes from a module');
       // clear refuses without acknowledgment
       return dtc.clearDtcs(sim.transport(), {});
