@@ -385,7 +385,7 @@ function codes(cv, t, view, R) {
     cv.text(statusTxt, R.x + 430, y, 20, colr, {});
     if (m.ok && m.dtcs.length) {
       var cs = [];
-      for (var k = 0; k < m.dtcs.length && k < 6; k++) cs.push(m.dtcs[k].code + (m.dtcs[k].status && m.dtcs[k].status.confirmed ? '' : '?'));
+      for (var k = 0; k < m.dtcs.length && k < 6; k++) cs.push((m.dtcs[k].bmw || m.dtcs[k].code) + (m.dtcs[k].status && m.dtcs[k].status.confirmed ? '' : '?'));
       cv.text(cs.join('  ') + (m.dtcs.length > 6 ? '  +' + (m.dtcs.length - 6) : ''), R.x + 620, y, 19, t.dim, {});
     }
     y += rowH; shown++;

@@ -18,6 +18,15 @@ UI: one canvas screen with internal paging driven by four HMI bar buttons
 
 ## Beta 2 — v2.x.x
 
+### v2.10.1 — fault codes are BMW's real codes
+- **FIXED: every fault code we displayed was truncated.** BMW DTCs are three
+  bytes; the SAE/J2012 helper used only the first two, so real code **`102A5A`
+  was shown as `P102A`** — a value no BMW tool displays, which throws away the
+  failure type and makes genuinely different faults look identical (`102A5A` and
+  `102A01` both rendered `P102A`). The BMW 6-hex code is now the canonical label;
+  the J2012 form is kept for generic OBD-II reads. This also matters for what
+  comes next: the fault-text databases are keyed on the 6-hex code.
+
 ### v2.10.0 — the car's own diagnostic link: CODES, INFO and FLASH work without CONNECT
 - **The fault scanner, ECU info and the flasher were unreachable on the car.** All
   three refused unless an ENET/DoIP link was established — and DoIP cannot be

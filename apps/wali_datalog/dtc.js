@@ -56,7 +56,13 @@ function parseRecords(data) {
   for (var i = 0; i + 4 <= data.length; i += 4) {
     var b1 = data[i], b2 = data[i + 1], b3 = data[i + 2], st = data[i + 3];
     out.push({
-      code: dtcCode(b1, b2),
+      // BMW's own 6-hex code is the canonical label - it is what BMW tools show
+      // and what the fault-text databases are keyed on. The SAE/J2012 form below
+      // is derived from only the FIRST TWO bytes, so it drops the failure type:
+      // real code 102A5A rendered as "P102A", which no BMW tool displays and
+      // which collides across genuinely different faults.
+      bmw: dtcHex(b1, b2, b3),
+      code: dtcCode(b1, b2),     // J2012 form; only meaningful for generic OBD-II
       failureType: b3,
       hex: '0x' + dtcHex(b1, b2, b3),
       bytes: [b1, b2, b3],

@@ -1239,3 +1239,22 @@ function report() {
     ok(threw === !c[2], c[3]);
   });
 })();
+
+// ---- DTC codes must be BMW's 6-hex form, not a truncated SAE string ---------
+// BMW fault codes are 3 bytes. The J2012 helper uses only the first two, so real
+// code 102A5A was displayed as "P102A" - a value no BMW tool shows, which drops
+// the failure type and collides across genuinely different faults.
+(function () {
+  var dtc = require(A + 'dtc');
+  var recs = dtc.parseRecords([0x10, 0x2A, 0x5A, 0x2F]);
+  eq(recs.length, 1, 'one DTC record parsed from 4 bytes');
+  eq(recs[0].bmw, '102A5A', 'BMW 6-hex code keeps all three bytes');
+  eq(recs[0].failureType, 0x5A, 'failure type is the third byte');
+  eq(recs[0].hex, '0x102A5A', 'hex form matches the BMW code');
+  ok(recs[0].code === 'P102A', 'the J2012 form is still available for generic OBD-II');
+  // two faults that differ ONLY in the third byte must not look identical
+  var a = dtc.parseRecords([0x10, 0x2A, 0x5A, 0x2F])[0];
+  var b = dtc.parseRecords([0x10, 0x2A, 0x01, 0x2F])[0];
+  eq(a.code, b.code, 'the truncated J2012 form cannot tell these two faults apart');
+  ok(a.bmw !== b.bmw, 'the BMW code DOES tell them apart (' + a.bmw + ' vs ' + b.bmw + ')');
+})();
