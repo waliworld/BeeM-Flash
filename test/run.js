@@ -561,8 +561,11 @@ function makeFakeDiscoverySocket(respond) {
   near(obd.parse(0x0C, [0x41, 0x0C, 0x1A, 0xF8]).rpm, 1726, 1, 'obd: rpm (PID 0x0C)');
   eq(obd.parse(0x05, [0x41, 0x05, 0x5A]).coolant, 50, 'obd: coolant (PID 0x05, A-40)');
   near(obd.parse(0x0B, [0x41, 0x0B, 0xFF]).boostObd0B, 2.55, 1e-6, 'obd: 0x0B manifold boost caps at 2.55 bar');
-  var b70 = obd.parse(0x70, [0x41, 0x70, 0x00, 0x24, 0x00]); // u16(d,1)=0x2400=9216 /32=288 kPa
-  ok(b70 && b70.boostObd70 > 2.55, 'obd: 0x70 boost does NOT cap (reads above 2.55 bar)');
+  // PID 0x70 (SAE J1979-2): [support][commanded hi lo][actual hi lo]. ACTUAL boost
+  // is at offset 3. Here actual=0x2400=9216/32=288 kPa (2.88 bar abs) -> does not cap.
+  var b70 = obd.parse(0x70, [0x41, 0x70, 0x00, 0x12, 0x00, 0x24, 0x00]);
+  ok(b70 && b70.boostObd70 > 2.55, 'obd: 0x70 actual boost at offset 3 does NOT cap (above 2.55 bar)');
+  ok(b70 && b70._absTarget70 === (0x1200 / 32), 'obd: 0x70 commanded (target) read from offset 1');
   ok(obd.parse(0x0C, [0x7f, 0x01, 0x12]) === null, 'obd: negative response -> null');
   // provider decode/merge + boost derivation (prefer wide-range source over 0x0B)
   var p = new obd.ObdProvider({}, {});
@@ -1093,9 +1096,10 @@ Promise.resolve()
       ok(cal && cal.ok && cal.value === 'CAL_B58_X1', 'ecuinfo: calibration ID decoded');
       var missing = res.items.filter(function (x) { return x.did === 0xF18C; })[0];
       ok(missing && !missing.ok && /not available/.test(missing.value), 'ecuinfo: absent DID shown as not available');
-      // read-only: ecuinfo issues only 0x22 requests
-      var onlyReads = sim.log.every(function (r) { return r[0] === uds.SID.READ_DID; });
-      ok(onlyReads, 'ecuinfo: only ReadDataByIdentifier (0x22) issued — read-only');
+      // read-only: ecuinfo issues only identification reads -- 0x22 (ReadDataByIdentifier)
+      // and 0x09 (OBD mode 09 vehicle information). Both are read-only; no write service.
+      var onlyReads = sim.log.every(function (r) { return r[0] === uds.SID.READ_DID || r[0] === 0x09; });
+      ok(onlyReads, 'ecuinfo: only read services issued (0x22 / OBD 09) — read-only');
     });
   })
   .then(function () {

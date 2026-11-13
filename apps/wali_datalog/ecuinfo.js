@@ -26,7 +26,13 @@ var DEFAULT_DIDS = [
   { did: 0xF18B, label: 'Manufacturing date', kind: 'date' },
   { did: 0xF199, label: 'Programming date', kind: 'date' },
   { did: 0xF17C, label: 'Calibration ID', kind: 'ascii' },
-  { did: 0xF150, label: 'Identification', kind: 'hex' }
+  { did: 0xF150, label: 'SGBD index', kind: 'hex' },
+  // Not F1xx: standard OBD service 09 identifiers. On MG1 the generic F194/F17C
+  // are not answered, but 09 04 (calibration ID) and 09 0A (ECU name) are, and
+  // the cal ID is what the stock/tune match keys on. did 0x09NN is a pseudo-id
+  // meaning "OBD service 09, PID NN".
+  { did: 0x0904, label: 'Calibration ID (09)', kind: 'ascii', obd9: 0x04 },
+  { did: 0x090A, label: 'ECU name (09)', kind: 'ascii', obd9: 0x0A }
 ];
 
 function printableAscii(bytes) {
@@ -44,6 +50,10 @@ function toHex(bytes) {
   for (var i = 0; i < bytes.length; i++) { var h = (bytes[i] & 0xff).toString(16); o.push(h.length === 1 ? '0' + h : h); }
   return o.join(' ');
 }
+// Known SGBD indexes (BMW engine DME variant). 0F26B4 = DME8FF_R (G-series B58/
+// B48/B38). Keyed by the 6-hex F150 value, uppercase.
+var SGBD_NAMES = { '0F26B4': 'DME8FF_R' };
+
 function decode(kind, bytes) {
   if (!bytes || !bytes.length) return '';
   if (kind === 'hex') return toHex(bytes);
@@ -108,7 +118,7 @@ var STOCK = buildStockIndex(stockdb);
 function computeTune(items, opts) {
   opts = opts || {};
   function val(did) { for (var i = 0; i < items.length; i++) if (items[i].did === did && items[i].ok) return items[i].value; return null; }
-  var calId = val(0xF17C), sw = val(0xF194), hw = val(0xF191), prog = val(0xF199);
+  var calId = val(0xF17C) || val(0x0904), sw = val(0xF194) || val(0x0904), hw = val(0xF191), prog = val(0xF199);
   var raw = [calId, sw, hw].filter(Boolean).map(function (s) { return String(s).toUpperCase(); });
   var reported = raw.map(norm);           // canonical form for identifier matching
   var hay = raw.join(' ');                // readable form for the ECU type / signatures
@@ -204,14 +214,49 @@ function computeTune(items, opts) {
 // read(send, opts) -> Promise<{ ok, items:[{did,label,value,ok,raw}], tune }>.
 //   opts.dids (default DEFAULT_DIDS), opts.session (enter first, optional),
 //   onProgress(item, i, n).
+// Read a standard OBD service-09 identifier (e.g. 09 04 calibration ID). Reply is
+// [0x49, pid, count?, data...]. Returns { ok, data } with the count byte stripped.
+function readObd9(send, pid, opts) {
+  return seedkey.sendAwait(send, [0x09, pid & 0xff], 0x09, opts).then(function (p) {
+    if (!p.positive) return { ok: false, nrcName: p.nrcName };
+    // p.data is the bytes after the 0x49 SID: [pid, count?, data...]
+    var d = (p.data || []);
+    if (d.length && d[0] === (pid & 0xff)) d = d.slice(1);          // drop echoed pid
+    if (d.length && d[0] <= 0x08 && ((d.length - 1) % 4 === 0)) d = d.slice(1); // drop item-count byte
+    return { ok: true, data: d };
+  }, function (e) { return { ok: false, error: (e && e.message) || String(e) }; });
+}
+
 function read(send, opts, onProgress) {
   opts = opts || {};
   if (typeof send !== 'function') return Promise.resolve({ ok: false, items: [], error: 'no diagnostic transport' });
-  var dids = opts.dids || DEFAULT_DIDS, items = [], i = 0;
+  var allDids = opts.dids || DEFAULT_DIDS, items = [], i = 0;
+  var dids = allDids.filter(function (d) { return !d.obd9; });
+  var obd9s = allDids.filter(function (d) { return d.obd9; });
+  function finish() {
+    // annotate the SGBD index with its variant name, if known
+    for (var k = 0; k < items.length; k++) {
+      if (items[k].did === 0xF150 && items[k].ok) {
+        var key = String(items[k].value).toUpperCase().replace(/[^0-9A-F]/g, '');
+        if (SGBD_NAMES[key]) items[k].value = key + ' (' + SGBD_NAMES[key] + ')';
+      }
+    }
+    return { ok: true, items: items, tune: computeTune(items, opts) };
+  }
+  function doObd9(j) {
+    if (j >= obd9s.length) return Promise.resolve(finish());
+    var d = obd9s[j];
+    if (typeof onProgress === 'function') { try { onProgress(d, dids.length + j + 1, allDids.length); } catch (e) {} }
+    return readObd9(send, d.obd9, opts).then(function (r) {
+      if (r.ok) items.push({ did: d.did, label: d.label, value: decode(d.kind, r.data), raw: r.data, ok: true });
+      else items.push({ did: d.did, label: d.label, value: 'not available', ok: false, nrcName: r.nrcName });
+      return doObd9(j + 1);
+    });
+  }
   function step() {
-    if (i >= dids.length) return Promise.resolve({ ok: true, items: items, tune: computeTune(items, opts) });
+    if (i >= dids.length) return doObd9(0);
     var d = dids[i++];
-    if (typeof onProgress === 'function') { try { onProgress(d, i, dids.length); } catch (e) {} }
+    if (typeof onProgress === 'function') { try { onProgress(d, i, allDids.length); } catch (e) {} }
     return seedkey.sendAwait(send, uds.buildReadDataByIdentifier(d.did), uds.SID.READ_DID, opts).then(function (p) {
       if (p.positive) items.push({ did: d.did, label: d.label, value: decode(d.kind, p.data), raw: p.data, ok: true });
       else items.push({ did: d.did, label: d.label, value: 'not available', ok: false, nrcName: p.nrcName });

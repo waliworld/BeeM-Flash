@@ -770,7 +770,7 @@ App.prototype._infoRead = function () {
     // answered nothing at all.
     var got = self.info.items.filter(function (x) { return x.ok; }).length;
     var identified = self.info.items.some(function (x) {
-      return x.ok && (x.did === 0xF17C || x.did === 0xF194);
+      return x.ok && (x.did === 0xF17C || x.did === 0xF194 || x.did === 0x0904);
     });
     self.info.done = identified;
     if (identified) {

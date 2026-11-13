@@ -31,11 +31,18 @@ var PIDS = {
   0x33: function (d) { return { baro: d[0] / 100, _baro: d[0] }; },               // kPa -> bar
   0x46: function (d) { return { ambientT: d[0] - 40 }; },
   0x5C: function (d) { return { oil: d[0] - 40 }; },
-  0x87: function (d) { return { _abs87: u16(d, 0) / 32 }; },                       // intake manifold abs (wide range) kPa
+  // PID 0x87 (SAE J1979-2) leads with a support byte; the pressure is at offset 1,
+  // not 0 (reading offset 0 returned the bitmap as if it were pressure).
+  0x87: function (d) { return (d.length >= 3) ? { _abs87: u16(d, 1) / 32 } : {}; }, // intake manifold abs (wide range) kPa
   0x70: function (d) {                                                             // boost pressure control (does not cap)
-    if (d.length < 3) return {};
-    var kpa = u16(d, 1) / 32; // best-effort actual boost pressure (kPa)
-    return (isFinite(kpa) && kpa > 0 && kpa < 600) ? { boostObd70: kpa / 100, _abs70: kpa } : {};
+    // [support][commanded A hi lo][actual A hi lo] per SAE J1979-2. The ACTUAL
+    // boost is at offset 3; offset 1 is the commanded (target). We previously read
+    // offset 1 and labelled it actual, so live boost tracked the target, not reality.
+    if (d.length < 5) return {};
+    var act = u16(d, 3) / 32, cmd = u16(d, 1) / 32, out = {};
+    if (isFinite(act) && act > 0 && act < 600) { out.boostObd70 = act / 100; out._abs70 = act; }
+    if (isFinite(cmd) && cmd > 0 && cmd < 600) { out._absTarget70 = cmd; }
+    return out;
   }
 };
 
@@ -115,6 +122,10 @@ ObdProvider.prototype._apply = function (vals) {
   if (typeof absKpa === 'number' && isFinite(absKpa)) {
     this.cache.boostAbs = absKpa / 100;
     this.cache.boost = absKpa / 100 - baroBar;
+  }
+  // Boost target from PID 0x70's commanded field (absolute kPa -> relative bar).
+  if (typeof this._tmp._absTarget70 === 'number' && isFinite(this._tmp._absTarget70) && Channels.get('boostTarget')) {
+    this.cache.boostTarget = this._tmp._absTarget70 / 100 - baroBar;
   }
   this.lastUpdate = Date.now();
 };

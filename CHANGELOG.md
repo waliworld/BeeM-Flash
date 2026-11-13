@@ -18,6 +18,33 @@ UI: one canvas screen with internal paging driven by four HMI bar buttons
 
 ## Beta 2 — v2.x.x
 
+### v2.11.3 — the DME's real identifiers (cal ID reads; flashing unblocks)
+From the on-car INFO screen we learned the MG1CS DME does NOT answer the generic
+ISO identifiers this app was asking for. Backed by a DID study against our A2L
+data and the car-tested reference app:
+- **"IDENTIFICATION 0f 26 b4" decoded.** It is DID **F150 = the SGBD index**;
+  `0F26B4` = **DME8FF_R** (the G-series B58 engine DME). INFO now labels it
+  "SGBD index" and names the variant.
+- **Calibration ID now reads via OBD service 09.** The DME ignores the generic
+  `F17C`/`F194`, but answers standard **`09 04`** (calibration ID) and `09 0A`
+  (ECU name) — which is also what the stock/tune match keys on. Added a
+  read-only service-09 path to `ecuinfo.js`. Verified end-to-end: the cal ID
+  reads, feeds the tune verdict, and **satisfies the flash prerequisite** (which
+  was correctly keeping flashing blocked while the ID was unreadable).
+- **Boost decoding fixed (two real bugs).** OBD PID `0x87` was read at the wrong
+  offset (the leading support byte), and PID `0x70` read the *commanded* boost at
+  offset 1 and labelled it actual — the real actual boost is at offset 3 (SAE
+  J1979-2). Boost now reads true manifold pressure, and the commanded value feeds
+  a proper boost target.
+- **Label fix:** the default "Charge air temp" tile actually reads intake air
+  temp (`F40F`) — renamed "Intake air temp".
+
+Still queued (needs the ordered-candidate read path, next): several channels
+that return an NRC on the first identifier still show "--" instead of trying a
+fallback, and the genuinely-unavailable channels (port injection on a
+direct-injection B58, knock retard — no standard identifier exists) should say
+"needs pidmap" rather than "--". That honesty pass is the next step.
+
 ### v2.11.2 — code reader fixed, INFO layout, unique icon (on-car findings)
 On-car confirmation: the app is fast and stable now, and SETUP → DIAGNOSTICS
 reports **P6 TASU: DME answered — GO** (the car-side link works on the unit).

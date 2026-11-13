@@ -39,7 +39,7 @@ var BASE = [
   { key: 'boostAbs', label: 'Manifold pressure', unit: 'bar', iunit: 'psi', toImp: F.barToPsi, cat: 'Air/Boost', read: diag('boostAbs'), min: 0, max: 4, dp: 2, dguess: { len: 2, m: 0.001 }, def: false },
   { key: 'putp', label: 'Pre-throttle press.', unit: 'bar', iunit: 'psi', toImp: F.barToPsi, cat: 'Air/Boost', read: diag('putp'), min: 0, max: 4, dp: 2, dguess: { len: 2, m: 0.001 }, def: false },
   { key: 'baro', label: 'Barometric press.', unit: 'bar', iunit: 'psi', toImp: F.barToPsi, cat: 'Air/Boost', read: diag('baro'), min: 0, max: 1.2, dp: 2, dguess: { len: 2, m: 0.001 }, def: false },
-  { key: 'iat', label: 'Charge air temp', unit: '°C', iunit: '°F', toImp: F.cToF, cat: 'Air/Boost', read: diag('iat'), min: -20, max: 90, dp: 0, warn: 60, crit: 75, dguess: { len: 1, m: 1, b: -40 }, def: true },
+  { key: 'iat', label: 'Intake air temp', unit: '°C', iunit: '°F', toImp: F.cToF, cat: 'Air/Boost', read: diag('iat'), min: -20, max: 90, dp: 0, warn: 60, crit: 75, dguess: { len: 1, m: 1, b: -40 }, def: true },
   { key: 'ambientT', label: 'Ambient air temp', unit: '°C', iunit: '°F', toImp: F.cToF, cat: 'Air/Boost', read: bus('ambientTemp'), min: -40, max: 60, dp: 0, def: false },
   { key: 'maf', label: 'MAF actual', unit: 'kg/h', cat: 'Air/Boost', read: diag('maf'), min: 0, max: 1200, dp: 0, dguess: { len: 2, m: 0.1 }, def: false },
   { key: 'mafSpec', label: 'MAF specified', unit: 'kg/h', cat: 'Air/Boost', read: diag('mafSpec'), min: 0, max: 1200, dp: 0, dguess: { len: 2, m: 0.1 }, def: false },
