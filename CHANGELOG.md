@@ -18,6 +18,29 @@ UI: one canvas screen with internal paging driven by four HMI bar buttons
 
 ## Beta 2 — v2.x.x
 
+### v2.11.2 — code reader fixed, INFO layout, unique icon (on-car findings)
+On-car confirmation: the app is fast and stable now, and SETUP → DIAGNOSTICS
+reports **P6 TASU: DME answered — GO** (the car-side link works on the unit).
+Fixes from the same session's screenshots:
+- **Fault scanner — all modules showed "no response".** The module map used
+  16-bit DoIP logical addresses (0x1000, 0x1800…) but the head unit's link uses
+  BMW's **1-byte diagnostic addresses**. Replaced with the real scheme (DME 0x12,
+  EGS 0x18, BDC 0x10, DSC 0x29, EPS 0x30, body 0x40, KOMBI 0x60, radar 0x21),
+  cross-checked against the MIT idrive7-apps control-unit table. The DME is the
+  address TASU already answers, so the scan should now get responses.
+- **INFO screen text overlap** — the identification rows ran into the TUNE/IMAGE
+  footer; row spacing tightened so the two-column list and the status footer no
+  longer collide.
+- **New app icon** — the old one looked like iDrive Monitor's gauge. Replaced
+  with a distinct BeeM-Flash mark: a bold yellow flash bolt and a red accent on
+  black (the app's own black/yellow/red language).
+
+Known, still being worked (need per-DME DID research, next): several INFO
+identifiers (calibration ID, software number) read "not available" on the MG1CS
+DME, which correctly keeps flashing blocked; and a number of tune-specific
+channels still read "--". Those need the right MG1-specific identifiers and are
+the next focus.
+
 ### v2.11.1 — in-app bridge diagnostics (SETUP → DIAGNOSTICS)
 - **Run the bridge probes from the screen, no SSH.** A new DIAGNOSTICS view off the
   SETUP tab (tap **DIAG**, then **RUN**) runs everything the app itself can check and

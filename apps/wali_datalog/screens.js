@@ -562,7 +562,7 @@ function info(cv, t, view, R) {
   var cols = 2, cw = (R.w - 40) / cols, perCol = Math.ceil(items.length / cols);
   for (var i = 0; i < items.length; i++) {
     var col = Math.floor(i / perCol), row = i % perCol;
-    var x = R.x + 28 + col * cw, y = R.y + 62 + row * 37;
+    var x = R.x + 28 + col * cw, y = R.y + 56 + row * 29;
     var it = items[i];
     cv.text(it.label.toUpperCase(), x, y, 15, t.faint, { weight: 'bold' });
     cv.text(it.value, x + 230, y, 20, it.ok ? t.text : t.faint, { weight: it.ok ? 'bold' : 'normal' });

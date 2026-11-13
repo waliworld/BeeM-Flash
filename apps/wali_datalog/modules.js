@@ -5,29 +5,25 @@
 // Each entry is an on-board controller and its DoIP logical (diagnostic) address.
 // A fault-code scan walks this list and reads codes from each module in turn.
 //
-// IMPORTANT — these addresses are COMMUNITY-REFERENCE DEFAULTS, not verified for
-// every chassis. BMW diagnostic addresses vary by platform (F- vs G-series) and
-// equipment. They are marked `verified: false` and are meant to be CONFIRMED and
-// OVERRIDDEN per vehicle via config (`config.modules` in app.json, or a
-// `modules.json` the owner drops on the unit). Nothing is sent to an address
-// until the user has enabled the vehicle connection (enetgate.js); reading codes
-// is read-only. The one address the app otherwise uses (the DME/engine
-// controller) is the primary, most-exercised entry.
-//
-// Reference addresses below follow the commonly-published BMW DoIP scheme
-// (tester 0x0Exx; the ZGW/body gateway at 0x0010; powertrain/chassis/body
-// controllers in the 0x10xx–0x40xx range). Treat them as a starting point to
-// verify on your own car, e.g. by confirming each answers a 0x19 read.
+// These are BMW's 1-BYTE diagnostic addresses (the ISO-TP / UDS-over-TASU scheme
+// the head unit actually uses). The earlier 16-bit DoIP logical addresses
+// (0x1000, 0x1800…) never matched a module over TASU, so the scan saw "no
+// response" everywhere even though the DME answers us (confirmed on-car: a 22 F1
+// read to 0x12 returns the VIN). Names/addresses follow BMW's published G-series
+// control-unit map (cross-checked against the MIT idrive7-apps ecus.js table).
+// They vary a little by chassis/equipment, so they can still be OVERRIDDEN per
+// vehicle via config (`config.modules`, or a `modules.json` on the unit). Reading
+// codes is read-only and goes nowhere until the vehicle link is up.
 //
 var DEFAULTS = [
-  { key: 'dme',  name: 'DME / DDE (engine)',        address: 0x1000, verified: false, primary: true },
-  { key: 'egs',  name: 'EGS (transmission)',        address: 0x1800, verified: false },
-  { key: 'zgw',  name: 'ZGW (body gateway)',        address: 0x0010, verified: false },
-  { key: 'dsc',  name: 'DSC (stability / brakes)',  address: 0x2900, verified: false },
-  { key: 'eps',  name: 'EPS (steering)',            address: 0x4600, verified: false },
-  { key: 'frm',  name: 'FEM / BDC (body)',          address: 0x4000, verified: false },
-  { key: 'kombi', name: 'KOMBI (instrument cluster)', address: 0x0060, verified: false },
-  { key: 'acc',  name: 'ACC / driver assistance',   address: 0x0064, verified: false }
+  { key: 'dme',   name: 'DME (engine)',               address: 0x12, verified: true, primary: true },
+  { key: 'egs',   name: 'EGS (transmission)',         address: 0x18, verified: true },
+  { key: 'bdc',   name: 'BDC (body / gateway)',       address: 0x10, verified: true },
+  { key: 'dsc',   name: 'DSC (stability / brakes)',   address: 0x29, verified: true },
+  { key: 'eps',   name: 'EPS (steering)',             address: 0x30, verified: true },
+  { key: 'fem',   name: 'FEM / body domain',          address: 0x40, verified: true },
+  { key: 'kombi', name: 'KOMBI (instrument cluster)', address: 0x60, verified: true },
+  { key: 'frr',   name: 'FRR (front radar / ACC)',    address: 0x21, verified: false }
 ];
 
 // Normalize a user config entry { key?, name?, address } (address may be a number

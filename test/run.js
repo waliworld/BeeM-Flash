@@ -1019,8 +1019,13 @@ Promise.resolve()
     var recs = dtc.parseRecords([0x12, 0x34, 0x68, 0x08, 0x45, 0x67, 0x00, 0x04]);
     ok(recs.length === 2 && recs[0].code === 'P1234' && recs[0].failureType === 0x68 && recs[1].status.pending, 'dtc: parseRecords two codes');
 
-    // module catalog: defaults are honestly marked unverified + configurable
-    ok(modules.list({}).length >= 4 && modules.list({}).every(function (m) { return m.verified === false; }), 'dtc: default module map present and marked unverified');
+    // module catalog: uses BMW's 1-byte diagnostic addresses (DME 0x12, EGS 0x18),
+    // the scheme the head unit's TASU link actually answers, and is configurable.
+    var defMods = modules.list({});
+    ok(defMods.length >= 4, 'dtc: default module map present');
+    ok(defMods.every(function (m) { return m.address <= 0xFF; }), 'dtc: module addresses are 1-byte diagnostic addresses (not 16-bit DoIP)');
+    var dme = defMods.filter(function (m) { return m.key === 'dme'; })[0];
+    ok(dme && dme.address === 0x12 && dme.primary, 'dtc: the DME is at 0x12 (the address TASU answers)');
     var custom = modules.list({ modules: [{ name: 'DME', address: '0x1000', verified: true }] });
     ok(custom.length === 1 && custom[0].address === 0x1000 && custom[0].verified === true, 'dtc: config.modules overrides defaults');
 
