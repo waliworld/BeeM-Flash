@@ -135,6 +135,17 @@ function chrome(cv, t, view) {
     cv.text(tabs[i].label, r.x + r.w / 2, r.y + r.h / 2 + (active ? 8 : 7), active ? 23 : 19, active ? t.accent : t.dim, { align: 'c', weight: 'bold' });
   }
 
+  // transient banner: one-off messages (export result, scan result, ...) sit in
+  // the gap between the tabs and the content and fade after a few seconds. MAPS
+  // and CODES have their own status panels, so these never leak onto them.
+  if (view.toast && view.toast.msg) {
+    var tmsg = view.toast.msg, tcol = view.toast.ok ? t.good : t.warn;
+    var tw = cv.textWidth(tmsg, 18, 'bold') + 44, tx = (W - tw) / 2;
+    cv.roundRect(tx, 99, tw, 24, 3, t.panel2);
+    cv.fillRect(tx, 99, 4, 24, tcol);
+    cv.text(tmsg, W / 2 + 2, 116, 18, tcol, { align: 'c', weight: 'bold' });
+  }
+
   // action bar
   var acts = view.actions || [];
   var brects = barRects(acts.length);
@@ -256,7 +267,9 @@ function log(cv, t, view, R) {
 // ------------------------------------------------------------- CHANNELS -----
 function channels(cv, t, view, R) {
   var enabled = view.enabled || [], shown = view.displayed || [], limit = view.maxtiles || 8;
-  var all = Channels.all(), perPage = 15, sel = view.selection || 0;
+  // 12 per page (4 rows x 3 cols). The 5th row of the old 15-per-page grid drew
+  // down to y~464, past the content area (ends y=426) and into the action bar.
+  var all = Channels.all(), perPage = 12, sel = view.selection || 0;
   var page = Math.floor(sel / perPage), pages = Math.ceil(all.length / perPage);
   cv.text('LOG ' + enabled.length + '  ·  SHOW ' + shown.length + '/' + limit + '  ·  tap a row to log, hold-tap to show', R.x, R.y - 8, 18, t.dim, { weight: 'bold' });
   cv.text('PAGE ' + (page + 1) + '/' + pages, R.x + R.w, R.y - 8, 18, t.faint, { align: 'r', weight: 'bold' });
@@ -365,7 +378,7 @@ function codes(cv, t, view, R) {
     cv.text('Codes are read over the connected ENET/DoIP link. Module addresses are configurable per vehicle.', R.x + 28, R.y + 116, 18, t.faint, {});
     return;
   }
-  var y = R.y + 62, rowH = 34, maxRows = 7, shown = 0;
+  var y = R.y + 56, rowH = 28, maxRows = 8, shown = 0;
   for (var i = 0; i < res.modules.length && shown < maxRows; i++) {
     var m = res.modules[i], name = (m.module && m.module.name) || 'module', statusTxt, colr;
     if (!m.ok) { statusTxt = 'no response'; colr = t.faint; }
@@ -380,14 +393,8 @@ function codes(cv, t, view, R) {
     }
     y += rowH; shown++;
   }
-  // DME calibration / last flash — helps spot an MHD or other tune.
-  var tn = c.tune;
-  if (tn) {
-    var tcol = (tn.detected || tn.modified === true) ? t.crit : t.text;
-    var tstr = 'DME CAL: ' + (tn.calId || '—') + (tn.programmingDate ? '   ·   programmed ' + tn.programmingDate : '') +
-      (tn.detected ? '   ·   looks like ' + tn.detected : (tn.modified === true ? '   ·   looks modified' : (tn.modified === false ? '   ·   looks stock' : '')));
-    cv.text(tstr, R.x + 28, R.y + R.h - 46, 18, tcol, { weight: (tn.detected || tn.modified === true) ? 'bold' : 'normal' });
-  }
+  // (DME calibration / tune detection lives on the INFO tab - it was confusing
+  //  and overlapped the module list when shown here.)
   cv.text('“?” = pending (not confirmed).  Total: ' + res.totalDtcs + ' across ' + res.reached + '/' + res.scanned + ' modules.', R.x + 28, R.y + R.h - 20, 17, t.faint, {});
 }
 

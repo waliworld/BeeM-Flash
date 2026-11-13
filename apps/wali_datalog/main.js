@@ -36,10 +36,15 @@ var F = require('./format');
 
 // The tabs shown along the top, in order. `key` is the page; `label` is the tab.
 var TABS = [
-  { key: 'live', label: 'LIVE' }, { key: 'log', label: 'LOG' },
-  { key: 'channels', label: 'CHANNELS' }, { key: 'maps', label: 'MAPS' },
-  { key: 'connect', label: 'CONNECT' }, { key: 'codes', label: 'CODES' },
-  { key: 'info', label: 'INFO' }, { key: 'flash', label: 'FLASH' }, { key: 'setup', label: 'SETUP' }
+  // Ordered as a left-to-right workflow so the tabs read as the real sequence a
+  // user follows, instead of jumping logging -> maps -> connect -> info:
+  //   DATALOG   watch & record            LIVE  LOG  CHANNELS
+  //   DIAGNOSE  link to car, identify it   CONNECT  INFO  CODES
+  //   TUNE      switch maps / flash        MAPS  FLASH
+  //   SETUP     settings & diagnostics     SETUP
+  { key: 'live', label: 'LIVE' }, { key: 'log', label: 'LOG' }, { key: 'channels', label: 'CHANNELS' },
+  { key: 'connect', label: 'CONNECT' }, { key: 'info', label: 'INFO' }, { key: 'codes', label: 'CODES' },
+  { key: 'maps', label: 'MAPS' }, { key: 'flash', label: 'FLASH' }, { key: 'setup', label: 'SETUP' }
 ];
 var SCREEN_ORDER = ['live', 'log', 'channels', 'maps', 'connect', 'codes', 'info', 'flash', 'setup'];
 var DEFAULTS = { demo: 'auto', source: 'auto', platform: 'B58', rate: 10, units: 'metric', style: 'tiles', maxtiles: 8, autostart: false, mapcontrol: 'off' };
@@ -132,6 +137,11 @@ App.prototype.start = function (ctx) {
   this.bdiag = { running: false, result: null, msg: '' };
   this.latest = { values: {}, demo: false, live: false };
   this.confirm = false;
+  // MAPS status is map-only (set by map apply / commit), kept separate from the
+  // transient toast below so a log/connect message never shows up on the MAPS page.
+  this._mapMsg = ''; this._mapOk = false; this._mapConfirmed = false;
+  // Transient on-screen banner for one-off messages (export result, scan result, ...).
+  this._toast = { msg: '', ok: false, at: 0 };
   // Fault-code (DTC) page state.
   this.codes = { scope: 'all', scanning: false, result: null, msg: '', confirmClear: false, clearing: false, lastClear: null, tune: null };
   // Calibration-flash page state. The engine is OFF by default; nothing can be
@@ -676,7 +686,7 @@ App.prototype._mapStep = function (dir) {
 App.prototype._mapApply = function () {
   var self = this;
   var prep = this.map.prepare(this.map.requested, this.latest.values, this.latest.live);
-  if (!prep.ok) { this._flash(prep.reasons[0] || 'Cannot switch'); return; }
+  if (!prep.ok) { this._mapMsg = prep.reasons[0] || 'Cannot switch'; this._mapOk = false; return; }
   if (!this.confirm) { this.confirm = true; return; }
   this.confirm = false;
   this.map.commit(this.map.requested, this.latest.values, this.diag, this.latest.live).then(function (res) {
@@ -684,9 +694,20 @@ App.prototype._mapApply = function () {
   });
 };
 
-App.prototype._flash = function (msg) {
-  this._mapMsg = msg; this._mapOk = false;
+// A transient banner shown at the top of whatever tab is active (between the
+// tab strip and the content), fading after a few seconds. This is the home for
+// one-off messages like "No logs to export" or "No vehicle found" - they used
+// to be written into this._mapMsg and leaked onto the MAPS status panel.
+App.prototype._flash = function (msg, ok) {
+  this._toast = { msg: msg, ok: ok === true, at: (typeof Date !== 'undefined' && Date.now) ? Date.now() : 0 };
   if (this.ctx.log && this.ctx.log.info) this.ctx.log.info(msg);
+};
+App.prototype._toastView = function () {
+  var ts = this._toast;
+  if (!ts || !ts.msg) return null;
+  var now = (typeof Date !== 'undefined' && Date.now) ? Date.now() : 0;
+  if (ts.at && now && (now - ts.at) > 4500) return null;
+  return { msg: ts.msg, ok: !!ts.ok };
 };
 
 // ---- fault codes (DTC) read/clear --------------------------------------
@@ -1048,7 +1069,7 @@ App.prototype.buildView = function () {
     info: { reading: this.info.reading, items: this.info.items, tune: this.info.tune, done: this.info.done, msg: this.info.msg, binVerify: this.info.binVerify },
     setup: this._setupItems(), setupSel: this.setupSel,
     setupView: this.setupView, bdiag: this.bdiag,
-    tab: this.tab, tabs: TABS, actions: this._actions(),
+    tab: this.tab, tabs: TABS, toast: this._toastView(), actions: this._actions(),
     webUrl: this._config().webUrl || ''
   };
 };
