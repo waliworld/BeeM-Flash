@@ -18,6 +18,31 @@ UI: one canvas screen with internal paging driven by four HMI bar buttons
 
 ## Beta 2 — v2.x.x
 
+### v2.11.0 — wireless-bridge groundwork (no behaviour change on the car)
+Foundation for letting an external tool (e.g. xHP) reach the car THROUGH the MGU
+over Wi-Fi. Nothing new appears on screen and the running app is unchanged for
+normal use; these are tested libraries, on-car probes and docs that de-risk the
+build. Full design, feasibility and honest status in `docs/BRIDGE.md`.
+- **Verdict (verified):** the bridge cannot be the iDrive app (the sandbox has no
+  sockets) but CAN be a small root daemon + the app as a UNIX-socket client, with
+  the car side carried by the TASU transport the flasher already uses. The one
+  make-or-break unknown — can a phone on the hotspot reach a listener on the head
+  unit — has no evidence either way and must be settled on the car.
+- **Security core, built and tested (28 new tests):** `bridgegate.js` (off by
+  default; acknowledge → enable → time-boxed lease with heartbeat; a SEPARATE
+  write-arm for one named ECU; enable/arm never persisted; fails closed) and
+  `relaypolicy.js` (the app re-validates every relayed frame: ECU allow-list
+  {0x12, 0x18}, functional/broadcast from the phone refused, clearDTC and writes
+  separately armed, disallowed frames get a UDS negative).
+- **On-car probe kit** (`tools/bridge-probes/`): `probe-car.sh` (topology + the
+  inbound-reachability test) and `p1-daemon.js` (the app↔daemon socket test),
+  with an OFF-by-default `config.bridgeProbe` hook in the app that reports the P1
+  result on the error banner. Read-only; sends nothing to the car.
+- **Kill criteria are written down** so we stop and say so if a leg proves
+  impossible, rather than shipping a bridge that doesn't work.
+- Licensing recorded: our MIT `doip.js` seeds the daemon's codec; the GPL-3
+  `kit/renderd` and the PolyForm `IterioDev` tooling are NOT copied.
+
 ### v2.10.1 — fault codes are BMW's real codes
 - **FIXED: every fault code we displayed was truncated.** BMW DTCs are three
   bytes; the SAE/J2012 helper used only the first two, so real code **`102A5A`

@@ -84,8 +84,11 @@ standards-based way to read live data from the DME over the vehicle's own
 diagnostic Ethernet, a standard open diagnostic transport. It is **not** a gateway/bridge: it opens
 no external listener, forwards no third-party traffic, and contains no flashing,
 calibration-write, or seed/key code. A **virtual ENET-over-WiFi bridge** that
-would expose the vehicle's diagnostic network to external tools is deliberately
-**not** provided — it is the enabling layer for wireless ECU flashing and broad
+would expose the vehicle's diagnostic network to external tools is, in the app
+itself, deliberately **not** provided (the app opens no listener). An **optional,
+separately-installed, consent-gated bridge daemon** is being developed as a distinct
+component — off by default, the owner's deliberate choice, documented in
+`docs/BRIDGE.md`. The app remains, by itself, not a gateway/bridge — it is the enabling layer for wireless ECU flashing and broad
 remote vehicle-network access.
 
 `src/doip.js` also implements ISO 13400's **Vehicle Identification** UDP

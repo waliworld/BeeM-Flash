@@ -1258,3 +1258,71 @@ function report() {
   eq(a.code, b.code, 'the truncated J2012 form cannot tell these two faults apart');
   ok(a.bmw !== b.bmw, 'the BMW code DOES tell them apart (' + a.bmw + ' vs ' + b.bmw + ')');
 })();
+
+// ---- wireless bridge: consent gate + relay policy (security invariants) ------
+// The bridge is a network-facing relay into the car. These tests pin the
+// guarantees that make it safe: off by default, never auto-armed, fails closed,
+// and the app re-validates every relayed frame against a strict allow-list.
+(function () {
+  var BridgeGate = require(A + 'bridgegate');
+  var policy = require(A + 'relaypolicy');
+
+  // deterministic clock
+  var t = 1000;
+  function gate() { return new BridgeGate({ now: function () { return t; }, leaseMs: 100, writeLeaseMs: 100 }); }
+
+  // --- consent gate ---
+  var g = gate();
+  ok(g.status().enabled === false && g.status().armed === false, 'bridge starts OFF and disarmed');
+  ok(g.enable().ok === false, 'cannot enable the bridge without acknowledging first');
+  ok(g.arm().ok === false, 'cannot arm before enabling');
+  g.acknowledge();
+  ok(g.enable().ok === true, 'enables after acknowledgment');
+  ok(g.arm().ok === true && g.leaseValid() === true, 'arms a lease once enabled');
+  t += 101; // lease lapses
+  ok(g.leaseValid() === false, 'lease fails closed once it lapses (no heartbeat)');
+  ok(g.renew().ok === false, 'a lapsed lease cannot be renewed (must re-arm)');
+  g.arm(); ok(g.leaseValid(), 're-armed');
+  ok(g.writeArmed() === false, 'write is NOT armed just because the bridge is');
+  g.armWrite(0x12); ok(g.writeArmed() === true && g.status().writeEcu === 0x12, 'write arms for one named ECU');
+  g.disarm(); ok(!g.leaseValid() && !g.writeArmed(), 'disarm drops both the lease and the write arm');
+
+  // acknowledgment persists; enabled/armed never do
+  var saved = null;
+  var store = { read: function () { return saved; }, open: function () { return {}; }, append: function (h, s) { saved = s; }, close: function () {} };
+  var g2 = new BridgeGate({ storage: store, now: function () { return t; } });
+  g2.acknowledge(); g2.enable(); g2.arm();
+  var g3 = new BridgeGate({ storage: store, now: function () { return t; } });
+  ok(g3.acknowledged === true, 'acknowledgment is remembered across restarts');
+  ok(g3.enabled === false && g3.leaseValid() === false, 'enabled/armed are NEVER persisted — a restart is disarmed');
+
+  // peer pinning
+  var g4 = gate(); g4.acknowledge(); g4.enable(); g4.arm();
+  g4.setPeer({ ip: '192.168.1.5' });
+  ok(g4.peerAllowed({ ip: '192.168.1.5' }) === true, 'the pinned peer is allowed');
+  ok(g4.peerAllowed({ ip: '192.168.1.9' }) === false, 'a different peer IP is refused');
+
+  // --- relay policy ---
+  function armed(extra) { var c = { armed: true, writeArmed: false, ecuAllow: [0x12, 0x18], allowClearDtc: false }; for (var k in (extra||{})) c[k]=extra[k]; return c; }
+  // unarmed: nothing passes
+  ok(policy.evaluate({ target: 0x12, uds: [0x22, 0xF1, 0x90] }, { armed: false }).allow === false, 'unarmed bridge relays nothing');
+  // armed read tier
+  ok(policy.evaluate({ target: 0x12, uds: [0x22, 0xF1, 0x90] }, armed()).allow === true, 'armed: 22 read to an allow-listed ECU passes');
+  ok(policy.evaluate({ target: 0x18, uds: [0x19, 0x02, 0x0C] }, armed()).allow === true, 'armed: 19 read to EGS passes');
+  // ECU allow-list
+  var denyEcu = policy.evaluate({ target: 0x40, uds: [0x22, 0xF1, 0x90] }, armed());
+  ok(denyEcu.allow === false && denyEcu.nack[0] === 0x7F, 'a non-allow-listed ECU is refused with a UDS negative');
+  // functional broadcast refused
+  ok(policy.evaluate({ target: 0xDF, uds: [0x19, 0x02, 0x0C] }, armed()).allow === false, 'functional/broadcast from the phone is refused');
+  // writes need the write arm
+  ok(policy.evaluate({ target: 0x12, uds: [0x34, 0x00, 0x44] }, armed()).allow === false, 'requestDownload refused without a write arm');
+  ok(policy.evaluate({ target: 0x12, uds: [0x2E, 0xF1, 0x90] }, armed()).allow === false, 'writeDataByIdentifier refused without a write arm');
+  ok(policy.evaluate({ target: 0x12, uds: [0x34, 0x00, 0x44] }, armed({ writeArmed: true, writeEcu: 0x12 })).allow === true, 'requestDownload passes when write-armed for that ECU');
+  ok(policy.evaluate({ target: 0x18, uds: [0x34, 0x00, 0x44] }, armed({ writeArmed: true, writeEcu: 0x12 })).allow === false, 'write armed for 0x12 does NOT authorise a write to 0x18');
+  // clearDTC is its own tier
+  ok(policy.evaluate({ target: 0x12, uds: [0x14, 0xFF, 0xFF, 0xFF] }, armed()).allow === false, 'clearDTC refused without its own arm');
+  ok(policy.evaluate({ target: 0x12, uds: [0x14, 0xFF, 0xFF, 0xFF] }, armed({ allowClearDtc: true })).allow === true, 'clearDTC passes when its own arm is set');
+  // programming session gated
+  ok(policy.evaluate({ target: 0x12, uds: [0x10, 0x03] }, armed()).allow === true, 'extended session (10 03) allowed in read tier');
+  ok(policy.evaluate({ target: 0x12, uds: [0x10, 0x02] }, armed()).allow === false, 'programming session (10 02) needs the write arm');
+})();

@@ -163,7 +163,30 @@ App.prototype.start = function (ctx) {
     trySafe(function () { self.ctx.onSwipe(function (dx) { try { self._onSwipe(dx); return true; } catch (e) { self._fail('swipe', e); return false; } }); });
   }
   this._startRuntime();
+  // Optional, OFF by default: the P1 bridge probe. When config.bridgeProbe is set,
+  // try to connect to a root daemon's UNIX socket (see tools/bridge-probes/) and
+  // surface the result, to settle whether the sandboxed app can reach a daemon at
+  // all. Pure diagnostics; it opens no server and sends nothing to the car.
+  if (this._config().bridgeProbe) trySafe(function () { self._bridgeProbe(); });
   return this;
+};
+
+App.prototype._bridgeProbe = function () {
+  var self = this, net;
+  try { net = require('net'); } catch (e) { this._fail('bridgeprobe', 'no net module'); return; }
+  var paths = (this._config().bridgeProbePaths) || ['/run/beem-probe/p.sock', '/dev/shm/beem-probe/p.sock'];
+  var i = 0;
+  function tryNext() {
+    if (i >= paths.length) { self._fail('bridgeprobe', 'no daemon socket reachable (' + paths.join(', ') + ')'); return; }
+    var p = paths[i++];
+    var c = net.connect(p);
+    var done = false;
+    c.on('connect', function () { try { c.write('ping\n'); } catch (e) {} });
+    c.on('data', function (d) { if (done) return; done = true; self._lastError = 'P1 OK: daemon ' + p + ' replied ' + String(d).trim(); self._lastErrorAt = Date.now(); try { c.end(); } catch (e) {} });
+    c.on('error', function (e) { if (done) return; done = true; try { c.destroy(); } catch (x) {} tryNext(); });
+    setTimeout(function () { if (done) return; done = true; try { c.destroy(); } catch (x) {} tryNext(); }, 1500);
+  }
+  tryNext();
 };
 
 // Reconfigure from settings without dropping an active recording.
