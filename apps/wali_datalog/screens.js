@@ -482,7 +482,54 @@ function flash(cv, t, view, R) {
 }
 
 // --------------------------------------------------------------- SETUP ------
+function setupDiag(cv, t, view, R) {
+  var d = view.bdiag || {}, res = d.result;
+  cv.text('BRIDGE DIAGNOSTICS', R.x, R.y - 8, 18, t.faint, { weight: 'bold' });
+  cv.text(d.running ? 'Running…' : (res ? 'Done' : 'Tap RUN'), R.x + R.w, R.y - 8, 18, t.dim, { align: 'r' });
+  if (!res) {
+    cv.text('Tests what the app itself can check, no SSH needed:', R.x, R.y + 30, 20, t.text, {});
+    cv.text('NET  — the head unit\u2019s Wi-Fi/IP addresses (the address a phone would target)', R.x + 10, R.y + 66, 17, t.dim, {});
+    cv.text('P1   — can the app reach a bridge daemon\u2019s local socket', R.x + 10, R.y + 92, 17, t.dim, {});
+    cv.text('P6   — one live read from the car over the TASU link (does the DME answer us)', R.x + 10, R.y + 118, 17, t.dim, {});
+    cv.text('P3 (a phone reaching the head unit) needs the root daemon \u2014 see tools/bridge-probes.', R.x + 10, R.y + 158, 16, t.faint, {});
+    return;
+  }
+  var y = R.y + 18, L = R.x + 10;
+  // NET
+  cv.text('NET', L, y, 16, t.accent, { weight: 'bold' });
+  var nets = res.net || [];
+  if (!nets.length) cv.text('no interfaces', L + 70, y, 17, t.dim, {});
+  for (var i = 0; i < nets.length && i < 5; i++) {
+    var n = nets[i], hot = /wlan/i.test(n.iface || '');
+    cv.text((n.iface || '?') + '   ' + (n.ip || '') + '   ' + (n.mac || ''), L + 70, y + i * 22, 16,
+      hot ? t.accent : (n.internal ? t.faint : t.text), { weight: hot ? 'bold' : 'normal' });
+  }
+  // P1 sockets
+  y = R.y + 18; var R2 = R.x + R.w * 0.52;
+  cv.text('P1 app\u2192daemon', R2, y, 16, t.accent, { weight: 'bold' });
+  var socks = res.sockets || [];
+  for (var j = 0; j < socks.length && j < 3; j++) {
+    var sk = socks[j], okk = sk.status === 'ok';
+    cv.text(sk.status.toUpperCase() + '  ' + sk.path, R2, y + 24 + j * 22, 15, okk ? t.accent : t.faint, { weight: okk ? 'bold' : 'normal' });
+  }
+  if (!socks.length) cv.text('no socket paths tested', R2, y + 24, 15, t.faint, {});
+  // TASU (P6)
+  var ty = R.y + 150;
+  cv.fillRect(R.x, ty - 16, R.w, 1, t.line);
+  cv.text('P6 TASU', L, ty + 6, 16, t.accent, { weight: 'bold' });
+  var tu = res.tasu || {};
+  var tmsg, tcol;
+  if (tu.status === 'ok') { tmsg = 'DME answered \u2014 VIN ' + (tu.vin || '') + '  (the car talks to us \u2014 GO)'; tcol = t.text; }
+  else if (tu.status === 'nrc') { tmsg = 'DME refused: NRC 0x' + (tu.nrc || 0).toString(16).toUpperCase() + ' (reached the ECU, it declined this read)'; tcol = t.warn; }
+  else if (tu.status === 'no-reply') { tmsg = 'No reply from the DME (' + (tu.note || '') + ')'; tcol = t.crit; }
+  else if (tu.status === 'no-link') { tmsg = 'No diagnostic link in this build'; tcol = t.faint; }
+  else { tmsg = 'Unexpected: ' + JSON.stringify(tu).slice(0, 60); tcol = t.dim; }
+  cv.text(tmsg, L + 110, ty + 6, 17, tcol, { weight: 'bold' });
+  cv.text('P3 (phone \u2192 head unit) is not testable from the app \u2014 run tools/bridge-probes on the unit.', L, ty + 40, 15, t.faint, {});
+}
+
 function setup(cv, t, view, R) {
+  if (view.setupView === 'diag') return setupDiag(cv, t, view, R);
   var items = view.setup || [];
   var cols = 2, gx = 16, gy = 12, cw = (R.w - gx) / cols, rh = 56, perCol = Math.ceil(items.length / cols);
   for (var i = 0; i < items.length; i++) {

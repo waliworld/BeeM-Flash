@@ -1149,6 +1149,7 @@ Promise.resolve()
       ok(r2.ok === false && /region/i.test(r2.error), 'calreadout: refuses without a configured region');
     });
   })
+  .then(bridgeDiagTests)
   .then(report)
   .catch(function (e) { console.error(e); process.exit(1); });
 
@@ -1326,3 +1327,24 @@ function report() {
   ok(policy.evaluate({ target: 0x12, uds: [0x10, 0x03] }, armed()).allow === true, 'extended session (10 03) allowed in read tier');
   ok(policy.evaluate({ target: 0x12, uds: [0x10, 0x02] }, armed()).allow === false, 'programming session (10 02) needs the write arm');
 })();
+
+// ---- in-app bridge diagnostics (SETUP > DIAGNOSTICS) -------------------------
+function bridgeDiagTests() {
+  var bd = require(A + 'bridgediag');
+  var vinBytes = [0x62, 0xF1, 0x90].concat('WBA5R1C09'.split('').map(function (c) { return c.charCodeAt(0); }));
+  return bd.probeTasu(function () { return Promise.resolve(vinBytes); }).then(function (r) {
+    eq(r.status, 'ok', 'bridgediag: a positive DID reply reads as ok');
+    eq(r.vin, 'WBA5R1C09', 'bridgediag: VIN decoded from the reply');
+    return bd.probeTasu(function () { return Promise.resolve([0x7f, 0x22, 0x31]); });
+  }).then(function (r) {
+    eq(r.status, 'nrc', 'bridgediag: a 7F reply reads as an NRC (reached the ECU)');
+    eq(r.nrc, 0x31, 'bridgediag: the NRC byte is surfaced');
+    return bd.probeTasu(function () { return Promise.reject(new Error('no reply from 0x12')); });
+  }).then(function (r) {
+    eq(r.status, 'no-reply', 'bridgediag: a rejected read reads as no-reply (car silent)');
+    return bd.probeTasu(null);
+  }).then(function (r) {
+    eq(r.status, 'no-link', 'bridgediag: no transport reads as no-link, never a false positive');
+    ok(Array.isArray(bd.netInfo()), 'bridgediag: netInfo returns an interface list');
+  });
+}

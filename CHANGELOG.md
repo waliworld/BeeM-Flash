@@ -18,6 +18,24 @@ UI: one canvas screen with internal paging driven by four HMI bar buttons
 
 ## Beta 2 — v2.x.x
 
+### v2.11.1 — in-app bridge diagnostics (SETUP → DIAGNOSTICS)
+- **Run the bridge probes from the screen, no SSH.** A new DIAGNOSTICS view off the
+  SETUP tab (tap **DIAG**, then **RUN**) runs everything the app itself can check and
+  reports it on screen:
+  - **NET** — the head unit's Wi-Fi/IP interfaces (the address a phone would target),
+    with wlan0 highlighted.
+  - **P1** — whether the app can reach a bridge daemon's local socket (the
+    foundation of the bridge architecture): per-path ok / EACCES / ENOENT.
+  - **P6** — one live UDS read (VIN) over the TASU link, so you can see in plain
+    words whether the car answers us: "DME answered — GO", an NRC (reached but
+    declined), or no reply.
+  - It states honestly that **P3** (a phone reaching the head unit) is not testable
+    from inside the app and needs the root daemon / `tools/bridge-probes`.
+- Read-only; sends nothing to the car beyond that one identification read. New
+  `bridgediag.js` with 7 tests (388 total). The screen is shown in the README gallery.
+- The earlier off-by-default `config.bridgeProbe` startup hook remains for headless
+  use; this screen is the on-device, no-config way to run it.
+
 ### v2.11.0 — wireless-bridge groundwork (no behaviour change on the car)
 Foundation for letting an external tool (e.g. xHP) reach the car THROUGH the MGU
 over Wi-Fi. Nothing new appears on screen and the running app is unchanged for

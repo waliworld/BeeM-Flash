@@ -127,6 +127,8 @@ App.prototype.start = function (ctx) {
   this.tab = 'live';
   this.selection = 0;
   this.setupSel = 0;
+  this.setupView = 'settings';           // 'settings' | 'diag'
+  this.bdiag = { running: false, result: null, msg: '' };
   this.latest = { values: {}, demo: false, live: false };
   this.confirm = false;
   // Fault-code (DTC) page state.
@@ -529,11 +531,18 @@ App.prototype._actions = function () {
       { label: 'CANCEL', disabled: !this.flash.confirm, fn: function () { self.flash.confirm = false; } }
     ];
   }
-  if (s === 'setup') return [
-    { label: 'CHANGE', fn: function () { self._cycleSetting(self.setupSel); } },
-    { label: 'PREV', fn: function () { self._setupMove(-1); } },
-    { label: 'NEXT', fn: function () { self._setupMove(1); } }
-  ];
+  if (s === 'setup') {
+    if (self.setupView === 'diag') return [
+      { label: self.bdiag.running ? 'RUNNING…' : 'RUN', disabled: self.bdiag.running, fn: function () { self._runBridgeDiag(); } },
+      { label: 'BACK', fn: function () { self.setupView = 'settings'; } }
+    ];
+    return [
+      { label: 'CHANGE', fn: function () { self._cycleSetting(self.setupSel); } },
+      { label: 'PREV', fn: function () { self._setupMove(-1); } },
+      { label: 'NEXT', fn: function () { self._setupMove(1); } },
+      { label: 'DIAG', fn: function () { self.setupView = 'diag'; } }
+    ];
+  }
   return [];
 };
 
@@ -807,6 +816,27 @@ App.prototype._infoReadCal = function () {
 };
 
 // ---- settings (SETUP tab) ----------------------------------------------
+// Run the in-app bridge diagnostics (SETUP -> DIAGNOSTICS). Only what the sandbox
+// can do: own network view, the app<->daemon socket test (P1), and one live TASU
+// read (P6). Opening the inbound listener a phone connects to (P3) needs the root
+// daemon, which this cannot do and the screen says so.
+App.prototype._runBridgeDiag = function () {
+  var self = this;
+  if (this.bdiag.running) return;
+  this.bdiag.running = true; this.bdiag.msg = 'Running…';
+  var bridgediag = require('./bridgediag');
+  var send = null;
+  try { var gw = this._makeGateway(); if (gw && gw.send) send = function (b) { return gw.send(b); }; } catch (e) {}
+  var paths = (this._config().bridgeProbePaths) || undefined;
+  Promise.resolve().then(function () {
+    return bridgediag.run({ send: send, socketPaths: paths });
+  }).then(function (res) {
+    self.bdiag.result = res; self.bdiag.msg = 'Done'; self.bdiag.running = false;
+  }, function (e) {
+    self.bdiag.msg = 'Probe error: ' + ((e && e.message) || e); self.bdiag.running = false;
+  });
+};
+
 App.prototype._setupMove = function (d) {
   var n = SETTINGS_SCHEMA.length;
   this.setupSel = ((this.setupSel + d) % n + n) % n;
@@ -975,6 +1005,7 @@ App.prototype.buildView = function () {
     },
     info: { reading: this.info.reading, items: this.info.items, tune: this.info.tune, done: this.info.done, msg: this.info.msg, binVerify: this.info.binVerify },
     setup: this._setupItems(), setupSel: this.setupSel,
+    setupView: this.setupView, bdiag: this.bdiag,
     tab: this.tab, tabs: TABS, actions: this._actions(),
     webUrl: this._config().webUrl || ''
   };
