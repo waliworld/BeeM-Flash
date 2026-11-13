@@ -31,6 +31,10 @@ function fsStorage(baseDir) {
       try { return fs.readdirSync(baseDir); } catch (e) { return []; }
     },
     read: function (name) { return fs.readFileSync(path.join(baseDir, name), 'utf8'); },
+    // Byte count without reading the file. The LOG list only needs a size label;
+    // reading every CSV in full to measure it made each frame cost more the more
+    // the owner had recorded.
+    statSize: function (name) { try { return fs.statSync(path.join(baseDir, name)).size; } catch (e) { return 0; } },
     remove: function (name) { fs.unlinkSync(path.join(baseDir, name)); },
     // destDir is a mounted writable path (e.g. a USB stick). Throws if absent.
     export: function (name, destDir) {

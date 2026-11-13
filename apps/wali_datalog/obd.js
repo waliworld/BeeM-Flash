@@ -40,7 +40,12 @@ var PIDS = {
 };
 
 // The PIDs polled by default (owner can override via config.obdPids).
-var DEFAULT_PIDS = [0x0C, 0x0D, 0x05, 0x0F, 0x11, 0x04, 0x0E, 0x10, 0x33, 0x0B, 0x87, 0x70, 0x5C, 0x46, 0x24];
+// Deliberately WITHOUT 0x0C (rpm), 0x0D (speed), 0x05 (coolant) and 0x5C (oil):
+// those four already come from the car's SOME/IP bus signals, which are faster and
+// more reliable, and provider.js prefers an OBD value over the bus one for the same
+// channel - so polling them here would silently replace the channels that work.
+// Everything below is a value the bus does NOT provide.
+var DEFAULT_PIDS = [0x0F, 0x11, 0x04, 0x0E, 0x10, 0x33, 0x0B, 0x87, 0x70, 0x46, 0x24];
 
 function parse(pid, resp) {
   if (!resp || resp.length < 2) return null;
@@ -65,7 +70,9 @@ function ObdProvider(ctx, opts) {
   this.transport = opts.transport || { supported: false, send: function (_b, cb) { cb && cb(new Error('no transport')); } };
   this.send = opts.send || promisify(this.transport);
   this.pids = (opts.pids && opts.pids.length) ? opts.pids.slice() : DEFAULT_PIDS.slice();
-  this.pollMs = opts.pollMs || 60;
+  // 300 ms, not 60: these reads share one serialized diagnostic link with the DID
+  // poller, and the reference app polls its on-screen values at 400 ms.
+  this.pollMs = opts.pollMs || 300;
   this.supported = !!this.transport.supported;
   this.cache = {};
   this._tmp = {};

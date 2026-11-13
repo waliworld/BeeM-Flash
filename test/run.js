@@ -1157,3 +1157,37 @@ function report() {
   if (fail) { console.log('\nFailures:'); failures.forEach(function (m) { console.log('  - ' + m); }); }
   process.exit(fail ? 1 : 0);
 }
+
+// ---- render loop: the drawing surface must be re-acquired every frame --------
+// On the head unit, acquiring the surface (ctx.canvas) is the ONLY thing that
+// rewinds the kit's draw-op recorder (kit/runtime/display.js canvas() -> record.js
+// reset()). Acquiring once at start() meant every frame appended to a buffer that
+// was never truncated and replayed every op ever drawn, so the app grew without
+// bound and the platform killed it after ~30 s on the car. Guard that it stays fixed.
+(function () {
+  try {
+    var mainMod = require(A + 'main');
+    var record = require('../runtime/record-surface');
+    var sim = require('../runtime/sim-ctx');
+    var surf = record.recordSurface(1600, 520);
+    var acquires = 0;
+    var ctx = sim.makeSimCtx({ settings: { demo: 'on', rate: 10, units: 'metric' } });
+    // Mimic the device: handing out the surface is what resets the recorder.
+    ctx.surface = function () { acquires++; surf.reset(); return surf; };
+    var loopCb = null;
+    ctx.loop = function (name, fps, cb) { loopCb = cb; return { stop: function () {}, kick: function () {} }; };
+    ctx._noTimers = true;                       // no sampler interval in the test
+    var app = new mainMod.App();
+    app.start(ctx);
+    ok(typeof loopCb === 'function', 'render loop registered');
+    loopCb();
+    var first = surf._ops.length;
+    var acqAfterFirst = acquires;
+    for (var i = 0; i < 40; i++) loopCb();
+    ok(acquires - acqAfterFirst === 40, 'surface re-acquired once per frame (got ' + (acquires - acqAfterFirst) + '/40)');
+    ok(first > 0, 'first frame drew something (' + first + ' ops)');
+    eq(surf._ops.length, first, 'draw ops stay bounded across 41 frames (no recorder leak)');
+  } catch (e) {
+    ok(false, 'render-loop surface test threw: ' + (e && e.message));
+  }
+})();

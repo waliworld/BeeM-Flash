@@ -18,6 +18,53 @@ UI: one canvas screen with internal paging driven by four HMI bar buttons
 
 ## Beta 2 — v2.x.x
 
+### v2.9.0 — the app stops dying, and the dark channels get a working source
+Found by diffing our behaviour against the car-tested MIT reference apps
+(`cauliflowermossgrape/idrive7-apps`), which run on this same head unit.
+
+- **FIXED: the app killed itself after ~30 s, and got laggier the longer it ran.**
+  Not the frame rate — an unbounded draw-op leak. We acquired the drawing surface
+  **once** in `start()`, but `ctx.canvas()` is the only code path that calls the kit
+  recorder's `reset()`, and `reset()` is the only thing that rewinds the op buffer.
+  So every frame appended to a buffer that was never truncated and **replayed every
+  op ever drawn**. Measured: 41 frames produced 3,280 ops instead of 80 — linear
+  growth, ~72,000 ops per frame by the 30-second mark. The surface is now re-acquired
+  every frame (as all 15 reference apps do). A regression test fails if this returns.
+- **Frame rate 30 → 8 fps.** Every real reference app runs 2–10 (car_vitals 10,
+  dyno 6, live_data 4, dtc_scanner 2). Values update at the sample rate, not the
+  frame rate, so 30 fps bought nothing and cost a full-screen redraw 30×/second.
+- **The LOG list no longer reads every recorded CSV off disk on every frame** just
+  to show a size label — it uses a `stat` and caches the list (lag grew with every
+  session you recorded).
+- **Charge-air temp, ignition timing and boost should now read.** The OBD-II source
+  already decoded PID `0x0F`/`0x0E`/`0x33` and derives boost from the non-saturating
+  `0x87`/`0x70`, and the head unit's diagnostic link permits OBD service 01 — but the
+  provider was only ever handed a transport if the ENET/DoIP **CONNECT** had
+  succeeded, which it cannot on a head unit. All providers now share one link to the
+  car's internal gateway, available from app start, **with no connect step**.
+  (CONNECT/DoIP remains, unchanged, as an additional path — see below.)
+- **Fixed the UDS read plumbing** that kept even configured DIDs dark: requests now
+  carry a reply-matching predicate (previously the *first* frame from the DME
+  resolved a request, so a reply to the previous DID could be scaled as this one), a
+  4000 ms timeout instead of 1500 (a cold DME answers slower than that), a check that
+  the reply echoes the DID we asked for, and a poll gated on the link actually being
+  up. Failures now record **why** (incl. the NRC) instead of being discarded, with a
+  30 s backoff after 3 failures.
+- **Un-muted the DME.** The diagnostic link latches an ECU as "silent" after 5 missed
+  replies and then drops every request to it without sending; nothing in the app ever
+  cleared that latch, so one bad patch muted the engine for the rest of the session.
+- **Stopped leaking a SOME/IP proxy and a response subscription on every
+  ENABLE/SCAN tap** — the link is built once and reused.
+- **Knock retard is no longer a default tile**: it has no standard DID on the MG1, so
+  it could only ever show `--`. It stays available under CHANNELS. `Load` takes its
+  place — it is in the verified profile and actually reads.
+- **The error banner no longer blames us for the head unit's own faults.** The
+  `CurrentVehicleUnits::initVehicleDataProxy` message is the BMW SDK's (that name
+  appears nowhere in this app); we only saw it because we listen for rejections
+  process-wide. It is still logged in full — with its stack, and no longer truncated
+  mid-message — but it no longer raises an on-screen alarm. `_fail` also no longer
+  throws when a rejection arrives before startup finishes.
+
 ### v2.8.3 — on-car stability + theme
 First on-car run (2.8.2 installs and reads live engine data). Fixes from it:
 - **App no longer quits itself.** On iDrive 7 the kit turned **any** stray

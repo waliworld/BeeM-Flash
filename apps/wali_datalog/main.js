@@ -42,7 +42,11 @@ var TABS = [
 ];
 var SCREEN_ORDER = ['live', 'log', 'channels', 'maps', 'connect', 'codes', 'info', 'flash', 'setup'];
 var DEFAULTS = { demo: 'auto', source: 'auto', platform: 'B58', rate: 10, units: 'metric', style: 'tiles', maxtiles: 8, autostart: false, mapcontrol: 'off' };
-var DISPLAY_DEFAULT = ['rpm', 'boost', 'iat', 'coolant', 'oil', 'timing', 'knock', 'speed'];
+// 'knock' is deliberately NOT a default tile: knock retard has no standard DID on
+// the MG1 DME, so it can only ever read '--' out of the box (it stays available in
+// CHANNELS for anyone who supplies a pidmap). 'load' is shown instead - it is in the
+// verified profile and actually reads.
+var DISPLAY_DEFAULT = ['rpm', 'boost', 'iat', 'coolant', 'oil', 'timing', 'load', 'speed'];
 
 // Settings schema for the in-app SETUP tab (mirrors app.json "settings"). Each
 // entry cycles through its options (bool toggles) via ctx.settings.set.
@@ -268,22 +272,37 @@ App.prototype._applyEnetState = function () {
     });
   }
 
+  // The head unit's own diagnostic link (UDS over the car's internal gateway). It is
+  // available from app start and needs no CONNECT - the DoIP transport above is an
+  // ADDITIONAL path, not a prerequisite. Built once and reused: each construction
+  // opens a SOME/IP proxy and a response subscription, and _applyEnetState runs again
+  // on every ENABLE/SCAN tap, so rebuilding it leaked a proxy per tap.
+  if (!this._huTransport) {
+    trySafe(function () { self._huTransport = DiagProvider.makeCtxTransport(self.ctx, 0x12); });
+  }
+  var hu = this._huTransport;
+
   var profile = this._loadPidProfile();
   var diagOpts = {};
   if (profile) diagOpts.profile = profile;       // a user-supplied per-tune pidmap.json wins
   else diagOpts.profileName = 'bmw_obd';         // else the car-tested BMW DME profile (UDS 0x22)
-  if (transport) diagOpts.transport = transport;
+  if (transport || hu) diagOpts.transport = transport || hu;
   this.diag = new DiagProvider(this.ctx, diagOpts);
   if (this.diag.supported) trySafe(function () { self.diag.start(); });
 
+  // NOT given the head-unit link on purpose: its request is UDS 0x2C
+  // (DynamicallyDefineDataIdentifier), which the read-only diagnostic guard rejects,
+  // and it would log an error on every poll. It runs only over a real DoIP transport.
   var monOpts = { platform: this.getSetting('platform') };
   if (transport) monOpts.transport = transport;
   this.monitor = new FastLog(this.ctx, monOpts);
   if (this.monitor.supported) trySafe(function () { self.monitor.start(); });
 
-  // Additional source: standard OBD-II PIDs (incl. the non-saturating boost PIDs).
-  var obdOpts = { pids: (this._config().obdPids) || undefined };
-  if (transport) obdOpts.transport = transport;
+  // Additional source: standard OBD-II PIDs (service 01), which the read-only guard
+  // does permit. This is what supplies charge-air temp (0x0F), ignition timing (0x0E)
+  // and boost (0x87/0x70, which do not saturate) over the link that works on-car.
+  var obdOpts = { pids: (this._config().obdPids) || undefined, pollMs: (this._config().obdPollMs) || 300 };
+  if (transport || hu) obdOpts.transport = transport || hu;
   this.obd = new ObdProvider(this.ctx, obdOpts);
   if (this.obd.supported) trySafe(function () { self.obd.start(); });
 
@@ -339,12 +358,23 @@ App.prototype._startRuntime = function () {
   // current page (this.screen) and pushes it to the MAIN graphic cell. Switching
   // page is just a redraw — no RHMI state change — which is reliable on the head
   // unit (the old per-screen ui.open navigation cut buttons off and blanked).
+  // 8 fps, like the reference apps (car_vitals 10, dyno 6, live_data 4, dtc_scanner 2).
+  // 30 fps redrew and re-pushed a full 1600x520 frame 30x/s for no benefit: the values
+  // update at the sample rate, not the frame rate.
   if (this.ctx.loop) {
-    self.ctx.loop('MAIN', 30, function () {
+    self.ctx.loop('MAIN', 8, function () {
       // Yield while the kit draws an overlay sheet (e.g. the settings sheet):
       // drawing our own frame would fight it and blank the screen.
       var d = self.ctx.display;
       if (d && d.sheet) return null;
+      // Re-acquire the surface EVERY frame. ctx.canvas() is the only code path that
+      // calls Recorder.reset() (kit/runtime/display.js -> record.js), and reset() is
+      // the only thing that rewinds the recorded draw-op list. Acquiring once at
+      // start() meant every frame appended to a buffer that was never truncated and
+      // replayed every op ever drawn - the app grew without bound and the platform
+      // killed it after ~30 s. The Recorder itself is cached by size, so this
+      // allocates nothing new. Every reference app acquires inside its render fn.
+      self._surface = self._makeSurface();
       try {
         self.render(self._surface, self.tab);
       } catch (e) {
@@ -371,9 +401,21 @@ App.prototype._relabel = function () {
 // diagnosable on the car instead of a silent blank.
 App.prototype._fail = function (where, err) {
   var msg = (err && err.message) ? err.message : String(err);
+  // Log the FULL message and stack before anything is truncated, and guard ctx:
+  // an unhandledRejection can arrive before start() has assigned this.ctx, in which
+  // case this used to throw inside the caller's empty catch and lose the log line.
+  var lg = this.ctx && this.ctx.log;
+  if (lg && lg.error) {
+    try { lg.error('[wali] ' + where + ': ' + msg + ((err && err.stack) ? '\n' + err.stack : '')); } catch (e) {}
+  }
+  // Don't show someone else's failure as ours. "Class::method failed due to ..." is
+  // the head unit SDK's own phrasing (e.g. CurrentVehicleUnits::initVehicleDataProxy,
+  // which appears nowhere in this app); we only see it because we listen for
+  // unhandledRejection process-wide. It is logged above, but it is not a BeeM-Flash
+  // fault and must not raise an alarm on screen.
+  if (where === 'rejection' && /^[A-Za-z][A-Za-z0-9_]*::[A-Za-z][A-Za-z0-9_]* failed due to/.test(msg)) return;
   this._lastError = where + ': ' + msg;
   this._lastErrorAt = Date.now();
-  if (this.ctx.log && this.ctx.log.error) { try { this.ctx.log.error('[wali] ' + this._lastError); } catch (e) {} }
 };
 
 // Draw a visible error card (used when a frame throws) so the app never shows a
@@ -512,8 +554,9 @@ App.prototype._startLog = function () {
     channels: this.enabled, rate: Number(this.getSetting('rate')), units: this.getSetting('units')
   });
   this.engine.start();
+  this._invalidateSessions();
 };
-App.prototype._stopLog = function () { this.engine.stop(); };
+App.prototype._stopLog = function () { this.engine.stop(); this._invalidateSessions(); };
 App.prototype.marker = function (label) { this.engine.marker(label || 'mark'); };
 
 // One-tap start/stop: start a new session when idle/done, stop while logging.
@@ -785,6 +828,21 @@ App.prototype._flashRun = function () {
 };
 
 // ---- view model + render ------------------------------------------------
+// Recorded sessions with their on-disk size, recomputed only when the set can have
+// changed (log start/stop, export, delete) rather than on every rendered frame.
+App.prototype._sessions = function () {
+  if (this._sessionList && !this._sessionsDirty) return this._sessionList;
+  var st = this.storage;
+  this._sessionList = this.engine.sessions().map(function (n) {
+    var size = 0;
+    try { size = st.statSize ? st.statSize(n) : (st.read(n) || '').length; } catch (e) {}
+    return { name: n, size: size };
+  });
+  this._sessionsDirty = false;
+  return this._sessionList;
+};
+App.prototype._invalidateSessions = function () { this._sessionsDirty = true; };
+
 App.prototype.buildView = function () {
   var eng = this.engine;
   var st = eng.state;
@@ -803,11 +861,10 @@ App.prototype.buildView = function () {
     summary: this.engine.getSummary(),
     run: this.engine.lastRun()
   };
-  var sessions = this.engine.sessions().map(function (n) {
-    var size = 0;
-    try { size = (this.storage.read(n) || '').length; } catch (e) {}
-    return { name: n, size: size };
-  }, this);
+  // Only the LOG tab shows this list, and only its size label needs the byte count.
+  // Use statSize (a stat, not a full read) and cache it: this used to read and decode
+  // every recorded CSV off the filesystem on EVERY frame.
+  var sessions = (this.tab === 'log') ? this._sessions() : (this._sessionList || []);
 
   var prep = this.map.prepare(this.map.requested, this.latest.values, this.latest.live);
   var maps = {
@@ -981,9 +1038,13 @@ App.prototype.render = function (cv, tabName) {
   // instead of failing silently. Clears itself afterwards.
   if (this._lastError && this._lastErrorAt && (Date.now() - this._lastErrorAt) < 15000) {
     try {
-      var bh = 24, by = screens.H - bh;
+      // Two lines: a one-line banner cut the decisive tail off longer messages.
+      var full = 'ERR ' + String(this._lastError);
+      var l1 = full.slice(0, 118), l2 = full.slice(118, 236);
+      var bh = l2 ? 38 : 24, by = screens.H - bh;
       cv.fillRect(0, by, screens.W, bh, (this.t && this.t.crit) || '#ff2a1f');
-      cv.text('ERR ' + String(this._lastError).slice(0, 110), 12, by + 17, 15, '#000000', { weight: 'bold' });
+      cv.text(l1, 12, by + 16, 15, '#000000', { weight: 'bold' });
+      if (l2) cv.text(l2, 12, by + 32, 15, '#000000', { weight: 'bold' });
     } catch (e) { /* never let the banner itself break a frame */ }
   }
 };
