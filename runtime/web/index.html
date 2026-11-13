@@ -100,7 +100,7 @@
     else if (name === 'maps-off') { app = makeApp({ mapcontrol: 'off' }); drive(app, 6); app.tab = 'maps'; app.render(cv); cap = 'MAPS — off (safe default)'; }
     else if (name === 'maps') { app = makeApp({ mapcontrol: 'armed' }); drive(app, 6); app.map.requested = 2; app.tab = 'maps'; app.render(cv); cap = 'MAPS — armed'; }
     else if (name === 'maps-confirm') { app = makeApp({ mapcontrol: 'armed' }); drive(app, 6); app.map.requested = 2; app.confirm = true; app.tab = 'maps'; app.render(cv); cap = 'MAPS — confirm'; }
-    else if (name === 'connect') { app = withEnet(makeApp()); app.tab = 'connect'; app.render(cv); cap = 'CONNECT — connected (read-only)'; }
+    else if (name === 'connect') { app = makeApp(); app.connect = { state: 'ok', detail: 'DME answered \u2014 VIN 5UX83DP04P9S09849', checking: false }; app.tab = 'connect'; app.render(cv); cap = 'CONNECT — head-unit link OK'; }
     else if (name === 'connect-locked') { app = makeApp(); drive(app, 6); app.tab = 'connect'; app.render(cv); cap = 'CONNECT — locked'; }
     else if (name === 'codes') { app = withEnet(makeApp()); app.codes.msg = ''; app.tab = 'codes'; app.render(cv); cap = 'CODES — before scan'; }
     else if (name === 'codes-result') { app = withEnet(makeApp()); app.codes.result = SAMPLE_CODES; app.codes.tune = SAMPLE_TUNE; app.codes.msg = '4 codes across 3/4 modules'; app.tab = 'codes'; app.render(cv); cap = 'CODES — scan result + tune on car'; }

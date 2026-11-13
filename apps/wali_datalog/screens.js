@@ -329,38 +329,28 @@ function overlay(cv, t, title, body, foot, color) {
 
 // ------------------------------------------------------------- CONNECT ------
 function connect(cv, t, view, R) {
-  var e = view.enet || {};
-  var pw = (R.w - 16) * 0.6;
-  D.panel(cv, t, R.x, R.y, pw, R.h, { title: 'BEFORE YOU CONNECT', accent: true });
-  var lines = [
-    'Opens a connection to your car’s diagnostic bus (ENET / DoIP) to read live data.',
-    'This link is read-only: live data + fault-code reading. Writes (clear codes, map switch, flashing) are separate, confirmed actions.',
-    'Use a cable/adapter you trust, on a vehicle you own. Keep the car stationary while connecting hardware.',
-    'Disconnect if anything seems unexpected. You are responsible for how this connection is used.'
-  ];
-  var ly = R.y + 58;
-  for (var i = 0; i < lines.length; i++) ly = wrapText(cv, t, '› ' + lines[i], R.x + 24, ly, pw - 48, 18, t.dim) + 6;
+  var e = view.enet || {}, c = view.connect || {};
+  var pw = (R.w - 16) * 0.58;
 
+  // PRIMARY: the head-unit diagnostic link — the transport the app actually uses.
+  D.panel(cv, t, R.x, R.y, pw, R.h, { title: 'HEAD-UNIT LINK', accent: true });
+  var sx = R.x + 24, sy = R.y + 78, big, col, sub;
+  if (c.checking) { big = 'Checking…'; col = t.warn; sub = 'Reading the DME over the head unit link.'; }
+  else if (c.state === 'ok') { big = 'Connected'; col = t.good; sub = c.detail || 'The car answered.'; }
+  else if (c.state === 'fail') { big = 'Not responding'; col = t.crit; sub = c.detail || 'The link did not answer.'; }
+  else { big = 'Ready'; col = t.accent; sub = 'Tap CHECK LINK to confirm the car answers.'; }
+  cv.text(big, sx, sy, 34, col, { weight: 'bold' });
+  var y2 = wrapText(cv, t, sub, sx, sy + 40, pw - 48, 19, t.dim);
+  wrapText(cv, t, 'BeeM-Flash reads your car over the head unit’s own diagnostic link. Live data, fault codes and ECU info use it with no connection step — you don’t need to “connect”.', sx, y2 + 16, pw - 48, 18, t.faint);
+
+  // SECONDARY: ENET/DoIP — optional, advanced, and honest that it won't connect here.
   var vx = R.x + pw + 16, vw = R.x + R.w - vx;
-  D.panel(cv, t, vx, R.y, vw, R.h, { title: 'VEHICLE' });
-  if (e.vehicle) {
-    cv.text('VIN', vx + 24, R.y + 70, 15, t.faint, { weight: 'bold' }); cv.text(e.vehicle.vin || '(unknown)', vx + 24, R.y + 98, 22, t.text, {});
-    cv.text('HOST', vx + 24, R.y + 134, 15, t.faint, { weight: 'bold' }); cv.text(e.vehicle.host || '--', vx + 24, R.y + 162, 22, t.text, {});
-    cv.text('ECU', vx + 24, R.y + 198, 15, t.faint, { weight: 'bold' }); cv.text('0x' + (e.vehicle.logicalAddress || 0).toString(16), vx + 24, R.y + 226, 22, t.text, {});
-  } else if (e.scanning) { cv.text('Scanning…', vx + 24, R.y + 100, 24, t.warn, { weight: 'bold' }); }
-  else { cv.text('No vehicle connected', vx + 24, R.y + 100, 22, t.dim, {}); cv.text(e.enabled ? 'Tap SCAN to search.' : 'Tap ENABLE, then SCAN.', vx + 24, R.y + 132, 18, t.faint, {}); }
-
-  // state strip + ack box
-  var by = R.y + R.h - 52;
-  cv.roundRect(R.x + 24, by, 28, 28, 2, e.acknowledged ? t.good : t.line);
-  if (e.acknowledged) cv.text('✓', R.x + 38, by + 21, 20, t.ink, { align: 'c', weight: 'bold' });
-  cv.text('I have read and understand this warning', R.x + 64, by + 21, 20, t.text, { weight: 'bold' });
-  var stateTxt, stateColor;
-  if (!e.acknowledged) { stateTxt = 'LOCKED — tap ACCEPT'; stateColor = t.dim; }
-  else if (e.connected) { stateTxt = 'CONNECTED (read-only)'; stateColor = t.good; }
-  else if (e.enabled) { stateTxt = 'ENABLED — tap SCAN'; stateColor = t.warn; }
-  else { stateTxt = 'DISABLED — tap ENABLE'; stateColor = t.dim; }
-  cv.text(stateTxt, R.x + R.w - 8, by + 21, 20, stateColor, { align: 'r', weight: 'bold' });
+  D.panel(cv, t, vx, R.y, vw, R.h, { title: 'ENET / DoIP — OPTIONAL' });
+  var ex = vx + 20, ey = R.y + 64;
+  ey = wrapText(cv, t, 'For an external ENET / Wi-Fi adapter only. Not needed for normal use — and the head unit’s own software can’t open this link, so SCAN won’t find a vehicle here.', ex, ey, vw - 40, 16, t.faint) + 12;
+  if (e.vehicle) { cv.text('Vehicle: ' + (e.vehicle.host || '?'), ex, ey, 17, t.text, { weight: 'bold' }); }
+  else if (e.scanning) { cv.text('Scanning…', ex, ey, 17, t.warn, { weight: 'bold' }); }
+  else { cv.text(e.enabled ? 'ENET ON — tap ENET SCAN' : 'ENET OFF (tap ENET: OFF to enable)', ex, ey, 15, e.enabled ? t.warn : t.faint, {}); }
 }
 
 // --------------------------------------------------------------- CODES ------

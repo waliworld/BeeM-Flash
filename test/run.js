@@ -740,13 +740,11 @@ Promise.resolve()
 
     ok(!app.diag.supported && !app.monitor.supported, 'app: boots with no transport until connected');
 
-    app.onButton('BTN_B'); // Enable before Acknowledge -> refused
-    ok(!app.enet.enabled, 'app: Enable is refused before Acknowledge');
-
-    app.onButton('BTN_A'); // Acknowledge
-    app.onButton('BTN_B'); // Enable
-    ok(app.enet.acknowledged && app.enet.enabled, 'app: Acknowledge then Enable succeeds');
-    ok(!app.diag.supported, 'app: enabled but no vehicle yet -> still no transport');
+    // CONNECT redesign: BTN_A = CHECK LINK (head-unit link), BTN_B = ENET toggle
+    // (acknowledges + enables the optional DoIP path in one tap), BTN_C = ENET SCAN.
+    app.onButton('BTN_B'); // ENET toggle on
+    ok(app.enet.acknowledged && app.enet.enabled, 'app: the ENET toggle acknowledges and enables in one tap');
+    ok(!app.diag.supported, 'app: ENET enabled but no vehicle yet -> still no transport');
 
     ctx.doipSocket = function () {
       return makeFakeDiscoverySocket(function (deliver) {

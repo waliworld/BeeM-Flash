@@ -18,6 +18,25 @@ UI: one canvas screen with internal paging driven by four HMI bar buttons
 
 ## Beta 2 — v2.x.x
 
+### v2.11.5 — CONNECT tells the truth (no more accept/enable/scan dance)
+The CONNECT tab was built around an ENET/DoIP "connect to a vehicle" flow that
+doesn't apply on the head unit — live data, fault codes and ECU info already run
+over the head unit's internal link with no connection step, and the DoIP SCAN
+can never succeed from the head unit's sandbox. The confusing accept → enable →
+scan sequence (with a checkbox that didn't respond to taps) led nowhere.
+Redesigned to be honest:
+- **HEAD-UNIT LINK** is now the primary panel and shows the real link: tap
+  **CHECK LINK** and it reads the DME live (VIN) and reports **Connected** /
+  **Not responding** with the reason. Plain text explains you don't need to
+  "connect" — the app already reads the car over this link.
+- **ENET / DoIP** is demoted to a clearly-labelled **optional/advanced** panel
+  that states plainly it's for an external adapter and won't find a vehicle from
+  the head unit. One **ENET: ON/OFF** toggle replaces the accept-then-enable
+  two-step (the disclosure is shown on-screen); the dead checkbox is gone.
+
+Nothing about how data flows changed — this only makes the screen match reality
+so it stops implying a connection is required.
+
 ### v2.11.4 — real fault codes (not 833), and read more of the DME's identity
 From the on-car CODES and INFO screens:
 - **CODES was returning ~833 "codes", all pending, with no meaning.** The scan

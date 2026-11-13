@@ -92,6 +92,7 @@ App.prototype.start = function (ctx) {
   // explicitly enabled the connection THIS session (enabling is never
   // persisted — every app launch starts fully disconnected). See enetgate.js.
   this.enet = new EnetGate({ storage: this.storage });
+  this.connect = { state: null, detail: '', checking: false }; // head-unit link status
 
   // ---- data sources -----------------------------------------------------
   this.someip = new SomeipProvider(this.ctx);
@@ -335,6 +336,41 @@ App.prototype._applyEnetState = function () {
   if (this.provider) { this.provider.diag = this.diag; this.provider.monitor = this.monitor; this.provider.obd = this.obd; }
 };
 
+// Prove the head-unit diagnostic link by reading the DME live (the transport that
+// actually powers live data / INFO / CODES). No connection step is required; this
+// just confirms the car answers.
+App.prototype._connectCheck = function () {
+  var self = this;
+  if (this.connect.checking) return;
+  var gw = this._makeGateway();
+  if (!gw) { this.connect.state = 'fail'; this.connect.detail = this._noLinkReason(); return; }
+  this.connect.checking = true; this.connect.state = 'checking'; this.connect.detail = '';
+  Promise.resolve(gw.activate ? gw.activate() : null).then(function () {
+    return gw.send([0x22, 0xF1, 0x90]);            // read VIN from the DME (0x12)
+  }).then(function (uds) {
+    self.connect.checking = false;
+    if (uds && uds[0] === 0x62) {
+      var vin = ''; for (var i = 3; i < uds.length; i++) { var ch = uds[i]; if (ch >= 32 && ch < 127) vin += String.fromCharCode(ch); }
+      self.connect.state = 'ok'; self.connect.detail = 'DME answered' + (vin ? ' \u2014 VIN ' + vin : '');
+    } else if (uds && uds[0] === 0x7f) {
+      self.connect.state = 'ok'; self.connect.detail = 'DME reached (it declined this read, but the link works)';
+    } else { self.connect.state = 'fail'; self.connect.detail = 'unexpected reply from the link'; }
+  }, function (e) {
+    self.connect.checking = false; self.connect.state = 'fail';
+    self.connect.detail = (e && e.message) ? e.message : String(e);
+  });
+};
+
+// Optional ENET/DoIP path: one toggle that acknowledges (the disclosure is shown
+// on the screen) and enables/disables, instead of a confusing accept-then-enable.
+App.prototype._enetToggle = function () {
+  if (this.enet.enabled) { this.enet.setEnabled(false); this._applyEnetState(); return; }
+  this.enet.acknowledge();
+  var res = this.enet.setEnabled(true);
+  if (!res.ok) { this._flash(res.reason); return; }
+  this._applyEnetState();
+};
+
 App.prototype._enetAck = function () {
   this.enet.acknowledge();
 };
@@ -509,9 +545,9 @@ App.prototype._actions = function () {
     { label: 'CANCEL', disabled: !this.confirm, fn: function () { self.confirm = false; } }
   ];
   if (s === 'connect') return [
-    { label: 'ACCEPT', active: this.enet.acknowledged, fn: function () { self._enetAck(); } },
-    { label: this.enet.enabled ? 'DISABLE' : 'ENABLE', active: this.enet.enabled, fn: function () { self._enetToggleEnable(); } },
-    { label: 'SCAN', disabled: !this.enet.enabled, fn: function () { self._enetScan(); } }
+    { label: self.connect.checking ? 'CHECKING…' : 'CHECK LINK', disabled: self.connect.checking, fn: function () { self._connectCheck(); } },
+    { label: this.enet.enabled ? 'ENET: ON' : 'ENET: OFF', active: this.enet.enabled, fn: function () { self._enetToggle(); } },
+    { label: 'ENET SCAN', disabled: !this.enet.enabled || this.enet.scanning, fn: function () { self._enetScan(); } }
   ];
   if (s === 'codes') return [
     { label: 'SCAN', disabled: this.codes.scanning, fn: function () { self._codesScan(); } },
@@ -992,7 +1028,7 @@ App.prototype.buildView = function () {
     style: this.style(),
     selection: this.selection,
     maps: maps,
-    enet: this.enet.status(),
+    enet: this.enet.status(), connect: this.connect,
     codes: {
       scope: this.codes.scope,
       scanning: this.codes.scanning,
@@ -1115,8 +1151,8 @@ App.prototype._mapsTap = function (x, y, R) {
   }
 };
 App.prototype._connectTap = function (x, y, R) {
-  var by = R.y + R.h - 52; // the acknowledge checkbox row
-  if (x >= R.x + 24 && x <= R.x + 460 && y >= by - 6 && y <= by + 34) this._enetAck();
+  // Tapping the head-unit link panel (left ~58%) runs a live link check.
+  if (x < R.x + (R.w - 16) * 0.58) this._connectCheck();
 };
 App.prototype._flashTap = function (x, y, R) {
   // the ON/OFF toggle lives top-right of the content header
