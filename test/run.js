@@ -1191,3 +1191,51 @@ function report() {
     ok(false, 'render-loop surface test threw: ' + (e && e.message));
   }
 })();
+
+// ---- tune detection: the DME's reported form must match the bundled stock sets --
+// The DME reports its software number as spaced lowercase hex while the stock sets
+// hold compact uppercase. Without normalising, a byte-for-byte STOCK car matched
+// nothing and was reported as undetermined/modified.
+(function () {
+  var ecuinfo = require(A + 'ecuinfo');
+  var sb = require(A + 'stockbins');
+  function it(did, v) { return { did: did, ok: true, value: v }; }
+  var realId = sb.stockIds.MG1CS201[0];
+  var asReported = realId.match(/../g).join(' ').toLowerCase();
+  var r = ecuinfo.computeTune([it(0xF194, asReported), it(0xF17C, asReported)]);
+  eq(r.modified, false, 'stock DME reporting spaced lowercase hex is recognised as stock');
+  eq(r.matchedStock, realId, 'stock match returns the canonical id');
+  eq(r.matchQuality, 'exact', 'stock match is exact, not a substring guess');
+  // An identifier we do not know must NOT be called stock.
+  var t = ecuinfo.computeTune([it(0xF194, 'DE AD BE EF 12 34 56'), it(0xF17C, 'DE AD BE EF 12 34 56')]);
+  ok(t.modified !== false, 'an unknown calibration id is never reported as stock');
+  ok(!t.matchedStock, 'an unknown calibration id matches no stock key');
+})();
+
+// ---- the vehicle link is read-only unless the flash path explicitly opts in ----
+(function () {
+  var vl = require(A + 'vehiclelink');
+  function stubLink() {
+    return { p: {}, available: true, error: null, init: function () { return Promise.resolve(this); },
+             on: function () {}, removeListener: function () {},
+             physical: function () { return Promise.resolve([0x59]); } };
+  }
+  var mod = { replyTo: function () { return function () { return true; }; } };
+  var read = new vl.VehicleLink(mod, stubLink(), { target: 0x12 });
+  var flash = new vl.VehicleLink(mod, stubLink(), { target: 0x12, flashing: true });
+  var checks = [
+    [read, [0x19, 0x02, 0x0C], true, 'read link allows 0x19 readDTC'],
+    [read, [0x22, 0xF1, 0x90], true, 'read link allows 0x22 readDataByIdentifier'],
+    [read, [0x14, 0xFF, 0xFF, 0xFF], true, 'read link allows 0x14 clearDTC'],
+    [read, [0x34, 0x00, 0x44], false, 'read link REFUSES 0x34 requestDownload'],
+    [read, [0x36, 0x01], false, 'read link REFUSES 0x36 transferData'],
+    [read, [0x2E, 0xF1, 0x90], false, 'read link REFUSES 0x2E writeDataByIdentifier'],
+    [flash, [0x34, 0x00, 0x44], true, 'flash link allows 0x34 requestDownload'],
+    [flash, [0x2E, 0xF1, 0x90], false, 'flash link still REFUSES 0x2E writeDataByIdentifier']
+  ];
+  checks.forEach(function (c) {
+    var threw = false;
+    try { c[0]._check(c[1]); } catch (e) { threw = true; }
+    ok(threw === !c[2], c[3]);
+  });
+})();

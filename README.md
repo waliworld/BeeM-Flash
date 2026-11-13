@@ -71,7 +71,8 @@ app, and it is built from scratch — see [`NOTICE.md`](NOTICE.md).
   guarded by on-screen confirmation and "stationary + engine idle" preconditions.
   **Off by default.**
 - **Fault codes (whole vehicle)** — a **Diag → Codes** page that reads stored
-  fault codes (DTCs) from every module over ENET/DoIP and, with a two-step
+  fault codes (DTCs) from every module over the head unit's own diagnostic link
+  (InternalTasu — the transport proven on the car) and, with a two-step
   confirm, clears them. Reading is read-only; clearing erases fault memory only
   (never the tune). Decodes to SAE codes (`P0300`…), marks pending codes, scans
   all modules or engine-only, and times out absent modules instead of hanging.
@@ -93,7 +94,12 @@ app, and it is built from scratch — see [`NOTICE.md`](NOTICE.md).
   with a plain-language safety disclosure. No socket is ever opened to the
   vehicle until you **acknowledge** the warning and **enable** the connection —
   and enabling is never remembered: every app launch starts fully disconnected.
-  Finds the car automatically (ISO 13400 vehicle discovery, no manual IP entry).
+  **Honest status:** the DoIP/ENET path is implemented to ISO 13400 but has only
+  ever been exercised against a simulator — it is **not confirmed from the head
+  unit**, where no network capability is declared in the app model and no app in
+  the reference corpus has been shown to open an IP socket. Live data, fault codes
+  and flashing therefore run over the head unit's own diagnostic link, which needs
+  no connection step. DoIP remains available as an optional transport.
   The live-data path is read-only; writes (map switch, flashing) are separate,
   explicitly-gated actions. See [`docs/VEHICLE-CONNECTION.md`](docs/VEHICLE-CONNECTION.md).
 

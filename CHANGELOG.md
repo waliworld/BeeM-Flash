@@ -18,6 +18,44 @@ UI: one canvas screen with internal paging driven by four HMI bar buttons
 
 ## Beta 2 — v2.x.x
 
+### v2.10.0 — the car's own diagnostic link: CODES, INFO and FLASH work without CONNECT
+- **The fault scanner, ECU info and the flasher were unreachable on the car.** All
+  three refused unless an ENET/DoIP link was established — and DoIP cannot be
+  established from inside the head unit's app sandbox. New `vehiclelink.js` talks
+  UDS over the head unit's **own** diagnostic service (InternalTasu), which our
+  manifest already declares and which needs **no connect step**. `_makeGateway`
+  now falls back to it, so all five gated features light up unchanged.
+  **ENET/DoIP is untouched and still preferred when a real link exists** (bench /
+  external adapter) — this adds a transport, it does not remove one.
+- **Still read-only by default.** The new link enforces its own allow-list
+  (`0x19` read DTCs, `0x14` clear, `0x22`/`0x23` reads, `0x27` unlock, `0x10`
+  session). Writing services (`0x34`/`0x36`/`0x37`/`0x31`/`0x11`) are refused
+  unless the gated flash path explicitly opts in, and `0x2E` is refused always.
+  The live-data guard (`readonly-diag`) was deliberately **not** widened.
+- **FIXED: a byte-for-byte stock car could be reported as modified.** The DME
+  reports its software number as spaced lowercase hex (`00 00 5d 55 28 96 06`)
+  while the bundled stock sets hold `00005D55289606`, so a real stock calibration
+  matched nothing. Identifiers are now compared in one canonical form — verified
+  against the bundled set: that car now reads **stock, exact match, MG1CS201**.
+- **Tune matching is stricter and says how sure it is.** Minimum key length raised
+  5 → 9 (with no ECU type reported the pool is every engine family at once, where
+  a 5-character fragment could produce a false "stock"); exact match preferred over
+  substring, with `matchQuality` and `matchedEcu` reported; a short vendor
+  signature like `MHD` must stand as its own word before it asserts a tune
+  (`signatureConfidence`). An unknown ID is still an honest "unknown", never "stock".
+- **Added `reflashedAfterBuild`** — compares the DME's programming date (F199)
+  against the car's build date (F18B), which was read but never used.
+- **SAFETY: the flash prerequisite could be satisfied by a read that saw nothing.**
+  `ecuinfo.read` resolves `ok:true` even when every identifier fails, so "you must
+  read ECU INFO before flashing" only proved the loop ran. Flashing now stays
+  blocked unless the DME actually reported its calibration ID or software number,
+  and says so.
+- **CONNECT and the gated tabs now say what is actually wrong** (link starting, car
+  not answering, no link in this build) instead of "Connect to the vehicle first".
+- **README corrected**: we advertised "finds the car automatically (ISO 13400
+  vehicle discovery)" for a path only ever exercised against a simulator. It now
+  states plainly what is proven on the car and what is not.
+
 ### v2.9.0 — the app stops dying, and the dark channels get a working source
 Found by diffing our behaviour against the car-tested MIT reference apps
 (`cauliflowermossgrape/idrive7-apps`), which run on this same head unit.

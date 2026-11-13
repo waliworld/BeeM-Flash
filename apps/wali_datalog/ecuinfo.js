@@ -59,6 +59,12 @@ function decode(kind, bytes) {
 
 // Stock calibration database (generated from the mgflasher-map-packs A2Ls).
 var stockdb = null; try { stockdb = require('./stockdb'); } catch (e) { stockdb = null; }
+// Identifiers are compared in a single canonical form. The DME reports its
+// software number as spaced lowercase hex ("00 00 5d 55 28 96 06") while the
+// bundled stock sets hold "00005D55289606" - without this, a byte-for-byte STOCK
+// car failed every lookup and was reported as undetermined or modified.
+function norm(s) { return String(s).toUpperCase().replace(/[^0-9A-Z]/g, ''); }
+
 function buildStockIndex(db) {
   if (!db || !db.ecus) return null;
   var all = {}, byEcu = {}, ecuTypes = [];
@@ -66,7 +72,10 @@ function buildStockIndex(db) {
     if (!db.ecus.hasOwnProperty(ecu)) continue;
     ecuTypes.push(ecu);
     var set = {}, e = db.ecus[ecu], list = (e.versions || []).concat(e.fileTokens || []);
-    for (var i = 0; i < list.length; i++) { var u = String(list[i]).toUpperCase(); if (u.length >= 5) { set[u] = true; all[u] = true; } }
+    // >= 9 characters: with no ECU type reported the pool is every family's
+    // versions at once, where a short token from an unrelated engine can produce
+    // a false "stock" match. Every shipped key is >= 9 chars, so none is lost.
+    for (var i = 0; i < list.length; i++) { var u = norm(list[i]); if (u.length >= 9) { set[u] = true; all[u] = true; } }
     byEcu[ecu] = set;
   }
   return { all: all, byEcu: byEcu, ecuTypes: ecuTypes };
@@ -82,7 +91,7 @@ var STOCK = buildStockIndex(stockdb);
     var set = STOCK.byEcu[ecu] || (STOCK.byEcu[ecu] = {});
     if (STOCK.ecuTypes.indexOf(ecu) < 0) STOCK.ecuTypes.push(ecu);
     var ids = sb.stockIds[ecu];
-    for (var i = 0; i < ids.length; i++) { var u = String(ids[i]).toUpperCase(); set[u] = true; STOCK.all[u] = true; }
+    for (var i = 0; i < ids.length; i++) { var u = norm(ids[i]); set[u] = true; STOCK.all[u] = true; }
   }
 })();
 
@@ -100,8 +109,9 @@ function computeTune(items, opts) {
   opts = opts || {};
   function val(did) { for (var i = 0; i < items.length; i++) if (items[i].did === did && items[i].ok) return items[i].value; return null; }
   var calId = val(0xF17C), sw = val(0xF194), hw = val(0xF191), prog = val(0xF199);
-  var reported = [calId, sw, hw].filter(Boolean).map(function (s) { return String(s).toUpperCase(); });
-  var hay = reported.join(' ');
+  var raw = [calId, sw, hw].filter(Boolean).map(function (s) { return String(s).toUpperCase(); });
+  var reported = raw.map(norm);           // canonical form for identifier matching
+  var hay = raw.join(' ');                // readable form for the ECU type / signatures
 
   // ECU type (e.g. MG1CS049) from the reported strings
   var ecuType = null, mm = hay.match(/MG1CS\d{3}/);
@@ -109,17 +119,51 @@ function computeTune(items, opts) {
 
   // vendor signature (a strong positive for a tune)
   var sigs = opts.tuneSignatures || { 'MHD': 'MHD', 'BOOTMOD': 'bootmod3', 'BM3': 'bootmod3', 'XHP': 'xHP', 'MG FLASHER': 'MG Flasher', 'MGFLASHER': 'MG Flasher' };
-  var detected = null;
-  for (var k in sigs) { if (sigs.hasOwnProperty(k) && sigs[k] && hay.indexOf(k) >= 0) { detected = sigs[k]; break; } }
+  var detected = null, signatureConfidence = null;
+  for (var k in sigs) {
+    if (!sigs.hasOwnProperty(k) || !sigs[k]) continue;
+    var at = hay.indexOf(k);
+    if (at < 0) continue;
+    // A short token like "MHD" can appear inside an unrelated part number, so
+    // require it to stand as its own word before trusting it.
+    var before = at > 0 ? hay.charAt(at - 1) : ' ';
+    var after = (at + k.length) < hay.length ? hay.charAt(at + k.length) : ' ';
+    var bounded = !/[0-9A-Z]/.test(before) && !/[0-9A-Z]/.test(after);
+    detected = sigs[k];
+    signatureConfidence = (bounded || k.length >= 6) ? 'high' : 'low';
+    if (signatureConfidence === 'high') break;   // keep looking for a stronger one
+  }
 
   // match the reported identifier against the known-stock set
   var idx = opts.stockDb ? buildStockIndex(opts.stockDb) : STOCK;
-  var matchedStock = null;
+  var matchedStock = null, matchQuality = null, matchedEcu = null;
   if (idx) {
-    var pool = (ecuType && idx.byEcu[ecuType]) ? idx.byEcu[ecuType] : idx.all;
-    for (var r = 0; r < reported.length && !matchedStock; r++) {
-      var v = reported[r];
-      for (var key in pool) { if (pool.hasOwnProperty(key) && (v === key || v.indexOf(key) >= 0)) { matchedStock = key; break; } }
+    // Prefer the reported ECU's own pool; fall back to every family only when the
+    // DME did not say which it is.
+    var pools = [];
+    if (ecuType && idx.byEcu[ecuType]) pools.push([ecuType, idx.byEcu[ecuType]]);
+    else for (var et in idx.byEcu) if (idx.byEcu.hasOwnProperty(et)) pools.push([et, idx.byEcu[et]]);
+    for (var pi = 0; pi < pools.length && !matchedStock; pi++) {
+      var pool = pools[pi][1];
+      for (var r = 0; r < reported.length && !matchedStock; r++) {
+        var v = reported[r];
+        if (!v) continue;
+        if (pool.hasOwnProperty(v)) { matchedStock = v; matchQuality = 'exact'; matchedEcu = pools[pi][0]; break; }
+      }
+    }
+    // Only if nothing matched exactly, allow a contained match - but demand the
+    // whole key, not a 5-character fragment, and record that it was weaker.
+    for (var pj = 0; pj < pools.length && !matchedStock; pj++) {
+      var pool2 = pools[pj][1];
+      for (var r2 = 0; r2 < reported.length && !matchedStock; r2++) {
+        var v2 = reported[r2];
+        if (!v2) continue;
+        for (var key in pool2) {
+          if (pool2.hasOwnProperty(key) && key.length >= 9 && v2.indexOf(key) >= 0) {
+            matchedStock = key; matchQuality = 'substring'; matchedEcu = pools[pj][0]; break;
+          }
+        }
+      }
     }
   }
   var knownEcu = !!(idx && ecuType && idx.byEcu[ecuType]);
@@ -129,7 +173,9 @@ function computeTune(items, opts) {
   if (opts.stockCalIds && opts.stockCalIds.length && calId) cfgStock = (opts.stockCalIds.map(String).indexOf(String(calId)) >= 0);
 
   var modified;
-  if (detected) modified = true;
+  if (detected && signatureConfidence === 'high') modified = true;
+  else if (detected && matchedStock) modified = false;   // a weak hit against a known-stock ID is noise
+  else if (detected) modified = true;
   else if (matchedStock) modified = false;
   else if (cfgStock === true) modified = false;
   else if (cfgStock === false) modified = true;
@@ -142,7 +188,17 @@ function computeTune(items, opts) {
   else if (cfgStock === false) note = 'Calibration ID is not in your configured stock list — looks modified.';
   else if (knownEcu) note = 'ECU ' + ecuType + ' is reporting a calibration not in the known-stock set — looks modified (a tune, or newer software than this dataset).';
   else note = 'Compare the calibration ID / programming date to your stock reference to tell if the car is tuned.';
-  return { calId: calId, swNumber: sw, programmingDate: prog, ecuType: ecuType, detected: detected, modified: modified, matchedStock: matchedStock, note: note };
+  // Programmed after the car was built? F18B is the manufacturing date, F199 the
+  // last programming date. A later programming date is a strong hint the DME has
+  // been written since the factory.
+  var built = val(0xF18B), reflashedAfterBuild = null;
+  if (built && prog) {
+    var b = norm(built).slice(0, 8), g = norm(prog).slice(0, 8);
+    if (b.length >= 6 && g.length >= 6) reflashedAfterBuild = g > b;
+  }
+  return { calId: calId, swNumber: sw, programmingDate: prog, buildDate: built, reflashedAfterBuild: reflashedAfterBuild,
+    ecuType: ecuType, detected: detected, signatureConfidence: signatureConfidence, modified: modified,
+    matchedStock: matchedStock, matchQuality: matchQuality, matchedEcu: matchedEcu, note: note };
 }
 
 // read(send, opts) -> Promise<{ ok, items:[{did,label,value,ok,raw}], tune }>.

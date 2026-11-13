@@ -18,6 +18,7 @@ var LogEngine = require('./logengine');
 var MapControl = require('./mapcontrol');
 var EnetGate = require('./enetgate');
 var doip = require('./doip');
+var vehiclelink = require('./vehiclelink');
 var Channels = require('./channels');
 var storageMod = require('./storage');
 var dme = require('./dme_profiles');
@@ -625,12 +626,37 @@ App.prototype._flash = function (msg) {
 // erases fault memory and is gated behind a two-step confirm on the Codes page.
 // A TCP DoIP socket to the car is device-specific (doip.nodeSocket); a host/sim
 // can inject one via ctx.diagSocket for off-car testing.
-App.prototype._makeGateway = function () {
+App.prototype._makeGateway = function (opts) {
   var st = this.enet.status();
-  if (!(st.connected && st.vehicle && st.vehicle.host)) return null;
-  var tgt = st.vehicle.logicalAddress || 0x1000;
+  var tgt = (st.vehicle && st.vehicle.logicalAddress) || 0x1000;
+  // A real DoIP link wins when one is genuinely established (bench / external
+  // ENET adapter), and the test injection keeps working.
   if (this.ctx.diagSocket) return new doip.DoipGateway({ socket: this.ctx.diagSocket(), targetAddr: tgt, requestTimeoutMs: 1500 });
-  return new doip.DoipGateway({ host: st.vehicle.host, port: 13400, targetAddr: tgt, requestTimeoutMs: 1500 });
+  if (st.connected && st.vehicle && st.vehicle.host) {
+    return new doip.DoipGateway({ host: st.vehicle.host, port: 13400, targetAddr: tgt, requestTimeoutMs: 1500 });
+  }
+  // Otherwise use the head unit's OWN diagnostic link. This is the transport that
+  // works on the car, needs no CONNECT, and is what the fault scanner and the
+  // flasher now run on. Cached: building it opens a SOME/IP proxy and a response
+  // subscription, and this is called from several tabs.
+  var flashing = !!(opts && opts.flashing);
+  var key = flashing ? '_vlinkFlash' : '_vlink';
+  if (!this[key]) {
+    try { this[key] = vehiclelink.make(this.ctx, { target: 0x12, flashing: flashing }); } catch (e) { this[key] = null; }
+  }
+  return this[key] || null;
+};
+
+// Why no gateway is available, for the tab that asked.
+App.prototype._noLinkReason = function () {
+  var v = this._vlink;
+  if (v && v.status) {
+    var s = v.status();
+    if (s.error) return 'Head unit diagnostic link unavailable: ' + s.error;
+    if (!s.ready) return 'Head unit diagnostic link is still starting \u2014 try again in a moment.';
+    if (!s.available) return 'The car is not answering the head unit diagnostic link (ignition off?).';
+  }
+  return 'No diagnostic link: this build has no head unit link and no vehicle is connected.';
 };
 App.prototype._codeModules = function () {
   var list = modules.list(this._config());
@@ -648,7 +674,7 @@ App.prototype._codesScan = function () {
   var self = this;
   if (this.codes.scanning) return Promise.resolve();
   var gw = this._makeGateway();
-  if (!gw) { this.codes.msg = 'Connect to the vehicle first (Diag → Connect).'; return Promise.resolve(); }
+  if (!gw) { this.codes.msg = this._noLinkReason(); return Promise.resolve(); }
   this.codes.scanning = true; this.codes.confirmClear = false; this.codes.msg = 'Scanning modules…';
   var mods = this._codeModules();
   return gw.activate().then(function () {
@@ -675,7 +701,7 @@ App.prototype._codesClear = function () {
   if (!this.codes.confirmClear) { this.codes.confirmClear = true; this.codes.msg = 'Press Clear again to ERASE fault memory on all reached modules.'; return Promise.resolve(); }
   this.codes.confirmClear = false;
   var gw = this._makeGateway();
-  if (!gw) { this.codes.msg = 'Connect to the vehicle first (Diag → Connect).'; return Promise.resolve(); }
+  if (!gw) { this.codes.msg = this._noLinkReason(); return Promise.resolve(); }
   this.codes.clearing = true; this.codes.msg = 'Clearing codes…';
   var mods = this._codeModules();
   return gw.activate().then(function () {
@@ -696,7 +722,7 @@ App.prototype._infoRead = function () {
   var self = this;
   if (this.info.reading) return Promise.resolve();
   var gw = this._makeGateway();
-  if (!gw) { this.info.msg = 'Connect to the vehicle first (CONNECT tab).'; return Promise.resolve(); }
+  if (!gw) { this.info.msg = this._noLinkReason(); return Promise.resolve(); }
   this.info.reading = true; this.info.msg = 'Reading identification…';
   var cfg = this._config();
   var opts = { dids: cfg.infoDids || undefined, stockCalIds: cfg.stockCalIds, tuneSignatures: cfg.tuneSignatures };
@@ -705,9 +731,24 @@ App.prototype._infoRead = function () {
   }).then(function (res) {
     self.info.items = res.items || [];
     self.info.tune = res.tune || null;
-    self.info.done = true; // prerequisite for flashing is now satisfied
+    // The flash prerequisite means "the owner has SEEN what is on this car", so it
+    // must require that the car actually identified itself. ecuinfo.read resolves
+    // ok:true even when every single DID failed (each error is swallowed into an
+    // ok:false item), so trusting it would let the flasher arm against a DME that
+    // answered nothing at all.
     var got = self.info.items.filter(function (x) { return x.ok; }).length;
-    self.info.msg = got + ' of ' + self.info.items.length + ' identifiers read';
+    var identified = self.info.items.some(function (x) {
+      return x.ok && (x.did === 0xF17C || x.did === 0xF194);
+    });
+    self.info.done = identified;
+    if (identified) {
+      self.info.msg = got + ' of ' + self.info.items.length + ' identifiers read';
+    } else if (got) {
+      self.info.msg = got + ' of ' + self.info.items.length + ' read, but the DME did not report its ' +
+        'calibration ID or software number \u2014 flashing stays blocked.';
+    } else {
+      self.info.msg = 'The DME answered none of the identification requests \u2014 flashing stays blocked.';
+    }
   }).catch(function (e) {
     self.info.msg = 'Read failed: ' + ((e && e.message) || e);
   }).then(function () {
@@ -724,7 +765,7 @@ App.prototype._infoReadCal = function () {
   var cfg = this._config().calReadout;
   if (!cfg || typeof cfg.address !== 'number') { this.info.msg = 'No calibration region configured (config.calReadout.address/size).'; return Promise.resolve(); }
   var gw = this._makeGateway();
-  if (!gw) { this.info.msg = 'Connect to the vehicle first (CONNECT tab).'; return Promise.resolve(); }
+  if (!gw) { this.info.msg = this._noLinkReason(); return Promise.resolve(); }
   var opts = {}; for (var k in cfg) if (cfg.hasOwnProperty(k)) opts[k] = cfg[k];
   if (cfg.securityAlgo && !opts.keyFn) { try { opts.keyFn = require('./seedkey').makeAlgo(cfg.securityAlgo); } catch (e) {} }
   this.info.reading = true; this.info.msg = 'Reading calibration…'; this.info.binVerify = null;
@@ -802,8 +843,9 @@ App.prototype._flashAction = function () {
 };
 App.prototype._flashRun = function () {
   var self = this;
-  var gw = this._makeGateway();
-  if (!gw) { this.flash.status = 'Connect to the vehicle first (CONNECT tab).'; this.flash.result = { ok: false, message: this.flash.status }; return Promise.resolve(); }
+  // The write-capable link: the default one refuses 0x34/0x36/0x37.
+  var gw = this._makeGateway({ flashing: true });
+  if (!gw) { this.flash.status = this._noLinkReason(); this.flash.result = { ok: false, message: this.flash.status }; return Promise.resolve(); }
   this.flash.running = true; this.flash.progress = 0; this.flash.step = 'starting'; this.flash.result = null;
   var opts = {}; for (var k in this.flash.opts) opts[k] = this.flash.opts[k];
   opts.acknowledged = true;
