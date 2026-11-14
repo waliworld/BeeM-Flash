@@ -25,6 +25,7 @@
 // message, and never widens its own policy because a message asked it to.
 //
 var relaypolicy = require('./relaypolicy');
+var relayengine = require('./relayengine');
 
 var DEFAULT_SOCKET = '/run/beem-bridge/bridge.sock';
 var MAX_BUF = 256 * 1024;        // a daemon that floods us is dropped, not buffered
@@ -239,49 +240,15 @@ BridgeLink.prototype._onUds = function (msg) {
   var id = msg.id;
   var ecu = (msg.ecu != null) ? (Number(msg.ecu) & 0xff) : -1;
   var data = toBytes(msg.data);
-  var frame = { target: ecu, uds: data };
 
-  function answer(bytes, note, allowed) {
-    self._send({ t: 'uds-reply', id: id, data: bytes || [] });
-    self.audit.unshift({
-      ecu: ecu, sid: data.length ? data[0] : null,
-      allowed: !!allowed, note: note || null,
-      at: (typeof Date !== 'undefined' && Date.now) ? Date.now() : 0
-    });
-    if (self.audit.length > 12) self.audit.length = 12;
-  }
-
-  // The gate must exist and be armed; with no gate we refuse outright.
-  var ctx = this.gate ? this.gate.policyCtx(this.ecuAllow) : { armed: false, ecuAllow: this.ecuAllow };
-
-  // If a peer was approved, only that peer may drive the bridge.
-  if (this.gate && msg.peer && typeof this.gate.peerAllowed === 'function') {
-    if (!this.gate.peerAllowed(msg.peer)) {
-      this.refused++; this.lastRefusal = 'another device tried to use the bridge';
-      return answer(nackFor(data, 0x33), this.lastRefusal, false);
-    }
-  }
-
-  var verdict = relaypolicy.evaluate(frame, ctx);
-  if (!verdict.allow) {
-    this.refused++;
-    this.lastRefusal = verdict.reason || 'refused';
-    return answer(verdict.nack || nackFor(data, 0x31), this.lastRefusal, false);
-  }
-
-  if (typeof this.sendTo !== 'function') {
-    this.refused++; this.lastRefusal = 'no link to the car';
-    return answer(nackFor(data, 0x31), this.lastRefusal, false);
-  }
-
-  // Allowed: put it on the car and hand the answer back verbatim.
-  Promise.resolve(this.sendTo(ecu, data)).then(function (resp) {
-    self.relayed++;
-    answer(toBytes(resp), null, true);
-  }, function (e) {
-    self.refused++;
-    self.lastRefusal = (e && e.message) || 'the car did not answer';
-    answer(nackFor(data, 0x78), self.lastRefusal, false);
+  // Same judgement as the direct (in-app) listener: one engine, one policy.
+  var stats = { relayed: this.relayed, refused: this.refused, lastRefusal: this.lastRefusal, audit: this.audit };
+  relayengine.handle({ target: ecu, uds: data, peer: msg.peer }, {
+    gate: this.gate, ecuAllow: this.ecuAllow, sendTo: this.sendTo, stats: stats
+  }).then(function (r) {
+    self.relayed = stats.relayed; self.refused = stats.refused;
+    self.lastRefusal = stats.lastRefusal; self.audit = stats.audit;
+    self._send({ t: 'uds-reply', id: id, data: r.bytes });
   });
 };
 

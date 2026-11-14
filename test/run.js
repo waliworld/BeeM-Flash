@@ -1176,6 +1176,7 @@ Promise.resolve()
   .then(svkIdentTests)
   .then(bridgeLinkTests)
   .then(candidateReadTests)
+  .then(bridgeServerTests)
   .then(report)
   .catch(function (e) { console.error(e); process.exit(1); });
 
@@ -1663,5 +1664,88 @@ function candidateReadTests() {
       .then(function () {
         ok(d2.read().lpfp === undefined, 'candidates: an out-of-range decode is discarded, not shown');
       });
+  });
+}
+
+// ---- the DIRECT bridge: the app hosts the listener itself -------------------
+// Real TCP, real DoIP framing. This is the path that needs no root helper and
+// no PC, so it is worth proving rather than assuming.
+function bridgeServerTests() {
+  var net = require('net');
+  var BridgeServer = require(A + 'bridgeserver');
+  var BridgeGate = require(A + 'bridgegate');
+
+  var gate = new BridgeGate({ storage: null });
+  var carCalls = [];
+  var srv = new BridgeServer({
+    port: 0,                       // let the OS pick a free port
+    host: '127.0.0.1',
+    gate: gate,
+    sendTo: function (ecu, bytes) { carCalls.push({ ecu: ecu, bytes: bytes }); return Promise.resolve([0x62, 0xF1, 0x90, 0x41]); }
+  });
+
+  function hdr(type, payload) { return BridgeServer.frame(type, payload); }
+  function diagMsg(ta, uds) {
+    var b = Buffer.concat([Buffer.from([0x0e, 0x00, (ta >> 8) & 0xff, ta & 0xff]), Buffer.from(uds)]);
+    return hdr(0x8001, b);
+  }
+  function parseFrames(buf) {
+    var out = [];
+    while (buf.length >= 8) {
+      var type = buf.readUInt16BE(2), len = buf.readUInt32BE(4);
+      if (buf.length < 8 + len) break;
+      out.push({ type: type, payload: buf.slice(8, 8 + len) });
+      buf = buf.slice(8 + len);
+    }
+    return out;
+  }
+  function talk(frames, waitMs) {
+    return new Promise(function (resolve) {
+      var c = net.connect(srv.port, '127.0.0.1');
+      var got = Buffer.alloc(0);
+      c.on('connect', function () { frames.forEach(function (f) { c.write(f); }); });
+      c.on('data', function (d) { got = Buffer.concat([got, d]); });
+      c.on('error', function () { resolve([]); });
+      setTimeout(function () { try { c.destroy(); } catch (e) {} resolve(parseFrames(got)); }, waitMs || 120);
+    });
+  }
+
+  return srv.start().then(function (r) {
+    ok(r.ok === true, 'bridgeserver: the app can host a DoIP listener');
+    srv.port = srv.server.address().port;
+
+    // routing activation while DISARMED must be refused (0x06), not accepted
+    return talk([hdr(0x0005, Buffer.from([0x0e, 0x00, 0, 0, 0, 0, 0]))]);
+  }).then(function (frames) {
+    var ra = frames.filter(function (f) { return f.type === 0x0006; })[0];
+    ok(ra && ra.payload[4] === 0x06, 'bridgeserver: routing activation refused while the bridge is disarmed');
+
+    // a diagnostic request while disarmed must not reach the car
+    return talk([diagMsg(0x12, [0x22, 0xF1, 0x90])]);
+  }).then(function (frames) {
+    eq(carCalls.length, 0, 'bridgeserver: nothing reaches the car while disarmed');
+    var resp = frames.filter(function (f) { return f.type === 0x8001; })[0];
+    ok(resp && resp.payload[4] === 0x7F, 'bridgeserver: the tool gets a negative response, not silence');
+
+    // arm it on the car, then the same request relays
+    gate.acknowledge(); gate.enable(); gate.arm(60000);
+    return talk([hdr(0x0005, Buffer.from([0x0e, 0x00, 0, 0, 0, 0, 0])), diagMsg(0x12, [0x22, 0xF1, 0x90])], 200);
+  }).then(function (frames) {
+    var ra = frames.filter(function (f) { return f.type === 0x0006; })[0];
+    ok(ra && ra.payload[4] === 0x10, 'bridgeserver: routing activation accepted once armed');
+    eq(carCalls.length, 1, 'bridgeserver: an armed, allow-listed read reaches the car');
+    eq(carCalls[0].ecu, 0x12, 'bridgeserver: relayed to the engine controller');
+    var resp = frames.filter(function (f) { return f.type === 0x8001; })[0];
+    ok(resp && resp.payload[4] === 0x62, 'bridgeserver: the car answer reaches the tool');
+
+    // an ECU outside the allow-list is still refused
+    return talk([diagMsg(0x40, [0x22, 0xF1, 0x90])]);
+  }).then(function (frames) {
+    eq(carCalls.length, 1, 'bridgeserver: an ECU outside the allow-list never reaches the car');
+    var resp = frames.filter(function (f) { return f.type === 0x8001; })[0];
+    ok(resp && resp.payload[4] === 0x7F, 'bridgeserver: that tool gets a refusal');
+    ok(srv.status().refused >= 2, 'bridgeserver: refusals are counted for the on-screen audit');
+    srv.stop();
+    ok(srv.listening === false, 'bridgeserver: stop() closes the listener');
   });
 }

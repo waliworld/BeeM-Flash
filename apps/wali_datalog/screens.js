@@ -400,46 +400,71 @@ function overlay(cv, t, title, body, foot, color) {
 // the network name and password and you type them into the phone — the same way
 // a vehicle hotspot works.
 function connectBridge(cv, t, view, R) {
-  var b = view.bridge || {}, ap = b.ap || {}, g = b.gate || {};
+  var b = view.bridge || {}, ap = b.ap || {}, g = b.gate || {}, d = b.direct || {};
   var pw = (R.w - 16) * 0.52;
+  var mode = b.mode || 'off';
 
   D.panel(cv, t, R.x, R.y, pw, R.h, { title: 'WIRELESS BRIDGE', accent: g.armed, accentColor: t.warn });
   var x = R.x + 24, y = R.y + 70;
-  if (!b.connected) {
-    cv.text(g.enabled ? 'Starting…' : 'Off', x, y, 32, g.enabled ? t.warn : t.dim, { weight: 'bold' });
-    y = wrapText(cv, t, b.error
-      ? ('No bridge daemon on this head unit — ' + b.error + '.')
-      : 'Turn the bridge on to let a phone or laptop reach the car through this head unit.',
-      x, y + 34, pw - 48, 18, t.faint) + 10;
-    wrapText(cv, t, 'The app itself cannot create a Wi-Fi network: a small root helper must be installed on the unit (see docs/BRIDGE.md). Until it is, nothing will appear in your Wi-Fi list.', x, y, pw - 48, 17, t.faint);
-  } else {
-    cv.text(ap.up ? 'Broadcasting' : 'Daemon ready', x, y, 32, ap.up ? t.good : t.warn, { weight: 'bold' });
-    // the credentials, big enough to read and type into a phone
+
+  if (mode === 'direct') {
+    // Hosted by the app itself: no helper, no PC. The phone joins a network the
+    // car is ALREADY on, then connects to this address.
+    cv.text('On \u2014 hosted here', x, y, 30, t.good, { weight: 'bold' });
+    cv.text('CONNECT TO', x, y + 46, 15, t.faint, { weight: 'bold' });
+    cv.text((d.host && d.host !== '0.0.0.0' ? d.host : 'this head unit') + ' : ' + (d.port || 13400),
+      x + 210, y + 46, 24, t.accent, { weight: 'bold' });
+    var hy = y + 80, hosts = b.hosts || [];
+    if (hosts.length) {
+      cv.text('ADDRESSES', x, hy, 15, t.faint, { weight: 'bold' });
+      for (var hi = 0; hi < hosts.length && hi < 4; hi++) {
+        cv.text(hosts[hi].name + '   ' + hosts[hi].address, x + 210, hy + hi * 22, 17, t.text, {});
+      }
+      hy += Math.min(hosts.length, 4) * 22 + 16;
+    }
+    wrapText(cv, t, 'Join the car\u2019s Wi-Fi from your phone, then point the tool at that address, port ' +
+      (d.port || 13400) + '. The app cannot create a network \u2014 it listens on one the car already has.',
+      x, hy, pw - 48, 17, t.faint);
+  } else if (mode === 'helper' && b.connected) {
+    cv.text(ap.up ? 'On \u2014 helper access point' : 'Helper ready', x, y, 30, ap.up ? t.good : t.warn, { weight: 'bold' });
     cv.text('NETWORK (SSID)', x, y + 44, 15, t.faint, { weight: 'bold' });
-    cv.text(ap.ssid || '—', x + 230, y + 44, 24, t.accent, { weight: 'bold' });
+    cv.text(ap.ssid || '\u2014', x + 230, y + 44, 24, t.accent, { weight: 'bold' });
     cv.text('PASSWORD', x, y + 82, 15, t.faint, { weight: 'bold' });
-    cv.text(ap.pass || b.pass || '—', x + 230, y + 82, 24, t.accent, { weight: 'bold' });
+    cv.text(ap.pass || '\u2014', x + 230, y + 82, 24, t.accent, { weight: 'bold' });
     cv.text('SECURITY', x, y + 118, 15, t.faint, { weight: 'bold' });
-    cv.text((ap.security || 'WPA2') + (ap.channel ? '   ·   ch ' + ap.channel : ''), x + 230, y + 118, 18, t.text, {});
+    cv.text((ap.security || 'WPA2') + (ap.channel ? '   \u00b7   ch ' + ap.channel : ''), x + 230, y + 118, 18, t.text, {});
     cv.text('ADDRESS', x, y + 146, 15, t.faint, { weight: 'bold' });
-    cv.text(ap.address || '—', x + 230, y + 146, 18, t.text, {});
+    cv.text(ap.address || '\u2014', x + 230, y + 146, 18, t.text, {});
+  } else {
+    cv.text(b.busy ? 'Starting\u2026' : 'Off', x, y, 32, b.busy ? t.warn : t.dim, { weight: 'bold' });
+    var ry = wrapText(cv, t, 'Turn the bridge on to let a phone reach the car through this head unit.',
+      x, y + 36, pw - 48, 18, t.dim) + 10;
+    if (d.error) {
+      ry = wrapText(cv, t, 'Listening here was refused by the head unit (' + d.error + ').', x, ry, pw - 48, 17, t.warn) + 6;
+    }
+    if (b.error) {
+      ry = wrapText(cv, t, 'No helper installed either (' + b.error + ').', x, ry, pw - 48, 17, t.faint) + 6;
+    }
+    wrapText(cv, t, 'BeeM-Flash first tries to host the bridge itself \u2014 that needs no helper and no PC. ' +
+      'If this head unit forbids it, a small root helper is the fallback (see docs/BRIDGE.md).',
+      x, ry, pw - 48, 16, t.faint);
   }
 
   // right: the path the data takes, who is connected, and what was refused
   var vx = R.x + pw + 16, vw = R.x + R.w - vx;
   D.panel(cv, t, vx, R.y, vw, R.h, { title: 'CONNECTION' });
   var ex = vx + 20, ey = R.y + 64;
-  ey = wrapText(cv, t, 'Phone  →  Wi-Fi  →  head unit  →  diagnostic link  →  DME / EGS', ex, ey, vw - 40, 18, t.text) + 8;
-  ey = wrapText(cv, t, 'Only the engine and transmission controllers can be reached, reads only — writes stay behind the flash arming. Every request is checked on the car, not by the helper.', ex, ey, vw - 40, 16, t.faint) + 10;
+  ey = wrapText(cv, t, 'Phone  \u2192  Wi-Fi  \u2192  head unit  \u2192  diagnostic link  \u2192  DME / EGS', ex, ey, vw - 40, 18, t.text) + 8;
+  ey = wrapText(cv, t, 'Only the engine and transmission controllers can be reached, reads only \u2014 writes stay behind the flash arming. Every request is checked on the car.', ex, ey, vw - 40, 16, t.faint) + 10;
 
   cv.text('DEVICES', ex, ey + 6, 15, t.faint, { weight: 'bold' });
   var sl = b.stations || [];
-  if (!sl.length) cv.text(b.connected ? 'None connected.' : '—', ex + 110, ey + 6, 17, t.dim, {});
+  if (!sl.length) cv.text(mode === 'off' ? '\u2014' : 'None connected.', ex + 110, ey + 6, 17, t.dim, {});
   for (var i = 0; i < sl.length && i < 3; i++) {
     cv.text((sl[i].ip || sl[i].mac || '?'), ex + 110, ey + 6 + i * 22, 17, t.good, { weight: 'bold' });
   }
   var fy = R.y + R.h - 54;
-  cv.text('Relayed ' + (b.relayed || 0) + '   ·   refused ' + (b.refused || 0), ex, fy, 16, t.faint, {});
+  cv.text('Relayed ' + (b.relayed || 0) + '   \u00b7   refused ' + (b.refused || 0), ex, fy, 16, t.faint, {});
   if (b.lastRefusal) wrapText(cv, t, 'Last refusal: ' + b.lastRefusal, ex, fy + 20, vw - 40, 15, t.warn);
 
   if (b.msg) cv.text(b.msg, R.x + R.w, R.y - 8, 18, b.msgOk ? t.good : t.crit, { align: 'r', weight: 'bold' });
@@ -676,19 +701,25 @@ function info(cv, t, view, R) {
     cv.text('calibration ID…). Read-only; your DME may expose a subset. Configurable per vehicle.', R.x + 28, R.y + 140, 18, t.faint, {});
     return;
   }
+  // The identifier list grew (the SVK and the BMW software DIDs), so the row
+  // pitch adapts to however many the DME reports: at a fixed 29px the last row
+  // drew straight through the tune line at the bottom of the panel.
   var cols = 2, cw = (R.w - 40) / cols, perCol = Math.ceil(items.length / cols);
+  var gridTop = R.y + 56, gridBottom = R.y + R.h - 76;           // leaves the tune/image block clear
+  var pitch = Math.max(19, Math.min(29, Math.floor((gridBottom - gridTop) / Math.max(perCol, 1))));
+  var lf = pitch < 25 ? 13 : 15, vf = pitch < 25 ? 17 : 20;
   for (var i = 0; i < items.length; i++) {
     var col = Math.floor(i / perCol), row = i % perCol;
-    var x = R.x + 28 + col * cw, y = R.y + 56 + row * 29;
+    var x = R.x + 28 + col * cw, y = gridTop + row * pitch;
     var it = items[i];
-    cv.text(it.label.toUpperCase(), x, y, 15, t.faint, { weight: 'bold' });
+    cv.text(it.label.toUpperCase(), x, y, lf, t.faint, { weight: 'bold' });
     // On a refusal show WHY (the UDS negative-response name), not just "not
     // available": requestOutOfRange means the ECU has no such identifier, while
     // securityAccessDenied/serviceNotSupportedInActiveSession mean it does but
     // is withholding it - a completely different fix.
     var shown = it.ok ? it.value : (it.nrcName ? 'not available (' + it.nrcName + ')' : it.value);
-    cv.text(shown, x + 230, y, 20, it.ok ? t.text : t.faint, { weight: it.ok ? 'bold' : 'normal' });
-    cv.fillRect(x, y + 11, cw - 24, 1, t.line);
+    cv.text(shown, x + 230, y, vf, it.ok ? t.text : t.faint, { weight: it.ok ? 'bold' : 'normal' });
+    if (pitch >= 23) cv.fillRect(x, y + 11, cw - 24, 1, t.line);
   }
   // Tune / last-flash status line.
   var tn = f.tune, bv = f.binVerify;

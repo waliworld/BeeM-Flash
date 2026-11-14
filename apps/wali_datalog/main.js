@@ -19,6 +19,7 @@ var MapControl = require('./mapcontrol');
 var LiveAdjust = require('./liveadjust');
 var BridgeGate = require('./bridgegate');
 var BridgeLink = require('./bridgelink');
+var BridgeServer = require('./bridgeserver');
 var EnetGate = require('./enetgate');
 var doip = require('./doip');
 var vehiclelink = require('./vehiclelink');
@@ -163,7 +164,18 @@ App.prototype.start = function (ctx) {
     sendTo: function (ecu, bytes) { return self._bridgeSendTo(ecu, bytes); },
     log: (this.ctx.log && this.ctx.log.info) ? function (m) { self.ctx.log.info(m); } : null
   });
-  this.bstate = { busy: false, msg: '', ok: false };
+  // The DIRECT path: the app hosts the listener itself, so no root helper and
+  // no PC are needed. It can only listen on an address the unit already has
+  // (it cannot create a Wi-Fi network), and the sandbox may refuse outright -
+  // in which case we fall back to the helper and say exactly why.
+  this.bserver = new BridgeServer({
+    port: (bcfg.port || 13400),
+    gate: this.bgate,
+    ecuAllow: bcfg.ecuAllow,
+    sendTo: function (ecu, bytes) { return self._bridgeSendTo(ecu, bytes); },
+    log: (this.ctx.log && this.ctx.log.info) ? function (m) { self.ctx.log.info(m); } : null
+  });
+  this.bstate = { busy: false, msg: '', ok: false, mode: 'off' };
 
   // ---- ui state ---------------------------------------------------------
   this.tab = 'live';
@@ -607,7 +619,7 @@ App.prototype._actions = function () {
       var bon = self.bgate.status().enabled;
       return [
         { label: self.bstate.busy ? 'WORKING…' : (bon ? 'BRIDGE: ON' : 'BRIDGE: OFF'), active: bon, danger: !bon, disabled: self.bstate.busy, fn: function () { self._bridgeToggle(); } },
-        { label: 'DEVICES', disabled: !self.bridge.connected, fn: function () { self._bridgeRefresh(); } },
+        { label: 'DEVICES', disabled: !(self.bridge.connected || self.bserver.listening), fn: function () { self._bridgeRefresh(); } },
         { label: 'NEW PASSWORD', disabled: !self.bridge.connected || self.bstate.busy, fn: function () { self._bridgeNewPass(); } },
         { label: 'BACK', fn: function () { self.connectView = 'link'; } }
       ];
@@ -864,36 +876,90 @@ App.prototype._bridgeToggle = function () {
   var self = this;
   if (this.bstate.busy) return;
   var st = this.bgate.status();
-  if (st.enabled) {
+
+  if (st.enabled) {                       // ---- turn OFF ----
     this.bgate.disable();
-    this.bstate.busy = true; this.bstate.msg = 'Stopping the bridge…'; this.bstate.ok = true;
+    this.bstate.busy = true; this.bstate.msg = 'Stopping the bridge\u2026'; this.bstate.ok = true;
+    this.bserver.stop();
     Promise.resolve(this.bridge.connected ? this.bridge.apOff() : null).then(function () {
       self.bridge.close();
-      self.bstate.busy = false; self.bstate.msg = 'Bridge off.'; self.bstate.ok = true;
-    }, function (e) {
-      self.bridge.close();
-      self.bstate.busy = false; self.bstate.msg = 'Bridge off (' + ((e && e.message) || e) + ').'; self.bstate.ok = true;
+    }, function () { self.bridge.close(); }).then(function () {
+      self.bstate.busy = false; self.bstate.mode = 'off';
+      self.bstate.msg = 'Bridge off.'; self.bstate.ok = true;
     });
     return;
   }
+
+  // ---- turn ON ----
+  // Consent first: this is the moment the user authorises a device to reach
+  // the car. Nothing listens before the gate is armed.
   this.bgate.acknowledge();
   this.bgate.enable();
   this.bgate.arm(this._config().bridge && this._config().bridge.leaseMs);
-  this.bstate.busy = true; this.bstate.msg = 'Starting the bridge…'; this.bstate.ok = true;
-  this.bridge.connect().then(function (ok) {
+  this.bstate.busy = true; this.bstate.msg = 'Starting the bridge\u2026'; this.bstate.ok = true;
+
+  // 1) DIRECT: let the app host the listener. Prefer an address on the unit's
+  //    wireless interface so we are not listening on the car's own vlans.
+  var host = this._bridgeHost();
+  this.bserver.host = host;
+  this.bserver.start().then(function (r) {
+    if (r.ok) {
+      self.bstate.busy = false; self.bstate.mode = 'direct'; self.bstate.ok = true;
+      self.bstate.msg = 'Bridge on \u2014 connect to ' + r.host + ':' + r.port;
+      return;
+    }
+    // Binding on a specific address can fail where binding every address works.
+    if (host) {
+      self.bserver.host = null;
+      return self.bserver.start().then(function (r2) {
+        if (r2.ok) {
+          self.bstate.busy = false; self.bstate.mode = 'direct'; self.bstate.ok = true;
+          self.bstate.msg = 'Bridge on \u2014 connect to port ' + r2.port;
+          return;
+        }
+        return self._bridgeViaHelper(r2.error);
+      });
+    }
+    return self._bridgeViaHelper(r.error);
+  }).catch(function (e) {
+    return self._bridgeViaHelper((e && e.message) || String(e));
+  });
+};
+
+// The address to listen on: the unit's wireless interface if we can see one
+// (that is the network a phone joins), else let the runtime choose.
+App.prototype._bridgeHost = function () {
+  try {
+    var bd = require('./bridgediag');
+    var ifs = bd.netInfo() || [];
+    for (var i = 0; i < ifs.length; i++) {
+      var n = String(ifs[i].name || '');
+      if (/^wl|wlan/i.test(n) && ifs[i].address) return ifs[i].address;
+    }
+  } catch (e) { /* fall through */ }
+  return null;
+};
+
+// 2) HELPER: the sandbox refused to listen, so fall back to the root daemon.
+//    Say plainly which one is in play and why.
+App.prototype._bridgeViaHelper = function (why) {
+  var self = this;
+  this.bstate.msg = 'Listening here was refused (' + (why || 'unknown') + ') \u2014 trying the helper\u2026';
+  return this.bridge.connect().then(function (ok) {
     if (!ok) {
       self.bgate.disable();
-      self.bstate.busy = false; self.bstate.ok = false;
-      self.bstate.msg = 'No bridge daemon on this head unit (' + (self.bridge.lastError || 'not reachable') + '). See docs/BRIDGE.md.';
+      self.bstate.busy = false; self.bstate.ok = false; self.bstate.mode = 'off';
+      self.bstate.msg = 'Cannot host the bridge on this head unit: the app may not listen (' +
+        (why || '?') + ') and no helper is installed (' + (self.bridge.lastError || 'not reachable') + ').';
       return;
     }
     return self.bridge.apOn().then(function () {
-      self.bstate.busy = false; self.bstate.ok = true;
-      self.bstate.msg = 'Bridge on — join the Wi-Fi shown here.';
+      self.bstate.busy = false; self.bstate.mode = 'helper'; self.bstate.ok = true;
+      self.bstate.msg = 'Bridge on via the helper \u2014 join the Wi-Fi shown here.';
     });
-  }).catch(function (e) {
+  }, function (e) {
     self.bgate.disable();
-    self.bstate.busy = false; self.bstate.ok = false;
+    self.bstate.busy = false; self.bstate.ok = false; self.bstate.mode = 'off';
     self.bstate.msg = (e && e.message) || String(e);
   });
 };
@@ -911,6 +977,13 @@ App.prototype._bridgeNewPass = function () {
 
 App.prototype._bridgeRefresh = function () {
   var self = this;
+  if (this.bstate.mode === 'direct') {
+    this.bgate.renew(this._config().bridge && this._config().bridge.leaseMs);
+    var n = this.bserver.peers.length;
+    this.bstate.msg = n + ' device' + (n === 1 ? '' : 's') + ' connected.';
+    this.bstate.ok = true;
+    return;
+  }
   if (!this.bridge.connected) return;
   // Renew the lease while the user is watching the page: an unattended bridge
   // lapses on its own.
@@ -925,9 +998,28 @@ App.prototype._bridgeRefresh = function () {
 
 App.prototype._bridgeView = function () {
   var s = this.bridge.status();
+  var d = this.bserver.status();
   s.busy = this.bstate.busy; s.msg = this.bstate.msg; s.msgOk = this.bstate.ok;
   s.enabled = s.gate.enabled;
+  s.mode = this.bstate.mode;                 // 'off' | 'direct' | 'helper'
+  s.direct = d;
+  // In direct mode the counters and devices come from our own listener.
+  if (this.bstate.mode === 'direct') {
+    s.relayed = d.relayed; s.refused = d.refused; s.lastRefusal = d.lastRefusal;
+    s.stations = d.peers.map(function (p) { return { ip: p.ip, mac: p.mac }; });
+  }
+  s.hosts = this._bridgeHosts();
   return s;
+};
+
+// Every address a phone could try, for the on-screen instructions.
+App.prototype._bridgeHosts = function () {
+  try {
+    var bd = require('./bridgediag');
+    return (bd.netInfo() || []).filter(function (i) {
+      return i.address && i.address !== '127.0.0.1';
+    }).map(function (i) { return { name: i.name, address: i.address }; });
+  } catch (e) { return []; }
 };
 
 // While any live override is held, keep its diagnostic session alive (and
