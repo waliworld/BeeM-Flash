@@ -1180,6 +1180,7 @@ Promise.resolve()
   .then(passthroughTests)
   .then(discoveryTests)
   .then(tunePickerTests)
+  .then(pollingControlTests)
   .then(report)
   .catch(function (e) { console.error(e); process.exit(1); });
 
@@ -1971,5 +1972,49 @@ function tunePickerTests() {
   var r = flashrun.loadDescriptor(st, 'flash/stage2.json');
   ok(r.ok && r.descriptor.source === 'flash/stage2.json', 'tunes: a selected tune loads as the active descriptor');
   ok(r.descriptor.addressHex === '0xA0010000', 'tunes: the loaded descriptor carries its flash address');
+  return Promise.resolve();
+}
+
+// ---- live data start / stop (and auto-backoff for a connected tool) ----------
+function pollingControlTests() {
+  // A minimal stand-in App: _applyPolling / _togglePolling / _toolBusy only touch
+  // poller run state, so we test them against fake pollers with a timer flag.
+  var mainMod = require(A + 'main');
+  var App = mainMod.App || mainMod;
+  var app = Object.create(App.prototype);
+  function poller() {
+    return { supported: true, timer: 1, started: 0, stopped: 0,
+      start: function () { this.timer = 1; this.started++; },
+      stop: function () { this.timer = null; this.stopped++; } };
+  }
+  app.diag = poller(); app.monitor = poller(); app.obd = poller();
+  app.polling = true; app._pollingOn = true;
+  app.bserver = { listening: false, peers: [] };
+
+  // manual pause stops every poller
+  app._togglePolling();
+  ok(app.polling === false, 'polling: PAUSE DATA flips the intent to off');
+  ok(app.diag.timer === null && app.monitor.timer === null && app.obd.timer === null, 'polling: pausing stops all three pollers');
+  eq(app.diag.stopped, 1, 'polling: each poller is stopped once (idempotent)');
+
+  // calling apply again while paused does nothing
+  app._applyPolling();
+  eq(app.diag.stopped, 1, 'polling: no repeated stop while already paused');
+
+  // resume restarts them
+  app._togglePolling();
+  ok(app.polling === true && app.diag.timer === 1, 'polling: RESUME DATA restarts the pollers');
+  eq(app.diag.started, 1, 'polling: each poller started once on resume');
+
+  // a connected tool auto-pauses even though the user intent is still "on"
+  app.bserver = { listening: true, peers: [{ ip: '172.16.222.105' }] };
+  app._applyPolling();
+  ok(app.polling === true, 'polling: user intent stays ON while a tool is connected');
+  ok(app.diag.timer === null, 'polling: pollers back off automatically while a tool uses the bridge');
+
+  // tool disconnects -> pollers come back (intent still on)
+  app.bserver = { listening: true, peers: [] };
+  app._applyPolling();
+  ok(app.diag.timer === 1, 'polling: pollers resume once the tool disconnects');
   return Promise.resolve();
 }

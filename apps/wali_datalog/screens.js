@@ -115,9 +115,12 @@ function chrome(cv, t, view) {
   sx -= cv.textWidth(view.units === 'imperial' ? 'IMPERIAL' : 'METRIC', 16, 'bold') + 18;
   if (view.rec && view.rec.logging) { D.badge(cv, t, sx - 118, 6, 'REC ' + F.mmss(view.rec.durationMs), t.rec, '#fff'); sx -= 118 + 12; }
   // DEMO is neutral (grey), LIVE is the yellow accent, NO DATA is faint.
-  var slabel = view.demo ? 'DEMO' : (view.live ? 'LIVE' : 'NO DATA');
-  var scol = view.demo ? t.faint : (view.live ? t.accent : t.panel3);
-  var stc = view.demo ? t.text : (view.live ? t.ink : t.dim);
+  // PAUSED takes priority: the pollers are stopped, so values are frozen.
+  var slabel, scol, stc;
+  if (view.paused) { slabel = view.pausedByTool ? 'TOOL' : 'PAUSED'; scol = t.warn; stc = t.ink; }
+  else { slabel = view.demo ? 'DEMO' : (view.live ? 'LIVE' : 'NO DATA');
+    scol = view.demo ? t.faint : (view.live ? t.accent : t.panel3);
+    stc = view.demo ? t.text : (view.live ? t.ink : t.dim); }
   D.badge(cv, t, sx - (cv.textWidth(slabel, 18, 'bold') + 24), 6, slabel, scol, stc);
 
   // tab strip — the active tab is emphasised with a solid fill, a yellow underline,

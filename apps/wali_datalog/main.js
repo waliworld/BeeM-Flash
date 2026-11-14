@@ -195,6 +195,11 @@ App.prototype.start = function (ctx) {
   this.bdiag = { running: false, result: null, msg: '' };
   this.latest = { values: {}, demo: false, live: false };
   this.confirm = false;
+  // Live polling on/off. The three vehicle pollers (UDS diag, fast block, OBD)
+  // share one serialized diagnostic channel; pausing them frees that channel for
+  // other work (a flash, a bridged tool) and stops needless requests. this.polling
+  // is the user's intent; _pollingOn is what is actually running.
+  this.polling = true; this._pollingOn = true;
   // MAPS status is map-only (set by map apply / commit), kept separate from the
   // transient toast below so a log/connect message never shows up on the MAPS page.
   this._mapMsg = ''; this._mapOk = false; this._mapConfirmed = false;
@@ -404,6 +409,9 @@ App.prototype._applyEnetState = function () {
   if (this.obd.supported) trySafe(function () { self.obd.start(); });
 
   if (this.provider) { this.provider.diag = this.diag; this.provider.monitor = this.monitor; this.provider.obd = this.obd; }
+  // The pollers above were just (re)started; honour a manual pause / tool backoff.
+  this._pollingOn = true;
+  this._applyPolling();
 };
 
 // Prove the head-unit diagnostic link by reading the DME live (the transport that
@@ -565,7 +573,38 @@ App.prototype._errorCard = function (cv, msg) {
 };
 
 // One data tick: read provider, feed the logger, handle auto-start.
+// A tool actively connected to the bridge owns the diagnostic channel; the
+// pollers back off automatically so they do not contend for it.
+App.prototype._toolBusy = function () {
+  return !!(this.bserver && this.bserver.listening && this.bserver.peers && this.bserver.peers.length);
+};
+
+// Start or stop the live pollers to match the desired state (user intent minus
+// an active tool). Idempotent: it only touches a poller when its run state must
+// change, so it is safe to call every tick.
+App.prototype._applyPolling = function () {
+  var on = this.polling && !this._toolBusy();
+  if (on === this._pollingOn) return on;
+  this._pollingOn = on;
+  var ps = [this.diag, this.monitor, this.obd];
+  for (var i = 0; i < ps.length; i++) {
+    var p = ps[i];
+    if (!p) continue;
+    try {
+      if (on) { if (p.supported && !p.timer) p.start(); }
+      else { if (p.timer) p.stop(); }
+    } catch (e) { /* a poller must never break the toggle */ }
+  }
+  return on;
+};
+
+App.prototype._togglePolling = function () {
+  this.polling = !this.polling;
+  this._applyPolling();
+};
+
 App.prototype.tick = function (now) {
+  this._applyPolling();   // reconcile live polling (manual pause + auto-backoff for a tool)
   var sample = this.provider.read(now);
   this.latest = sample;
   try { this._liveKeepalive(); } catch (e) { /* keepalive must never break sampling */ }
@@ -595,8 +634,8 @@ App.prototype._actions = function () {
   if (s === 'live') return [
     { label: logging ? 'STOP' : 'RECORD', active: logging, fn: function () { self._toggleRecord(); } },
     { label: 'MARK', disabled: !logging, fn: function () { self.marker('mark'); } },
-    { label: 'STYLE', fn: function () { self._cycleSettingKey('style'); } },
-    { label: 'UNITS', fn: function () { self._cycleSettingKey('units'); } }
+    { label: this.polling ? 'PAUSE DATA' : 'RESUME DATA', active: !this.polling, sub: this.polling ? null : 'stopped', fn: function () { self._togglePolling(); } },
+    { label: 'STYLE', fn: function () { self._cycleSettingKey('style'); } }
   ];
   if (s === 'log') return [
     { label: logging ? 'STOP' : 'START', active: logging, fn: function () { self._toggleRecord(); } },
@@ -1544,7 +1583,7 @@ App.prototype.buildView = function () {
 
   return {
     units: this.getSetting('units'),
-    demo: this.latest.demo, live: this.latest.live,
+    demo: this.latest.demo, live: this.latest.live, paused: !this._pollingOn, pausedByTool: this.polling && this._toolBusy(),
     vals: this.latest.values,
     rec: rec,
     sessions: sessions, logSel: this.logSel, logConfirmDel: this.logConfirmDel,
