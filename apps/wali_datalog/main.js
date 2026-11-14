@@ -603,8 +603,20 @@ App.prototype._togglePolling = function () {
   this._applyPolling();
 };
 
+// While a tool is connected, its presence IS the heartbeat: keep the bridge
+// lease from lapsing so a long flash or log session is never cut off mid-stream
+// by the gate timing out. Renewed at most every ~10 s.
+App.prototype._bridgeLeaseKeepalive = function () {
+  if (!this._toolBusy || !this._toolBusy()) return;
+  var now = (typeof Date !== 'undefined' && Date.now) ? Date.now() : 0;
+  if (now && this._leaseKaAt && (now - this._leaseKaAt) < 10000) return;
+  this._leaseKaAt = now;
+  try { this.bgate.renew(this._config().bridge && this._config().bridge.leaseMs); } catch (e) { /* non-fatal */ }
+};
+
 App.prototype.tick = function (now) {
   this._applyPolling();   // reconcile live polling (manual pause + auto-backoff for a tool)
+  this._bridgeLeaseKeepalive();   // keep the bridge session alive while a tool is connected
   var sample = this.provider.read(now);
   this.latest = sample;
   try { this._liveKeepalive(); } catch (e) { /* keepalive must never break sampling */ }

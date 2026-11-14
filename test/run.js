@@ -1182,6 +1182,7 @@ Promise.resolve()
   .then(tunePickerTests)
   .then(pollingControlTests)
   .then(rebindTests)
+  .then(leaseKeepaliveTests)
   .then(report)
   .catch(function (e) { console.error(e); process.exit(1); });
 
@@ -2060,4 +2061,28 @@ function rebindTests() {
     srv.stop();
     ok(!srv.listening, 'rebind: stop() leaves nothing listening');
   });
+}
+
+// ---- the bridge lease is kept alive while a tool is connected ----------------
+// A read-only / gated relay must not drop a live session: as long as a tool is
+// connected, its presence renews the lease so the gate never lapses mid-flash.
+function leaseKeepaliveTests() {
+  var App = require(A + 'main').App;
+  var app = Object.create(App.prototype);
+  var renewed = 0;
+  app.bgate = { renew: function () { renewed++; return { ok: true }; } };
+  app._config = function () { return { bridge: { leaseMs: 1800000 } }; };
+  app.bserver = { listening: true, peers: [{ ip: '172.16.222.105' }] };
+
+  app._bridgeLeaseKeepalive();
+  ok(renewed === 1, 'lease: a connected tool renews the bridge lease (session never lapses)');
+  app._bridgeLeaseKeepalive();
+  ok(renewed === 1, 'lease: renewals are throttled (~10s), not every tick');
+
+  // no tool connected -> no renewal (the lease is allowed to lapse normally)
+  app._leaseKaAt = 0;
+  app.bserver.peers = [];
+  app._bridgeLeaseKeepalive();
+  ok(renewed === 1, 'lease: nothing is renewed when no tool is connected');
+  return Promise.resolve();
 }
