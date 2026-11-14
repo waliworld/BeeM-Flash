@@ -77,7 +77,20 @@ function run(opts) {
   opts = opts || {};
   return probeSockets(opts.socketPaths, opts.netMod).then(function (sockets) {
     return probeTasu(opts.send).then(function (tasu) {
-      return { net: netInfo(), sockets: sockets, tasu: tasu, at: (opts.now ? opts.now() : Date.now()) };
+      // P7: is the car's own diagnostic gateway reachable over IP from here?
+      // The head unit reports 160.48.x.x addresses - BMW's diagnostic Ethernet
+      // range - so it may already be on the network an ENET adapter bridges to.
+      // If the gateway answers, a tool's traffic could be proxied straight
+      // through with no protocol translation at all.
+      var hsfz;
+      try { hsfz = require('./hsfzprobe'); } catch (e) { hsfz = null; }
+      var gw = hsfz ? hsfz.run({ waitMs: (opts.hsfzWaitMs || 1200), hosts: opts.hsfzHosts })
+        .catch(function (e) { return { error: (e && e.message) || String(e) }; })
+        : Promise.resolve({ error: 'probe unavailable' });
+      return gw.then(function (gateway) {
+        return { net: netInfo(), sockets: sockets, tasu: tasu, gateway: gateway,
+          at: (opts.now ? opts.now() : Date.now()) };
+      });
     });
   });
 }

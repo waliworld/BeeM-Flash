@@ -1177,6 +1177,7 @@ Promise.resolve()
   .then(bridgeLinkTests)
   .then(candidateReadTests)
   .then(bridgeServerTests)
+  .then(hsfzProbeTests)
   .then(report)
   .catch(function (e) { console.error(e); process.exit(1); });
 
@@ -1766,4 +1767,46 @@ function bridgeServerTests() {
     srv.stop();
     ok(srv.listening === false, 'bridgeserver: stop() closes the listener');
   });
+}
+
+// ---- HSFZ / DoIP gateway probe (P7) ----------------------------------------
+// BMW's own diagnostics-over-IP: HSFZ on TCP 6801 / UDP 6811, DoIP on 13400.
+// The framing has to be exactly right or the gateway ignores us and we would
+// wrongly conclude it is unreachable.
+function hsfzProbeTests() {
+  var h = require(A + 'hsfzprobe');
+  var net = require('net');
+
+  eq(h.HSFZ_TCP, 6801, 'hsfz: diagnostic/flashing port');
+  eq(h.HSFZ_UDP, 6811, 'hsfz: vehicle identification port');
+  eq(h.DOIP, 13400, 'hsfz: ISO 13400 DoIP port');
+
+  // [4-byte payload length][2-byte control word][payload]
+  eq(h.hsfzFrame(0x0002, []).toString('hex'), '000000000002', 'hsfz: identification request frames as len=0 control=0002');
+  eq(h.hsfzFrame(0x0001, [0xF4, 0x12, 0x22, 0xF1, 0x90]).toString('hex'), '0000000500 01f41222f190'.replace(' ', ''),
+    'hsfz: a diagnostic message frames as len + control 0001 + src/dst + UDS');
+
+  var tg = h.ipCandidates();
+  ok(tg.some(function (x) { return x.ip === '255.255.255.255'; }), 'hsfz: the global broadcast address is always probed');
+
+  // reach(): a real listener is reported open, a closed port is not.
+  var srv = net.createServer(function (c) { c.end(); });
+  return new Promise(function (res) { srv.listen(0, '127.0.0.1', res); })
+    .then(function () {
+      return h.reach('127.0.0.1', srv.address().port, { timeoutMs: 400 });
+    })
+    .then(function (r) {
+      ok(r.ok === true, 'hsfz: reach() reports an open port as reachable');
+      srv.close();
+      return h.reach('127.0.0.1', 1, { timeoutMs: 400 });   // nothing listens on 1
+    })
+    .then(function (r) {
+      ok(r.ok === false && !!r.error, 'hsfz: reach() reports a closed port with the reason, not a false positive');
+      // the whole probe must resolve (never throw) even with no gateway present
+      return h.run({ waitMs: 200 });
+    })
+    .then(function (r) {
+      ok(r && r.identify, 'hsfz: run() resolves with an identify result even when nothing answers');
+      ok(Object.prototype.toString.call(r.reachable) === '[object Array]', 'hsfz: run() always reports a reachable list');
+    });
 }

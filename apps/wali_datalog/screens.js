@@ -631,7 +631,8 @@ function setupDiag(cv, t, view, R) {
     cv.text('NET  — the head unit\u2019s Wi-Fi/IP addresses (the address a phone would target)', R.x + 10, R.y + 66, 17, t.dim, {});
     cv.text('P1   — can the app reach a bridge daemon\u2019s local socket', R.x + 10, R.y + 92, 17, t.dim, {});
     cv.text('P6   — one live read from the car over the TASU link (does the DME answer us)', R.x + 10, R.y + 118, 17, t.dim, {});
-    cv.text('P3 (a phone reaching the head unit) needs the root daemon \u2014 see tools/bridge-probes.', R.x + 10, R.y + 158, 16, t.faint, {});
+    cv.text('P7   \u2014 can the app reach the car\u2019s own gateway over IP (HSFZ 6801 / DoIP 13400)', R.x + 10, R.y + 144, 17, t.dim, {});
+    cv.text('If P7 answers, a tool could be proxied straight to the gateway with no translation.', R.x + 10, R.y + 178, 16, t.faint, {});
     return;
   }
   var y = R.y + 18, L = R.x + 10;
@@ -665,6 +666,24 @@ function setupDiag(cv, t, view, R) {
   else if (tu.status === 'no-link') { tmsg = 'No diagnostic link in this build'; tcol = t.faint; }
   else { tmsg = 'Unexpected: ' + JSON.stringify(tu).slice(0, 60); tcol = t.dim; }
   cv.text(tmsg, L + 110, ty + 6, 17, tcol, { weight: 'bold' });
+  // P7 — the car's gateway over IP
+  var gwres = res.gateway || {};
+  var gy = R.y + R.h - 92;
+  cv.text('P7 GATEWAY', L, gy, 16, t.accent, { weight: 'bold' });
+  var ident = gwres.identify || {}, reach = gwres.reachable || [];
+  if (gwres.error) {
+    cv.text(gwres.error, L + 140, gy, 16, t.faint, {});
+  } else if (ident.replies && ident.replies.length) {
+    cv.text('answered by ' + ident.replies.map(function (r) { return r.from; }).join(', '), L + 140, gy, 16, t.good, { weight: 'bold' });
+    var okp = reach.filter(function (r) { return r.ok; });
+    cv.text(okp.length ? ('open: ' + okp.map(function (r) { return r.host + ':' + r.port; }).join('  ')) : 'no diagnostic port accepted a connection',
+      L + 140, gy + 22, 16, okp.length ? t.good : t.warn, {});
+  } else if (ident.error) {
+    cv.text('UDP refused by the sandbox (' + ident.error + ')', L + 140, gy, 16, t.warn, {});
+  } else {
+    cv.text('no gateway announced itself on ' + ((ident.asked || []).join(', ') || 'this network'), L + 140, gy, 16, t.faint, {});
+  }
+
   cv.text('P3 (phone \u2192 head unit) is not testable from the app \u2014 run tools/bridge-probes on the unit.', L, ty + 40, 15, t.faint, {});
 }
 
