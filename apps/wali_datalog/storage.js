@@ -30,6 +30,14 @@ function fsStorage(baseDir) {
     list: function () {
       try { return fs.readdirSync(baseDir); } catch (e) { return []; }
     },
+    // Names inside one sub-folder (e.g. 'flash'), returned as 'flash/<name>'.
+    // list() only sees the top level, so the Flash tab could never see the
+    // tunes an owner placed under flash/.
+    listDir: function (sub) {
+      try {
+        return fs.readdirSync(path.join(baseDir, sub)).map(function (n) { return sub.replace(/\/+$/, '') + '/' + n; });
+      } catch (e) { return []; }
+    },
     read: function (name) { return fs.readFileSync(path.join(baseDir, name), 'utf8'); },
     // Byte count without reading the file. The LOG list only needs a size label;
     // reading every CSV in full to measure it made each frame cost more the more
@@ -59,6 +67,10 @@ function memStorage() {
     close: function (h) { open[h.name] = false; },
     size: function (h) { return Buffer.byteLength(files[h.name] || ''); },
     list: function () { return Object.keys(files); },
+    listDir: function (sub) {
+      var pre = sub.replace(/\/+$/, '') + '/';
+      return Object.keys(files).filter(function (n) { return n.indexOf(pre) === 0 && n.indexOf('/', pre.length) < 0; });
+    },
     read: function (name) { return files[name] || ''; },
     remove: function (name) { delete files[name]; },
     export: function (name, destDir) {

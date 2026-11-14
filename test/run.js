@@ -1178,6 +1178,8 @@ Promise.resolve()
   .then(bridgeServerTests)
   .then(hsfzProbeTests)
   .then(passthroughTests)
+  .then(discoveryTests)
+  .then(tunePickerTests)
   .then(report)
   .catch(function (e) { console.error(e); process.exit(1); });
 
@@ -1901,4 +1903,73 @@ function passthroughTests() {
     var refused = false; try { L._check.call(norm, [0x34, 0x00], 0x40); } catch (e) { refused = true; }
     ok(refused, 'ordinary link: still refuses the same request');
   });
+}
+
+// ---- discovery responder: answer a tool's "where is the car?" broadcast ------
+function discoveryTests() {
+  var Discovery = require(A + 'discovery');
+  var dgram = require('dgram');
+
+  // frame builders are exact
+  var d = new Discovery({ vin: '5UX83DP04P9S09849', logicalAddress: 0x1000 });
+  var ann = d.doipAnnouncement();
+  eq(ann[0], 0x02, 'discovery: DoIP announcement has the protocol version');
+  eq(ann.readUInt16BE(2), 0x0004, 'discovery: DoIP payload type is 0x0004 (vehicle announcement)');
+  eq(ann.slice(8, 25).toString('ascii'), '5UX83DP04P9S09849', 'discovery: the announcement carries the VIN');
+  var hid = d.hsfzIdentification();
+  eq(hid.readUInt16BE(4), 0x0012, 'discovery: HSFZ identification control word');
+  ok(hid.slice(6).toString('ascii').indexOf('5UX83DP04P9S09849') >= 0, 'discovery: HSFZ identification carries the VIN');
+
+  ok(Discovery.isDoipIdent(Buffer.from([0x02, 0xFD, 0x00, 0x01, 0, 0, 0, 0])), 'discovery: recognises a DoIP identification request');
+  ok(!Discovery.isDoipIdent(Buffer.from([0x02, 0xFD, 0x80, 0x01, 0, 0, 0, 0])), 'discovery: ignores a non-identification DoIP message');
+
+  // live UDP round-trip on an ephemeral port (not the real 13400, so nothing clashes)
+  var resp = new Discovery({ vin: '5UX83DP04P9S09849', doipPort: 0, hsfzPort: 0 });
+  // bind to port 0 would be random per-socket; instead pick a fixed test port
+  var testPort = 13999;
+  resp.doipPort = testPort; resp.hsfzPort = testPort + 1;
+  return resp.start().then(function (up) {
+    ok(up.doip, 'discovery: the DoIP responder binds');
+    return new Promise(function (resolve) {
+      var c = dgram.createSocket('udp4');
+      var got = null;
+      c.on('message', function (msg) { got = msg; });
+      c.bind(function () {
+        var req = Buffer.from([0x02, 0xFD, 0x00, 0x01, 0, 0, 0, 0]);
+        c.send(req, 0, req.length, testPort, '127.0.0.1');
+        setTimeout(function () { try { c.close(); } catch (e) {} resolve(got); }, 120);
+      });
+    });
+  }).then(function (got) {
+    ok(got && got.readUInt16BE(2) === 0x0004, 'discovery: a broadcast identification request is answered with an announcement');
+    eq(resp.status().answered >= 1, true, 'discovery: the responder counts what it answered');
+    resp.stop();
+    ok(!resp.status().doip, 'discovery: stop() closes the responder');
+  });
+}
+
+// ---- flash tune picker: tunes placed under flash/ are listed and loadable ----
+function tunePickerTests() {
+  var flashrun = require(A + 'flashrun');
+  var storageMod = require(A + 'storage');
+  var st = storageMod.memStorage();
+  function put(name, obj) { var h = st.open(name); st.append(h, typeof obj === 'string' ? obj : JSON.stringify(obj)); st.close(h); }
+  put('flash/stage2.json', { name: 'Stage 2 (93)', address: '0xA0010000', dataHex: '00112233', ecu: 'MG1CS201' });
+  put('flash/nodata.json', { name: 'Broken', address: '0xA0010000' });   // no calibration bytes
+  put('flash/notjson.json', 'not json at all');
+  put('other.csv', 'x,y');                                               // not under flash/, ignored
+
+  var tunes = flashrun.listTunes(st);
+  eq(tunes.length, 3, 'tunes: lists every *.json under flash/, ignoring other files');
+  var good = tunes.filter(function (x) { return x.ok; });
+  eq(good.length, 1, 'tunes: only the complete descriptor is marked ok');
+  eq(good[0].label, 'Stage 2 (93)', 'tunes: uses the descriptor name as the label');
+  var bad = tunes.filter(function (x) { return !x.ok; });
+  ok(bad.some(function (x) { return /no calibration data/.test(x.why || ''); }), 'tunes: a descriptor with no data is flagged, not loaded');
+  ok(bad.some(function (x) { return /not valid JSON/.test(x.why || ''); }), 'tunes: an unparsable file is flagged, not loaded');
+
+  var r = flashrun.loadDescriptor(st, 'flash/stage2.json');
+  ok(r.ok && r.descriptor.source === 'flash/stage2.json', 'tunes: a selected tune loads as the active descriptor');
+  ok(r.descriptor.addressHex === '0xA0010000', 'tunes: the loaded descriptor carries its flash address');
+  return Promise.resolve();
 }

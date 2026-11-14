@@ -446,9 +446,17 @@ function connectBridge(cv, t, view, R) {
       }
       hy += 6;
     }
-    wrapText(cv, t, 'Your phone and the car must be on the SAME Wi-Fi \u2014 usually the car joined your phone\u2019s hotspot. ' +
+    hy = wrapText(cv, t, 'Your phone and the car must be on the SAME Wi-Fi \u2014 usually the car joined your phone\u2019s hotspot. ' +
       'The app does not make a network; use the address above that is on the network your phone is on.',
-      x, hy, pw - 48, 17, t.faint);
+      x, hy, pw - 48, 17, t.faint) + 10;
+    // discovery responder: lets a tool that broadcasts (does not type an address) find this unit
+    var dc = b.discovery || {};
+    if (dc.doip || dc.hsfz) {
+      cv.text('\u2713 answering tool discovery' + (dc.answered ? ' (' + dc.answered + ' replied)' : '') +
+        '  \u2014  DoIP 13400' + (dc.hsfz ? ' + HSFZ 6811' : ''), x, hy, 15, t.good, { weight: 'bold' });
+    } else if (dc.errors && (dc.errors.doip || dc.errors.hsfz)) {
+      cv.text('discovery not answering (' + (dc.errors.doip || dc.errors.hsfz) + ') \u2014 type the address above into your tool', x, hy, 15, t.faint, {});
+    }
   } else if (mode === 'helper' && b.connected) {
     cv.text(ap.up ? 'On \u2014 helper access point' : 'Helper ready', x, y, 30, ap.up ? t.good : t.warn, { weight: 'bold' });
     cv.text('NETWORK (SSID)', x, y + 44, 15, t.faint, { weight: 'bold' });
@@ -598,6 +606,20 @@ function flash(cv, t, view, R) {
     return;
   }
   if (!f.descriptor) {
+    var tunes = f.tunes || [];
+    if (tunes.length) {
+      cv.text('SELECT A TUNE', R.x + 24, py + 44, 22, t.text, { weight: 'bold' });
+      cv.text('tap one to load it', R.x + 230, py + 44, 15, t.faint, {});
+      var fg = flashTuneGeom(R, py, tunes.length);
+      for (var ti = 0; ti < tunes.length && ti < fg.max; ti++) {
+        var tu = tunes[ti], ry = fg.y0 + ti * fg.rh, selt = ti === (f.tuneSel || 0);
+        if (selt) { cv.roundRect(R.x + 20, ry - 22, fg.w, fg.rh - 6, 3, t.panel3); cv.fillRect(R.x + 20, ry - 22, 3, fg.rh - 6, t.accent); }
+        cv.text(tu.label, R.x + 34, ry, 19, tu.ok ? (selt ? t.accent : t.text) : t.faint, { weight: selt ? 'bold' : 'normal' });
+        cv.text(tu.ok ? (tu.ecu || 'ready') : ('\u2014 ' + (tu.why || 'invalid')), R.x + R.w - 240, ry, 16, tu.ok ? t.good : t.crit, {});
+      }
+      cv.text('Drop tunes in ' + (f.flashDir || 'flash/') + ', tap RELOAD to refresh. Then ENGINE ON confirms the pick.', R.x + 24, py + R.h - 70, 15, t.faint, {});
+      return;
+    }
     cv.text('NO CALIBRATION LOADED', R.x + 24, py + 50, 24, t.warn, { weight: 'bold' });
     if (f.status) cv.text(f.status, R.x + 24, py + 84, 18, t.crit, {});
     cv.text('RELOAD re-scans the app\u2019s data folder for a tune you placed there. To LOAD one:', R.x + 24, py + 114, 18, t.dim, {});
@@ -812,6 +834,10 @@ function info(cv, t, view, R) {
   }
 }
 
+function flashTuneGeom(R, py, n) {
+  return { y0: py + 84, rh: 34, w: R.w - 40, max: 5 };
+}
+
 function content(name) {
   return { live: live, log: log, channels: channels, maps: maps, engine: engine, connect: connect, codes: codes, info: info, flash: flash, setup: setup }[name] || live;
 }
@@ -820,7 +846,7 @@ module.exports = {
   W: W, H: H, CONTENT: CONTENT, BAR: BAR,
   tabRects: tabRects, barRects: barRects, scaleCv: scaleCv,
   chrome: chrome, content: content,
-  live: live, log: log, logGeom: logGeom, channels: channels, maps: maps, engine: engine, engineGeom: engineGeom, setupGeom: setupGeom, connect: connect, codes: codes, info: info, flash: flash, setup: setup,
+  live: live, log: log, logGeom: logGeom, flashTuneGeom: flashTuneGeom, channels: channels, maps: maps, engine: engine, engineGeom: engineGeom, setupGeom: setupGeom, connect: connect, codes: codes, info: info, flash: flash, setup: setup,
   cval: cval,
   byName: content
 };

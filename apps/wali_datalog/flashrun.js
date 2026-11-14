@@ -27,9 +27,39 @@ function readJson(storage, name) {
   try { var txt = storage && storage.read && storage.read(name); return txt ? JSON.parse(txt) : null; } catch (e) { return null; }
 }
 
-function loadDescriptor(storage) {
-  var desc = readJson(storage, 'flash/descriptor.json') || readJson(storage, 'flash.json');
-  if (!desc) return { ok: false, error: 'no descriptor', status: 'No flash/descriptor.json found in the app data dir.' };
+// The tunes an owner has placed on the unit: every *.json under flash/ that
+// parses and names a calibration (data / dataHex / binHex). This is how a tune
+// gets onto the head unit without a file picker - drop the files in, then pick
+// one on the Flash tab.
+function listTunes(storage) {
+  var names = [];
+  try { names = (storage && storage.listDir) ? storage.listDir('flash') : []; } catch (e) { names = []; }
+  var out = [];
+  for (var i = 0; i < names.length; i++) {
+    var n = names[i];
+    if (!/\.json$/i.test(n)) continue;
+    var d = readJson(storage, n);
+    if (!d) { out.push({ name: n, label: n.replace(/^flash\//, ''), ok: false, why: 'not valid JSON' }); continue; }
+    var hasData = (Array.isArray(d.data) && d.data.length) || !!d.dataHex || !!d.binHex;
+    out.push({
+      name: n,
+      label: d.name || d.label || n.replace(/^flash\//, '').replace(/\.json$/i, ''),
+      ok: !!hasData && d.address != null,
+      why: !hasData ? 'no calibration data' : (d.address == null ? 'no address' : null),
+      ecu: d.ecu || d.ecuType || null,
+      note: d.note || d.description || null
+    });
+  }
+  return out;
+}
+
+// loadDescriptor(storage, name?) - name defaults to flash/descriptor.json
+// (legacy flash.json) so existing setups keep working; the Flash tab passes the
+// tune the owner picked.
+function loadDescriptor(storage, name) {
+  var desc = name ? readJson(storage, name)
+    : (readJson(storage, 'flash/descriptor.json') || readJson(storage, 'flash.json'));
+  if (!desc) return { ok: false, error: 'no descriptor', status: name ? ('Could not read ' + name + '.') : 'No flash/descriptor.json found in the app data dir.' };
   var data = null;
   if (Array.isArray(desc.data) && desc.data.length) data = desc.data.slice();
   else if (desc.dataHex) data = parseHex(desc.dataHex);
@@ -64,7 +94,8 @@ function loadDescriptor(storage) {
     fingerprint: fp ? { kind: fp.kind, id: fp.id, match: fp.match, text: binverify.describe(fp) } : null,
     checksum: csInfo
   };
+  info.source = name || 'flash/descriptor.json';
   return { ok: true, descriptor: info, opts: o };
 }
 
-module.exports = { loadDescriptor: loadDescriptor, parseHex: parseHex };
+module.exports = { loadDescriptor: loadDescriptor, listTunes: listTunes, parseHex: parseHex };

@@ -20,6 +20,7 @@ var LiveAdjust = require('./liveadjust');
 var BridgeGate = require('./bridgegate');
 var BridgeLink = require('./bridgelink');
 var BridgeServer = require('./bridgeserver');
+var Discovery = require('./discovery');
 var EnetGate = require('./enetgate');
 var doip = require('./doip');
 var vehiclelink = require('./vehiclelink');
@@ -178,6 +179,12 @@ App.prototype.start = function (ctx) {
     log: (this.ctx.log && this.ctx.log.info) ? function (m) { self.ctx.log.info(m); } : null
   });
   this.bstate = { busy: false, msg: '', ok: false, mode: 'off', passConfirm: false };
+  // Answers a tool's vehicle-identification broadcast so an ENET-style tool can
+  // locate and reach the head unit. Runs alongside the bridge listener.
+  this.disc = new Discovery({
+    logicalAddress: 0x1000,
+    log: (this.ctx.log && this.ctx.log.info) ? function (m) { self.ctx.log.info(m); } : null
+  });
 
   // ---- ui state ---------------------------------------------------------
   this.tab = 'live';
@@ -197,7 +204,8 @@ App.prototype.start = function (ctx) {
   this.codes = { scope: 'all', scanning: false, result: null, msg: '', confirmClear: false, clearing: false, lastClear: null, tune: null };
   // Calibration-flash page state. The engine is OFF by default; nothing can be
   // written until the user turns it ON and then confirms a flash.
-  this.flash = { armed: false, descriptor: null, opts: null, status: '', confirm: false, running: false, progress: 0, step: '', result: null };
+  this.flash = { armed: false, descriptor: null, opts: null, status: '', confirm: false, running: false, progress: 0, step: '', result: null,
+    tunes: [], tuneSel: 0, tuneName: null };   // tunes placed under flash/ + which is selected
   // Read-only ECU identification / calibration info page. A successful read is a
   // prerequisite for flashing (you must see what's on the car first).
   this.info = { reading: false, items: null, tune: null, done: false, msg: '', binVerify: null };
@@ -896,6 +904,7 @@ App.prototype._bridgeToggle = function () {
     this.bstate.passConfirm = false;
     this.bstate.busy = true; this.bstate.msg = 'Stopping the bridge\u2026'; this.bstate.ok = true;
     this.bserver.stop();
+    trySafe(function () { self.disc.stop(); });
     Promise.resolve(this.bridge.connected ? this.bridge.apOff() : null).then(function () {
       self.bridge.close();
     }, function () { self.bridge.close(); }).then(function () {
@@ -922,6 +931,11 @@ App.prototype._bridgeToggle = function () {
   this.bserver.start().then(function (r) {
     if (r.ok) {
       self.bstate.mode = 'direct';
+      // Give the discovery responder the car's real VIN if we have read it, so a
+      // tool sees this vehicle, then start it answering identification broadcasts.
+      var vin = (self.info && self.info.items && self._readVin()) || null;
+      if (vin) self.disc.setVin(vin);
+      trySafe(function () { self.disc.start(); });
       // Prove the listener really answers before telling the user it is on.
       return self.bserver.selfTest().then(function (t) {
         self.bstate.busy = false; self.bstate.ok = !!t.ok;
@@ -1038,9 +1052,21 @@ App.prototype._bridgeRefresh = function () {
   });
 };
 
+// The VIN from the last INFO read, if any (used so a connected tool sees the
+// real vehicle rather than a placeholder).
+App.prototype._readVin = function () {
+  var items = this.info && this.info.items;
+  if (!items) return null;
+  for (var i = 0; i < items.length; i++) {
+    if (items[i].did === 0xF190 && items[i].ok && items[i].value) return String(items[i].value);
+  }
+  return null;
+};
+
 App.prototype._bridgeView = function () {
   var s = this.bridge.status();
   var d = this.bserver.status();
+  s.discovery = this.disc.status();
   s.busy = this.bstate.busy; s.msg = this.bstate.msg; s.msgOk = this.bstate.ok;
   s.enabled = s.gate.enabled;
   s.mode = this.bstate.mode;                 // 'off' | 'direct' | 'helper'
@@ -1404,10 +1430,30 @@ App.prototype._flashToggle = function () {
   if (this.flash.armed) this._flashReload();
   else { this.flash.descriptor = null; this.flash.opts = null; this.flash.status = ''; }
 };
+// Scan flash/ for tunes the owner placed there (no file picker on the head unit;
+// drop the files in, then pick one here).
+App.prototype._flashScanTunes = function () {
+  try { this.flash.tunes = flashrun.listTunes(this.storage); } catch (e) { this.flash.tunes = []; }
+  if (this.flash.tuneSel >= this.flash.tunes.length) this.flash.tuneSel = 0;
+  return this.flash.tunes;
+};
+
+// Load one specific tune by name (from the list) and make it the active descriptor.
+App.prototype._flashLoadTune = function (name) {
+  var r = flashrun.loadDescriptor(this.storage, name);
+  if (r.ok) { this.flash.descriptor = r.descriptor; this.flash.opts = r.opts; this.flash.tuneName = name; this.flash.status = ''; this.flash.result = null; }
+  else { this.flash.descriptor = null; this.flash.opts = null; this.flash.status = r.status || r.error || 'Could not load tune.'; }
+};
+
 App.prototype._flashReload = function () {
   if (!this.flash.armed) return;
-  var r = flashrun.loadDescriptor(this.storage);
-  if (r.ok) { this.flash.descriptor = r.descriptor; this.flash.opts = r.opts; this.flash.status = ''; this.flash.result = null; }
+  this._flashScanTunes();
+  // Prefer the tune the owner selected from the list; else the picked one; else
+  // the legacy default descriptor.
+  var picked = this.flash.tunes[this.flash.tuneSel];
+  var name = (picked && picked.ok) ? picked.name : this.flash.tuneName;
+  var r = flashrun.loadDescriptor(this.storage, name || undefined);
+  if (r.ok) { this.flash.descriptor = r.descriptor; this.flash.opts = r.opts; this.flash.tuneName = r.descriptor.source; this.flash.status = ''; this.flash.result = null; }
   else { this.flash.descriptor = null; this.flash.opts = null; this.flash.status = r.status || r.error || 'No calibration found.'; }
 };
 App.prototype._flashAction = function () {
@@ -1526,7 +1572,8 @@ App.prototype.buildView = function () {
       armed: this.flash.armed, running: this.flash.running, confirm: this.flash.confirm,
       progress: this.flash.progress, step: this.flash.step, status: this.flash.status,
       descriptor: this.flash.descriptor, result: this.flash.result,
-      blocked: !this.info.done, tune: this.info.tune
+      blocked: !this.info.done, tune: this.info.tune,
+      tunes: this.flash.tunes, tuneSel: this.flash.tuneSel, tuneName: this.flash.tuneName
     },
     info: { reading: this.info.reading, items: this.info.items, tune: this.info.tune, done: this.info.done, msg: this.info.msg, binVerify: this.info.binVerify },
     setup: this._setupItems(), setupSel: this.setupSel,
@@ -1696,7 +1743,21 @@ App.prototype._connectTap = function (x, y, R) {
 App.prototype._flashTap = function (x, y, R) {
   // the ON/OFF toggle lives top-right of the content header
   var tx = R.x + R.w - 150;
-  if (x >= tx && x <= tx + 126 && y >= R.y + 18 && y <= R.y + 56) this._flashToggle();
+  if (x >= tx && x <= tx + 126 && y >= R.y + 18 && y <= R.y + 56) { this._flashToggle(); return; }
+  // tapping a tune in the SELECT A TUNE list picks and loads it
+  var tunes = this.flash.tunes || [];
+  if (this.flash.armed && !this.flash.descriptor && tunes.length) {
+    var fg = screens.flashTuneGeom(R, R.y + 84, tunes.length);
+    for (var i = 0; i < tunes.length && i < fg.max; i++) {
+      var ry = fg.y0 + i * fg.rh;
+      if (y >= ry - 22 && y <= ry + fg.rh - 24) {
+        this.flash.tuneSel = i;
+        if (tunes[i].ok) this._flashLoadTune(tunes[i].name);
+        else this.flash.status = tunes[i].label + ': ' + (tunes[i].why || 'invalid');
+        return;
+      }
+    }
+  }
 };
 
 function hit(r, x, y) { return r && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h; }
@@ -1750,6 +1811,7 @@ App.prototype._show = function (name) {
   this.confirm = false;
   this.codes.confirmClear = false;
   this.flash.confirm = false;
+  if (name === 'flash') this._flashScanTunes();   // refresh the list of placed tunes
   this._relabel();
 };
 App.prototype._mediaDir = function () {
