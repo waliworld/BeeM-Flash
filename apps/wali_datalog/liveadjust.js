@@ -100,6 +100,34 @@ LiveAdjust.prototype.control = function (key) {
 LiveAdjust.prototype.setEnabled = function (on) { this.enabled = !!on; };
 LiveAdjust.prototype.setTuner = function (t) { this.tuner = t || 'off'; };
 
+// The "released" value for a control (handing the actuator back to the ECU).
+LiveAdjust.prototype.releaseValueFor = function (key) { return key === 'cooling' ? 'off' : 'auto'; };
+// A control is HELD when an override other than its release value is active.
+LiveAdjust.prototype.isHeld = function (key) {
+  var v = this.state[key];
+  return v != null && v !== this.releaseValueFor(key);
+};
+LiveAdjust.prototype.heldKeys = function () {
+  var out = [];
+  for (var k in this.state) if (this.state.hasOwnProperty(k) && this.isHeld(k)) out.push(k);
+  return out;
+};
+// Keepalive requests for every held override: a TesterPresent to keep the
+// diagnostic session alive, then a re-assert of each held IO control. Without
+// this the ECU drops a shortTermAdjustment after its session timer (~5 s) and
+// the actuator snaps back to the ECU's own strategy - which is why a flap
+// commanded OPEN did not hold (the DME re-closes it at idle) while CLOSED
+// appeared to (the DME also wants it closed at idle).
+LiveAdjust.prototype.keepAlive = function () {
+  var reqs = [uds.buildTesterPresent()];
+  var held = this.heldKeys();
+  for (var i = 0; i < held.length; i++) {
+    var b = this.build(held[i], this.state[held[i]]);
+    if (b) reqs.push(b);
+  }
+  return reqs;
+};
+
 // The request bytes for a control+value, or null if the pair is unknown.
 LiveAdjust.prototype.build = function (key, value) {
   if (key === 'flap') {

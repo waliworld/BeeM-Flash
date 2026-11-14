@@ -156,6 +156,39 @@ var STOCK = buildStockIndex(stockdb);
 //   opts.stockCalIds    : [ "…" ] extra stock IDs the owner knows (override)
 //   opts.stockDb        : a replacement stock DB (same shape as stockdb.js)
 //   opts.tuneSignatures : { SUBSTR: name } substrings that mark a known tune
+// The 8-hex bases (first 4 bytes) of every known-stock calibration id, built
+// from the stock index. A software unit whose base is in this set is the SWFL
+// (calibration) unit, not the bootloader/data unit.
+function stockBaseSet(opts) {
+  var idx = opts.stockDb ? buildStockIndex(opts.stockDb) : STOCK;
+  var bases = {};
+  if (idx && idx.byEcu) {
+    for (var et in idx.byEcu) if (idx.byEcu.hasOwnProperty(et)) {
+      for (var id in idx.byEcu[et]) if (idx.byEcu[et].hasOwnProperty(id)) bases[String(id).toUpperCase().slice(0, 8)] = true;
+    }
+  }
+  // owner-supplied stock ids count too
+  if (opts.stockCalIds) for (var i = 0; i < opts.stockCalIds.length; i++) bases[String(opts.stockCalIds[i]).toUpperCase().slice(0, 8)] = true;
+  return bases;
+}
+// Choose the calibration (SWFL) id from an SVK unit list.
+function pickSwfl(svkList, opts) {
+  if (!svkList || !svkList.length) return null;
+  var bases = stockBaseSet(opts || {});
+  // 1) a unit that is itself a known-stock id wins outright
+  for (var a = 0; a < svkList.length; a++) {
+    var full = norm(svkList[a]);
+    var idxF = opts.stockDb ? buildStockIndex(opts.stockDb) : STOCK;
+    if (idxF) for (var et in idxF.byEcu) if (idxF.byEcu.hasOwnProperty(et) && idxF.byEcu[et].hasOwnProperty(full)) return svkList[a];
+  }
+  // 2) else a unit whose 4-byte base matches a known calibration base
+  for (var b = 0; b < svkList.length; b++) {
+    if (bases[norm(svkList[b]).slice(0, 8)]) return svkList[b];
+  }
+  // 3) nothing recognised: leave the choice to the caller's fallback
+  return null;
+}
+
 function computeTune(items, opts) {
   opts = opts || {};
   function val(did) { for (var i = 0; i < items.length; i++) if (items[i].did === did && items[i].ok) return items[i].value; return null; }
@@ -164,8 +197,14 @@ function computeTune(items, opts) {
   // DIDs and the OBD service-09 cal id as best-effort fallbacks.
   var svk = val(0xF101);
   var svkList = svk ? String(svk).split(/\s+/).filter(Boolean) : [];
-  var calId = val(0xF17C) || val(0x0904) || svkList[0] || null;
-  var sw = val(0xF188) || val(0xF194) || val(0x0904) || svkList[0] || null;
+  // The SVK lists several software units (bootloader, data, swfl...). The one we
+  // want is the SWFL (the calibration): on MG1 it is the 00005D55.. / 00005C64..
+  // form the stock tables are keyed on. Pick the SVK entry whose 4-byte base
+  // matches a known base from the stock set, so we never display the bootloader
+  // header (e.g. 00001000000100) as the calibration id.
+  var swfl = pickSwfl(svkList, opts);
+  var calId = val(0xF17C) || val(0x0904) || swfl || svkList[0] || null;
+  var sw = val(0xF188) || val(0xF194) || val(0x0904) || swfl || svkList[0] || null;
   var hw = val(0xF191), prog = val(0xF199);
   var raw = [calId, sw, hw].concat(svkList).filter(Boolean).map(function (s) { return String(s).toUpperCase(); });
   var reported = raw.map(norm);           // canonical form for identifier matching

@@ -29,7 +29,10 @@ var READ_SERVICES = {
   // anything, and a protected region legitimately needs it to be READ. The services
   // that actually write stay behind the flash allow-list below.
   0x27: 'securityAccess',
-  0x10: 'diagnosticSessionControl'
+  0x10: 'diagnosticSessionControl',
+  // TesterPresent is a no-op keepalive (it changes nothing); allow it on any link
+  // so a held live-control override can keep its diagnostic session alive.
+  0x3E: 'testerPresent'
 };
 var FLASH_SERVICES = {
   0x34: 'requestDownload',

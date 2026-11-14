@@ -1426,9 +1426,17 @@ function liveAdjustTests() {
     ok(r.ok === false && r.confirmed === false, 'liveadjust: an NRC never reads as applied');
     ok(/does not implement/.test(r.message), 'liveadjust: an out-of-range NRC explains the tune lacks the control');
     ok(live.state.cooling === undefined, 'liveadjust: a refused control is not remembered');
+    // held-state + keepalive: an active override is 'held' and generates a
+    // TesterPresent + re-assert; releasing clears it.
+    ok(live.isHeld('flap') === true, 'liveadjust: a non-release override reads as held');
+    ok(live.heldKeys().indexOf('flap') >= 0, 'liveadjust: heldKeys lists the held control');
+    var ka = live.keepAlive();
+    ok(ka[0].join(',') === '62,0', 'liveadjust: keepAlive leads with TesterPresent (3E 00)');
+    ok(ka.length === 2 && ka[1].join(',') === '47,96,253,3,3,232', 'liveadjust: keepAlive re-asserts the held flap-open override');
     return live.releaseAll(okSend);
   }).then(function (r) {
     ok(r.ok === true && r.released === 1, 'liveadjust: releaseAll hands the held actuator back to the ECU');
+    ok(live.heldKeys().length === 0, 'liveadjust: nothing is held after release');
     ok(live.state.flap === undefined, 'liveadjust: released controls are forgotten');
   });
 }
@@ -1441,8 +1449,9 @@ function svkIdentTests() {
   var ecuinfo = require(A + 'ecuinfo');
 
   // SVK bytes carrying one SWFL unit id: 00 00 5D 55 28 96 06
-  var svkBody = [0x01, 0x00, 0x00, 0x00, 0x5D, 0x55, 0x28, 0x96, 0x06, 0x00];
-  eq(ecuinfo.decode('svk', svkBody), '00005D55289606', 'ecuinfo: the SVK decoder extracts the 7-byte software-unit id');
+  // a realistic SVK: a bootloader header (00001000000100) THEN the SWFL unit
+  var svkBody = [0x01, 0x00, 0x00, 0x10, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x5D, 0x55, 0x28, 0x96, 0x06, 0x00];
+  ok(ecuinfo.decode('svk', svkBody).indexOf('00005D55289606') >= 0, 'ecuinfo: the SVK decoder extracts the 7-byte software-unit id');
   ok(ecuinfo.decode('svk', [0x01, 0x02, 0x03]).length > 0, 'ecuinfo: an unparsable SVK falls back to hex rather than going blank');
 
   var wanted = {};
@@ -1465,7 +1474,7 @@ function svkIdentTests() {
   return ecuinfo.read(mg1Send, { obd9: false }).then(function (res) {
     function item(did) { for (var i = 0; i < res.items.length; i++) if (res.items[i].did === did) return res.items[i]; return null; }
     ok(item(0xF101) && item(0xF101).ok, 'ecuinfo: the SVK reads on an MG1-like DME');
-    eq(item(0xF101).value, '00005D55289606', 'ecuinfo: the reported software-unit id');
+    ok(item(0xF101).value.indexOf('00005D55289606') >= 0, 'ecuinfo: the reported software-unit id');
     var refused = item(0xF194);
     ok(refused && !refused.ok, 'ecuinfo: the supplier software number still refuses, as on the real car');
     eq(refused.nrcName, 'requestOutOfRange', 'ecuinfo: the refusal reason is surfaced so the UI can explain it');
@@ -1474,6 +1483,7 @@ function svkIdentTests() {
       return x.ok && (x.did === 0xF101 || x.did === 0xF188 || x.did === 0xF17C || x.did === 0xF194 || x.did === 0x0904);
     });
     ok(identified, 'ecuinfo: an MG1 that reports only its SVK still counts as identified');
-    ok(res.tune && String(res.tune.calId || '').indexOf('00005D55') === 0, 'ecuinfo: the tune matcher keys on the SVK id');
+    ok(res.tune && String(res.tune.calId || '') === '00005D55289606', 'ecuinfo: the tune matcher keys on the SWFL unit, not the bootloader');
+    ok(res.tune && res.tune.calId !== '00001000000100', 'ecuinfo: the SVK bootloader header is not mistaken for the calibration id');
   });
 }

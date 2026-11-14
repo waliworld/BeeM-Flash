@@ -528,6 +528,7 @@ App.prototype._errorCard = function (cv, msg) {
 App.prototype.tick = function (now) {
   var sample = this.provider.read(now);
   this.latest = sample;
+  try { this._liveKeepalive(); } catch (e) { /* keepalive must never break sampling */ }
   if (this.engine.state === LogEngine.STATE.LOGGING) {
     this.engine.sample(sample.values);
   } else if (this.getSetting('autostart') && sample.live && !sample.demo) {
@@ -752,6 +753,7 @@ App.prototype._engineView = function () {
         options: c.options,
         value: self._engineValue(c),
         sent: self.live.state[c.key] || null,
+        held: self.live.isHeld(c.key),
         confirmed: !!self.live.confirmed[c.key],
         locked: !!(c.tunerOnly && !tunerOn)
       };
@@ -808,6 +810,27 @@ App.prototype._engineApply = function () {
       self.eng.busy = false;
       self.eng.msg = (e && e.message) || String(e); self.eng.ok = false;
     });
+};
+
+// While any live override is held, keep its diagnostic session alive (and
+// re-assert the override) every ~2 s so the actuator does not snap back. Runs
+// off the sampler tick; skips itself while a previous keepalive is still in
+// flight so it never stacks requests on the busy TASU transport.
+App.prototype._liveKeepalive = function () {
+  if (!this.live || !this.live.enabled || this._liveBusy) return;
+  if (!this.live.heldKeys().length) return;
+  var now = (typeof Date !== 'undefined' && Date.now) ? Date.now() : 0;
+  if (now && this._liveKaAt && (now - this._liveKaAt) < 2000) return;
+  this._liveKaAt = now;
+  var gw = this._makeGateway({ liveControl: true });
+  if (!gw || !gw.send) return;
+  var self = this, reqs = this.live.keepAlive(), i = 0;
+  this._liveBusy = true;
+  function step() {
+    if (i >= reqs.length) { self._liveBusy = false; return; }
+    Promise.resolve(gw.send(reqs[i++])).then(step, function () { self._liveBusy = false; });
+  }
+  step();
 };
 
 // CANCEL while a confirm is pending; otherwise hand every override back to the ECU.

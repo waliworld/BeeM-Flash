@@ -364,7 +364,7 @@ function engine(cv, t, view, R) {
     var sub = c.locked ? 'Tuner required — set SETUP → "Tuner"' : c.note;
     cv.text(String(sub).slice(0, 64), R.x + 20, g.y + 50, 14, t.faint, {});
     // current state, right of the label block
-    if (c.confirmed && c.sent) cv.text('ACTIVE: ' + c.sent, R.x + R.w - 20, g.y + 28, 15, t.good, { align: 'r', weight: 'bold' });
+    if (c.confirmed && c.sent) cv.text((c.held ? 'HOLDING: ' : 'ACTIVE: ') + c.sent, R.x + R.w - 20, g.y + 28, 15, t.good, { align: 'r', weight: 'bold' });
     for (var k = 0; k < c.options.length && k < g.chips.length; k++) {
       var o = c.options[k], ch = g.chips[k], on = o.value === c.value;
       cv.roundRect(ch.x, ch.y, ch.w, ch.h, 3, on && !c.locked ? t.accent : t.line);
