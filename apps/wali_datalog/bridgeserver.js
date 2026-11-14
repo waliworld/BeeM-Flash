@@ -35,6 +35,8 @@ function BridgeServer(opts) {
   this.sendTo = opts.sendTo || null;
   this.logFn = opts.log || null;
   this.logicalAddress = opts.logicalAddress || 0x1000;
+  this.rawEcu = opts.rawEcu || 0x12;      // raw sockets carry no address: default to the DME
+  this.mode = null;                       // what the connected tool turned out to speak
 
   this.server = null;
   this.listening = false;
@@ -109,6 +111,7 @@ BridgeServer.prototype.stop = function () {
 BridgeServer.prototype.status = function () {
   return {
     listening: this.listening,
+    mode: this.mode,
     host: this.boundHost,
     port: this.port,
     error: this.lastError,
@@ -125,25 +128,66 @@ BridgeServer.prototype._onTool = function (c) {
   var self = this;
   var peer = { ip: c.remoteAddress || '?', mac: null };
   this.peers.push(peer);
-  this._log('tool connected from ' + peer.ip);
+  var mode = null;                    // 'doip' | 'raw' — decided from the first bytes
   var buf = Buffer.alloc(0);
+  this._log('tool connected from ' + peer.ip);
 
   c.on('data', function (d) {
     buf = Buffer.concat([buf, d]);
-    while (buf.length >= 8) {
-      var type = buf.readUInt16BE(2), len = buf.readUInt32BE(4);
-      if (len > MAX_FRAME) { try { c.destroy(); } catch (e) {} return; }
-      if (buf.length < 8 + len) break;
-      var payload = buf.slice(8, 8 + len);
-      buf = buf.slice(8 + len);
-      self._onFrame(c, peer, type, payload);
+
+    // Decide once, from what the tool actually sent. A DoIP header starts with
+    // the protocol version followed by its bitwise inverse (02/FD, or 01/FE on
+    // older tools). Anything else is treated as a RAW socket: the convention
+    // used by Wi-Fi-to-serial bridge modules, where the bytes you write are the
+    // request and nothing frames them. Supporting both means one port serves
+    // either kind of tool and nobody has to guess a setting.
+    if (mode === null) {
+      if (buf.length < 2) return;
+      var v = buf[0], iv = buf[1];
+      mode = ((v === 0x02 && iv === 0xFD) || (v === 0x01 && iv === 0xFE)) ? 'doip' : 'raw';
+      self.mode = mode;
+      self._log('tool speaks ' + mode.toUpperCase());
     }
+
+    if (mode === 'doip') {
+      while (buf.length >= 8) {
+        var type = buf.readUInt16BE(2), len = buf.readUInt32BE(4);
+        if (len > MAX_FRAME) { try { c.destroy(); } catch (e) {} return; }
+        if (buf.length < 8 + len) break;
+        var payload = buf.slice(8, 8 + len);
+        buf = buf.slice(8 + len);
+        self._onFrame(c, peer, type, payload);
+      }
+      return;
+    }
+
+    // RAW: treat what arrived as one complete UDS request, the way a serial
+    // bridge does. There is no addressing in a raw stream, so it goes to the
+    // configured default ECU (the engine controller) and the answer is written
+    // back unframed.
+    var req = Array.prototype.slice.call(buf);
+    buf = Buffer.alloc(0);
+    if (!req.length) return;
+    self._relayRaw(c, peer, req);
   });
+
   function gone() {
     for (var i = 0; i < self.peers.length; i++) if (self.peers[i] === peer) { self.peers.splice(i, 1); break; }
   }
   c.on('error', gone);
   c.on('close', gone);
+};
+
+// One raw (unframed) UDS request. Judged by exactly the same engine as DoIP:
+// a raw socket is a different envelope, never a way around the policy.
+BridgeServer.prototype._relayRaw = function (c, peer, req) {
+  var self = this;
+  relayengine.handle({ target: this.rawEcu, uds: req, peer: peer }, {
+    gate: this.gate, ecuAllow: this.ecuAllow, sendTo: this.sendTo, stats: this.stats
+  }).then(function (r) {
+    if (!r.bytes || !r.bytes.length) return;
+    try { c.write(Buffer.from(r.bytes)); } catch (e) {}
+  }).catch(function (e) { self._log('raw relay error: ' + ((e && e.message) || e)); });
 };
 
 function frame(type, payload) {

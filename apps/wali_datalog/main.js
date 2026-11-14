@@ -53,7 +53,7 @@ var TABS = [
 ];
 var SCREEN_ORDER = ['live', 'log', 'channels', 'maps', 'connect', 'codes', 'info', 'flash', 'setup'];
 var DEFAULTS = { demo: 'auto', source: 'auto', platform: 'B58', rate: 10, units: 'metric', style: 'tiles', maxtiles: 8, autostart: false, mapcontrol: 'off',
-  engineconfig: 'off', tuner: 'off', layout: 'full', renderer: 'auto' };
+  engineconfig: 'off', tuner: 'off', layout: 'full', renderer: 'auto', bridgeport: 13400 };
 // 'knock' is deliberately NOT a default tile: knock retard has no standard DID on
 // the MG1 DME, so it can only ever read '--' out of the box (it stays available in
 // CHANNELS for anyone who supplies a pidmap). 'load' is shown instead - it is in the
@@ -75,7 +75,8 @@ var SETTINGS_SCHEMA = [
   { key: 'renderer', label: 'Renderer', hint: 'GPU 60 fps / software', options: ['auto', 'software'] },
   { key: 'mapcontrol', label: 'Map control', hint: 'writes to the DME', options: ['off', 'armed'], danger: true },
   { key: 'engineconfig', label: 'Engine config', hint: 'live engine controls (writes)', options: ['off', 'armed'], danger: true },
-  { key: 'tuner', label: 'Tuner', hint: 'enables live map + max cooling', options: ['off', 'mhd'] }
+  { key: 'tuner', label: 'Tuner', hint: 'enables live map + max cooling', options: ['off', 'mhd'] },
+  { key: 'bridgeport', label: 'Bridge port', hint: 'DoIP 13400 / raw socket', options: [13400, 6801, 8899, 35000] }
 ];
 
 function App() {}
@@ -902,6 +903,7 @@ App.prototype._bridgeToggle = function () {
   //    wireless interface so we are not listening on the car's own vlans.
   var host = this._bridgeHost();
   this.bserver.host = host;
+  this.bserver.port = Number(this.getSetting('bridgeport')) || 13400;
   this.bserver.start().then(function (r) {
     if (r.ok) {
       self.bstate.mode = 'direct';

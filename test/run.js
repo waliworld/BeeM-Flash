@@ -1745,6 +1745,24 @@ function bridgeServerTests() {
     var resp = frames.filter(function (f) { return f.type === 0x8001; })[0];
     ok(resp && resp.payload[4] === 0x7F, 'bridgeserver: that tool gets a refusal');
     ok(srv.status().refused >= 2, 'bridgeserver: refusals are counted for the on-screen audit');
+
+    // RAW socket mode: a Wi-Fi-to-serial style tool writes bare UDS bytes with
+    // no DoIP framing. The same policy engine must judge it.
+    carCalls.length = 0;
+    return new Promise(function (resolve) {
+      var c = net.connect(srv.port, '127.0.0.1');
+      var got = Buffer.alloc(0);
+      c.on('connect', function () { c.write(Buffer.from([0x22, 0xF1, 0x90])); });
+      c.on('data', function (d) { got = Buffer.concat([got, d]); });
+      c.on('error', function () { resolve(Buffer.alloc(0)); });
+      setTimeout(function () { try { c.destroy(); } catch (e) {} resolve(got); }, 150);
+    }).then(function (got) {
+      eq(srv.mode, 'raw', 'bridgeserver: a non-DoIP tool is detected as a raw socket');
+      eq(carCalls.length, 1, 'bridgeserver: a raw request reaches the car');
+      eq(carCalls[0].ecu, 0x12, 'bridgeserver: raw requests go to the default ECU');
+      ok(got.length >= 1 && got[0] === 0x62, 'bridgeserver: the raw answer comes back unframed');
+    });
+  }).then(function () {
     srv.stop();
     ok(srv.listening === false, 'bridgeserver: stop() closes the listener');
   });
