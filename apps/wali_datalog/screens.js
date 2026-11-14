@@ -632,6 +632,7 @@ function setupDiag(cv, t, view, R) {
     cv.text('P1   — can the app reach a bridge daemon\u2019s local socket', R.x + 10, R.y + 92, 17, t.dim, {});
     cv.text('P6   — one live read from the car over the TASU link (does the DME answer us)', R.x + 10, R.y + 118, 17, t.dim, {});
     cv.text('P7   \u2014 can the app reach the car\u2019s own gateway over IP (HSFZ 6801 / DoIP 13400)', R.x + 10, R.y + 144, 17, t.dim, {});
+    cv.text('P8   \u2014 what this app process runs as, and whether it may bind ports below 1024', R.x + 10, R.y + 170, 17, t.dim, {});
     cv.text('If P7 answers, a tool could be proxied straight to the gateway with no translation.', R.x + 10, R.y + 178, 16, t.faint, {});
     return;
   }
@@ -666,6 +667,15 @@ function setupDiag(cv, t, view, R) {
   else if (tu.status === 'no-link') { tmsg = 'No diagnostic link in this build'; tcol = t.faint; }
   else { tmsg = 'Unexpected: ' + JSON.stringify(tu).slice(0, 60); tcol = t.dim; }
   cv.text(tmsg, L + 110, ty + 6, 17, tcol, { weight: 'bold' });
+  // P8 — what this app process is actually allowed to do
+  var pv = res.priv || {}, pb = res.privBind || {};
+  var py = R.y + R.h - 136;
+  cv.text('P8 PRIVILEGE', L, py, 16, t.accent, { weight: 'bold' });
+  var who = (pv.uid == null) ? 'unknown' : ('uid ' + pv.uid + '  gid ' + pv.gid + (pv.euid != null && pv.euid !== pv.uid ? '  euid ' + pv.euid : ''));
+  cv.text(who + (pv.root ? '   \u2014 ROOT' : '   \u2014 not root'), L + 140, py, 16, pv.root ? t.good : t.text, { weight: 'bold' });
+  cv.text(pb.ok ? 'can bind privileged ports (<1024)' : ('cannot bind <1024: ' + (pb.error || '?')),
+    L + 140, py + 22, 16, pb.ok ? t.good : t.faint, {});
+
   // P7 — the car's gateway over IP
   var gwres = res.gateway || {};
   var gy = R.y + R.h - 92;

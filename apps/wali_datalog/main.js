@@ -76,7 +76,7 @@ var SETTINGS_SCHEMA = [
   { key: 'mapcontrol', label: 'Map control', hint: 'writes to the DME', options: ['off', 'armed'], danger: true },
   { key: 'engineconfig', label: 'Engine config', hint: 'live engine controls (writes)', options: ['off', 'armed'], danger: true },
   { key: 'tuner', label: 'Tuner', hint: 'enables live map + max cooling', options: ['off', 'mhd'] },
-  { key: 'bridgeport', label: 'Bridge port', hint: 'DoIP 13400 / raw socket', options: [13400, 6801, 8899, 35000] }
+  { key: 'bridgeport', label: 'Bridge port', hint: 'DoIP 13400 / HSFZ 6801 / raw', options: [13400, 6801, 8899, 35000, 23] }
 ];
 
 function App() {}

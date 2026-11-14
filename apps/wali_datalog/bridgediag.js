@@ -88,11 +88,58 @@ function run(opts) {
         .catch(function (e) { return { error: (e && e.message) || String(e) }; })
         : Promise.resolve({ error: 'probe unavailable' });
       return gw.then(function (gateway) {
-        return { net: netInfo(), sockets: sockets, tasu: tasu, gateway: gateway,
-          at: (opts.now ? opts.now() : Date.now()) };
+        return probePrivilegedBind(opts).then(function (pb) {
+          return { net: netInfo(), sockets: sockets, tasu: tasu, gateway: gateway,
+            priv: privInfo(), privBind: pb, at: (opts.now ? opts.now() : Date.now()) };
+        });
       });
     });
   });
 }
 
-module.exports = { run: run, netInfo: netInfo, probeSockets: probeSockets, probeSocket: probeSocket, probeTasu: probeTasu, CANDIDATE_SOCKETS: CANDIDATE_SOCKETS };
+// P8 - what privileges does this app process actually have?
+//
+// A rooted head unit is NOT the same thing as an app running as root: the
+// platform's service manager normally starts apps under a constrained account.
+// The difference decides what is even possible here, so ask the OS rather than
+// assume either way. Running as root would unlock binding privileged ports
+// (<1024) and, far more importantly, bringing up a Wi-Fi access point from
+// inside the app instead of needing a separate helper.
+function privInfo() {
+  var out = { uid: null, gid: null, euid: null, root: false, note: null };
+  try {
+    if (process.getuid) out.uid = process.getuid();
+    if (process.getgid) out.gid = process.getgid();
+    if (process.geteuid) out.euid = process.geteuid();
+    out.root = (out.euid === 0) || (out.uid === 0);
+  } catch (e) { out.note = (e && e.message) || String(e); }
+  return out;
+}
+
+// Can we actually bind a privileged port? Capability can be granted without
+// full root (CAP_NET_BIND_SERVICE), so test it instead of inferring from uid.
+// Uses 1023, which is privileged but not a service anyone runs, so nothing is
+// disturbed; the listener is closed immediately.
+function probePrivilegedBind(opts) {
+  opts = opts || {};
+  var net;
+  try { net = opts.netMod || require('net'); } catch (e) {
+    return Promise.resolve({ ok: false, port: 1023, error: 'no TCP support' });
+  }
+  var port = opts.port || 1023;
+  return new Promise(function (resolve) {
+    var srv, done = false;
+    function finish(err) {
+      if (done) return; done = true;
+      try { srv && srv.close(); } catch (e) {}
+      resolve({ ok: !err, port: port, error: err || null });
+    }
+    try { srv = net.createServer(function () {}); } catch (e) { return finish((e && (e.code || e.message)) || String(e)); }
+    srv.on('error', function (e) { finish((e && e.code) ? e.code : ((e && e.message) || String(e))); });
+    try { srv.listen(port, '127.0.0.1', function () { finish(null); }); }
+    catch (e) { finish((e && (e.code || e.message)) || String(e)); }
+    setTimeout(function () { finish('timeout'); }, 800);
+  });
+}
+
+module.exports = { run: run, netInfo: netInfo, privInfo: privInfo, probePrivilegedBind: probePrivilegedBind, probeSockets: probeSockets, probeSocket: probeSocket, probeTasu: probeTasu, CANDIDATE_SOCKETS: CANDIDATE_SOCKETS };

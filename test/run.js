@@ -1786,6 +1786,12 @@ function hsfzProbeTests() {
   eq(h.hsfzFrame(0x0001, [0xF4, 0x12, 0x22, 0xF1, 0x90]).toString('hex'), '0000000500 01f41222f190'.replace(' ', ''),
     'hsfz: a diagnostic message frames as len + control 0001 + src/dst + UDS');
 
+  // P8: the privilege probe must report facts, never guess.
+  var bd = require(A + 'bridgediag');
+  var pv = bd.privInfo();
+  ok(pv && (pv.uid === null || typeof pv.uid === 'number'), 'privprobe: reports a uid or admits it cannot tell');
+  ok(typeof pv.root === 'boolean', 'privprobe: root is a definite yes/no');
+
   var tg = h.ipCandidates();
   ok(tg.some(function (x) { return x.ip === '255.255.255.255'; }), 'hsfz: the global broadcast address is always probed');
 
@@ -1808,5 +1814,11 @@ function hsfzProbeTests() {
     .then(function (r) {
       ok(r && r.identify, 'hsfz: run() resolves with an identify result even when nothing answers');
       ok(Object.prototype.toString.call(r.reachable) === '[object Array]', 'hsfz: run() always reports a reachable list');
+      return bd.probePrivilegedBind({});
+    })
+    .then(function (r) {
+      ok(typeof r.ok === 'boolean', 'privprobe: the privileged-bind test answers yes or no');
+      ok(r.ok || !!r.error, 'privprobe: a refusal carries the reason (so EACCES is distinguishable from a crash)');
+      eq(r.port, 1023, 'privprobe: tests a privileged port nobody serves, disturbing nothing');
     });
 }
