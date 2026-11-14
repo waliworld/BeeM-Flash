@@ -1172,6 +1172,7 @@ Promise.resolve()
   .then(bridgeDiagTests)
   .then(liveAdjustTests)
   .then(svkIdentTests)
+  .then(bridgeLinkTests)
   .then(report)
   .catch(function (e) { console.error(e); process.exit(1); });
 
@@ -1486,4 +1487,115 @@ function svkIdentTests() {
     ok(res.tune && String(res.tune.calId || '') === '00005D55289606', 'ecuinfo: the tune matcher keys on the SWFL unit, not the bootloader');
     ok(res.tune && res.tune.calId !== '00001000000100', 'ecuinfo: the SVK bootloader header is not mistaken for the calibration id');
   });
+}
+
+// ---- wireless bridge: end-to-end over a real UNIX socket --------------------
+// Stands up a socket like the root daemon's, attaches BridgeLink to it, and
+// checks that the APP (not the daemon) decides what reaches the car.
+function bridgeLinkTests() {
+  var net = require('net'), os = require('os'), pathMod = require('path'), fsMod = require('fs');
+  var BridgeLink = require(A + 'bridgelink');
+  var BridgeGate = require(A + 'bridgegate');
+
+  var sockPath = pathMod.join(os.tmpdir(), 'beem-test-' + process.pid + '.sock');
+  try { fsMod.unlinkSync(sockPath); } catch (e) {}
+
+  var daemonSide = null, lines = [];
+  var srv = net.createServer(function (c) {
+    daemonSide = c;
+    var buf = '';
+    c.on('data', function (d) {
+      buf += String(d);
+      var i;
+      while ((i = buf.indexOf('\n')) >= 0) {
+        var ln = buf.slice(0, i); buf = buf.slice(i + 1);
+        if (!ln) continue;
+        var m = JSON.parse(ln);
+        lines.push(m);
+        // answer control requests the way the daemon would
+        if (m.cmd === 'status') {
+          c.write(JSON.stringify({ id: m.id, ok: true, t: 'state',
+            ap: { up: true, ssid: 'BeeM-Flash', pass: 'cedar-1234-onyx', security: 'WPA2', channel: 6, address: '192.168.44.1' },
+            stations: [{ mac: 'aa:bb:cc:dd:ee:ff', ip: '192.168.44.50' }] }) + '\n');
+        }
+      }
+    });
+  });
+
+  var carCalls = [];
+  var gate = new BridgeGate({ storage: null });
+  var link = new BridgeLink({
+    socket: sockPath,
+    gate: gate,
+    sendTo: function (ecu, bytes) {
+      carCalls.push({ ecu: ecu, bytes: bytes });
+      return Promise.resolve([0x62, 0xF1, 0x90, 0x41]);     // a positive DID answer
+    }
+  });
+
+  function daemonSays(obj) { daemonSide.write(JSON.stringify(obj) + '\n'); }
+  function nextReply() {
+    // wait for the next uds-reply the app writes back
+    return new Promise(function (resolve) {
+      var start = lines.length, tries = 0;
+      var iv = setInterval(function () {
+        for (var i = start; i < lines.length; i++) if (lines[i].t === 'uds-reply') { clearInterval(iv); return resolve(lines[i]); }
+        if (++tries > 100) { clearInterval(iv); resolve(null); }
+      }, 5);
+    });
+  }
+
+  return new Promise(function (resolve) { srv.listen(sockPath, resolve); })
+    .then(function () { return link.connect(); })
+    .then(function () {
+      ok(link.connected === true, 'bridgelink: attaches to the daemon socket');
+      return link.refresh();
+    })
+    .then(function () {
+      eq(link.ap.ssid, 'BeeM-Flash', 'bridgelink: reads the network name from the daemon');
+      eq(link.ap.pass, 'cedar-1234-onyx', 'bridgelink: reads the Wi-Fi password to show on the car screen');
+      eq(link.stations.length, 1, 'bridgelink: reports the connected device');
+
+      // 1) NOT armed: a perfectly ordinary read must still be refused
+      daemonSays({ t: 'uds', id: 'r1', ecu: 0x12, data: [0x22, 0xF1, 0x90] });
+      return nextReply();
+    })
+    .then(function (r) {
+      ok(r && r.data && r.data[0] === 0x7F, 'bridge: a request is refused while the bridge is not armed');
+      eq(carCalls.length, 0, 'bridge: nothing reached the car while disarmed');
+
+      // 2) armed: an allow-listed read relays through to the car
+      gate.acknowledge(); gate.enable(); gate.arm(60000);
+      daemonSays({ t: 'uds', id: 'r2', ecu: 0x12, data: [0x22, 0xF1, 0x90] });
+      return nextReply();
+    })
+    .then(function (r) {
+      eq(carCalls.length, 1, 'bridge: an armed, allow-listed read reaches the car');
+      eq(carCalls[0].ecu, 0x12, 'bridge: relayed to the engine controller');
+      ok(r && r.data && r.data[0] === 0x62, 'bridge: the car answer is handed back to the tool');
+
+      // 3) an ECU outside the allow-list is refused even while armed
+      daemonSays({ t: 'uds', id: 'r3', ecu: 0x40, data: [0x22, 0xF1, 0x90] });
+      return nextReply();
+    })
+    .then(function (r) {
+      ok(r && r.data && r.data[0] === 0x7F, 'bridge: an ECU outside the allow-list is refused');
+      eq(carCalls.length, 1, 'bridge: the refused ECU never reached the car');
+
+      // 4) a write is refused while only the read tier is armed
+      daemonSays({ t: 'uds', id: 'r4', ecu: 0x12, data: [0x2E, 0xF1, 0x90, 0x01] });
+      return nextReply();
+    })
+    .then(function (r) {
+      ok(r && r.data && r.data[0] === 0x7F, 'bridge: a write is refused without the write arm');
+      eq(carCalls.length, 1, 'bridge: the refused write never reached the car');
+      ok(link.refused >= 3, 'bridge: refusals are counted for the on-screen audit');
+      ok(link.audit.length > 0 && link.audit[0].allowed === false, 'bridge: the audit records the last decision');
+
+      // 5) losing the daemon fails closed
+      link.close();
+      ok(link.connected === false, 'bridge: dropping the daemon closes the link');
+      try { srv.close(); } catch (e) {}
+      try { fsMod.unlinkSync(sockPath); } catch (e) {}
+    });
 }

@@ -105,6 +105,15 @@
     else if (name === 'engine-locked') { app = makeApp({ engineconfig: 'armed', tuner: 'off' }); drive(app, 6); app.tab = 'engine'; app.render(cv); cap = 'ENGINE \u2014 tuner features locked'; }
     else if (name === 'engine-confirm') { app = makeApp({ engineconfig: 'armed', tuner: 'mhd' }); drive(app, 6); app.tab = 'engine'; app.eng.sel = 0; app.eng.pending.flap = 'open'; app.eng.confirm = true; app.render(cv); cap = 'ENGINE \u2014 confirm'; }
     else if (name === 'connect') { app = makeApp(); app.connect = { state: 'ok', detail: 'DME answered \u2014 VIN 5UX83DP04P9S09849', checking: false }; app.tab = 'connect'; app.render(cv); cap = 'CONNECT — head-unit link OK'; }
+    else if (name === 'bridge-off') { app = makeApp(); app.tab = 'connect'; app.connectView = 'bridge'; app.render(cv); cap = 'BRIDGE \u2014 off (no daemon)'; }
+    else if (name === 'bridge-on') { app = makeApp(); app.tab = 'connect'; app.connectView = 'bridge';
+      app.bgate.acknowledge(); app.bgate.enable(); app.bgate.arm(60000);
+      app.bridge.connected = true;
+      app.bridge.ap = { up: true, ssid: 'BeeM-Flash', pass: 'kite-9427-mesa', security: 'WPA2', channel: 6, address: '192.168.44.1' };
+      app.bridge.stations = [{ ip: '192.168.44.23', mac: 'a4:83:e7:11:22:33' }];
+      app.bridge.relayed = 142; app.bridge.refused = 3; app.bridge.lastRefusal = 'ECU 0x40 not in relay allow-list';
+      app.bstate = { busy: false, msg: '1 device connected.', ok: true };
+      app.render(cv); cap = 'BRIDGE \u2014 on, device connected'; }
     else if (name === 'connect-locked') { app = makeApp(); drive(app, 6); app.tab = 'connect'; app.render(cv); cap = 'CONNECT — locked'; }
     else if (name === 'codes') { app = withEnet(makeApp()); app.codes.msg = ''; app.tab = 'codes'; app.render(cv); cap = 'CODES — before scan'; }
     else if (name === 'codes-result') { app = withEnet(makeApp()); app.codes.result = SAMPLE_CODES; app.codes.tune = SAMPLE_TUNE; app.codes.msg = '4 codes across 3/4 modules'; app.tab = 'codes'; app.render(cv); cap = 'CODES — scan result + tune on car'; }

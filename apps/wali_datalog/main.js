@@ -17,6 +17,8 @@ var FastLog = require('./fastlog');
 var LogEngine = require('./logengine');
 var MapControl = require('./mapcontrol');
 var LiveAdjust = require('./liveadjust');
+var BridgeGate = require('./bridgegate');
+var BridgeLink = require('./bridgelink');
 var EnetGate = require('./enetgate');
 var doip = require('./doip');
 var vehiclelink = require('./vehiclelink');
@@ -148,11 +150,27 @@ App.prototype.start = function (ctx) {
   // two-step confirm flag and the last result line.
   this.eng = { sel: 0, pending: {}, confirm: false, busy: false, msg: '', ok: false };
 
+  // ---- wireless bridge ---------------------------------------------------
+  // The consent gate is the app's own state machine (acknowledge -> enable ->
+  // lease); the link is a client to the root daemon that owns the access point.
+  // Neither is touched until the user turns the bridge on.
+  this.bgate = new BridgeGate({ storage: this.storage });
+  var bcfg = this._config().bridge || {};
+  this.bridge = new BridgeLink({
+    socket: bcfg.socket,
+    gate: this.bgate,
+    ecuAllow: bcfg.ecuAllow,
+    sendTo: function (ecu, bytes) { return self._bridgeSendTo(ecu, bytes); },
+    log: (this.ctx.log && this.ctx.log.info) ? function (m) { self.ctx.log.info(m); } : null
+  });
+  this.bstate = { busy: false, msg: '', ok: false };
+
   // ---- ui state ---------------------------------------------------------
   this.tab = 'live';
   this.selection = 0;
   this.setupSel = 0;
   this.setupView = 'settings';           // 'settings' | 'diag'
+  this.connectView = 'link';             // 'link' | 'bridge'
   this.bdiag = { running: false, result: null, msg: '' };
   this.latest = { values: {}, demo: false, live: false };
   this.confirm = false;
@@ -584,11 +602,23 @@ App.prototype._actions = function () {
       { label: this.eng.confirm ? 'CANCEL' : 'RELEASE', disabled: !on || this.eng.busy, fn: function () { self._engineCancelOrRelease(); } }
     ];
   }
-  if (s === 'connect') return [
-    { label: self.connect.checking ? 'CHECKING…' : 'CHECK LINK', disabled: self.connect.checking, fn: function () { self._connectCheck(); } },
-    { label: this.enet.enabled ? 'ENET: ON' : 'ENET: OFF', active: this.enet.enabled, fn: function () { self._enetToggle(); } },
-    { label: 'ENET SCAN', disabled: !this.enet.enabled || this.enet.scanning, fn: function () { self._enetScan(); } }
-  ];
+  if (s === 'connect') {
+    if (self.connectView === 'bridge') {
+      var bon = self.bgate.status().enabled;
+      return [
+        { label: self.bstate.busy ? 'WORKING…' : (bon ? 'BRIDGE: ON' : 'BRIDGE: OFF'), active: bon, danger: !bon, disabled: self.bstate.busy, fn: function () { self._bridgeToggle(); } },
+        { label: 'DEVICES', disabled: !self.bridge.connected, fn: function () { self._bridgeRefresh(); } },
+        { label: 'NEW PASSWORD', disabled: !self.bridge.connected || self.bstate.busy, fn: function () { self._bridgeNewPass(); } },
+        { label: 'BACK', fn: function () { self.connectView = 'link'; } }
+      ];
+    }
+    return [
+      { label: self.connect.checking ? 'CHECKING…' : 'CHECK LINK', disabled: self.connect.checking, fn: function () { self._connectCheck(); } },
+      { label: this.enet.enabled ? 'ENET: ON' : 'ENET: OFF', active: this.enet.enabled, fn: function () { self._enetToggle(); } },
+      { label: 'ENET SCAN', disabled: !this.enet.enabled || this.enet.scanning, fn: function () { self._enetScan(); } },
+      { label: 'WIRELESS BRIDGE', fn: function () { self.connectView = 'bridge'; } }
+    ];
+  }
   if (s === 'codes') return [
     { label: 'SCAN', disabled: this.codes.scanning, fn: function () { self._codesScan(); } },
     { label: this.codes.confirmClear ? 'CONFIRM' : 'CLEAR', danger: true, fn: function () { self._codesClear(); } },
@@ -810,6 +840,94 @@ App.prototype._engineApply = function () {
       self.eng.busy = false;
       self.eng.msg = (e && e.message) || String(e); self.eng.ok = false;
     });
+};
+
+// ---- wireless bridge ----------------------------------------------------
+// The car-side half of the relay. The policy decision has already been made in
+// bridgelink (relaypolicy + the consent gate); this only puts an APPROVED
+// request on the right link. A write that policy allowed needs the flash-armed
+// link, because the ordinary read link refuses write services by design — so
+// the two gates must BOTH agree before anything is written.
+App.prototype._bridgeSendTo = function (ecu, bytes) {
+  var sid = (bytes && bytes.length) ? bytes[0] : 0;
+  var isWrite = (sid === 0x2E || sid === 0x34 || sid === 0x36 || sid === 0x37 ||
+    sid === 0x31 || sid === 0x11 || (sid === 0x10 && bytes[1] === 0x02));
+  var gw = this._makeGateway(isWrite ? { flashing: true } : {});
+  if (!gw || !gw.sendTo) return Promise.reject(new Error('no link to the car'));
+  return gw.sendTo(ecu, bytes, 4000);
+};
+
+// BRIDGE ON/OFF. Turning it on is the one moment consent is given: it records
+// the acknowledgement, enables the gate, connects to the daemon and asks for the
+// access point. Turning it off tears the lease down and drops the AP.
+App.prototype._bridgeToggle = function () {
+  var self = this;
+  if (this.bstate.busy) return;
+  var st = this.bgate.status();
+  if (st.enabled) {
+    this.bgate.disable();
+    this.bstate.busy = true; this.bstate.msg = 'Stopping the bridge…'; this.bstate.ok = true;
+    Promise.resolve(this.bridge.connected ? this.bridge.apOff() : null).then(function () {
+      self.bridge.close();
+      self.bstate.busy = false; self.bstate.msg = 'Bridge off.'; self.bstate.ok = true;
+    }, function (e) {
+      self.bridge.close();
+      self.bstate.busy = false; self.bstate.msg = 'Bridge off (' + ((e && e.message) || e) + ').'; self.bstate.ok = true;
+    });
+    return;
+  }
+  this.bgate.acknowledge();
+  this.bgate.enable();
+  this.bgate.arm(this._config().bridge && this._config().bridge.leaseMs);
+  this.bstate.busy = true; this.bstate.msg = 'Starting the bridge…'; this.bstate.ok = true;
+  this.bridge.connect().then(function (ok) {
+    if (!ok) {
+      self.bgate.disable();
+      self.bstate.busy = false; self.bstate.ok = false;
+      self.bstate.msg = 'No bridge daemon on this head unit (' + (self.bridge.lastError || 'not reachable') + '). See docs/BRIDGE.md.';
+      return;
+    }
+    return self.bridge.apOn().then(function () {
+      self.bstate.busy = false; self.bstate.ok = true;
+      self.bstate.msg = 'Bridge on — join the Wi-Fi shown here.';
+    });
+  }).catch(function (e) {
+    self.bgate.disable();
+    self.bstate.busy = false; self.bstate.ok = false;
+    self.bstate.msg = (e && e.message) || String(e);
+  });
+};
+
+App.prototype._bridgeNewPass = function () {
+  var self = this;
+  if (this.bstate.busy || !this.bridge.connected) return;
+  this.bstate.busy = true; this.bstate.msg = 'Generating a new password…'; this.bstate.ok = true;
+  this.bridge.newPass().then(function () {
+    self.bstate.busy = false; self.bstate.msg = 'New password — reconnect your device.'; self.bstate.ok = true;
+  }, function (e) {
+    self.bstate.busy = false; self.bstate.msg = (e && e.message) || String(e); self.bstate.ok = false;
+  });
+};
+
+App.prototype._bridgeRefresh = function () {
+  var self = this;
+  if (!this.bridge.connected) return;
+  // Renew the lease while the user is watching the page: an unattended bridge
+  // lapses on its own.
+  this.bgate.renew(this._config().bridge && this._config().bridge.leaseMs);
+  this.bridge.refresh().then(function () {
+    self.bstate.msg = (self.bridge.stations.length || 0) + ' device' + (self.bridge.stations.length === 1 ? '' : 's') + ' connected.';
+    self.bstate.ok = true;
+  }, function (e) {
+    self.bstate.msg = (e && e.message) || String(e); self.bstate.ok = false;
+  });
+};
+
+App.prototype._bridgeView = function () {
+  var s = this.bridge.status();
+  s.busy = this.bstate.busy; s.msg = this.bstate.msg; s.msgOk = this.bstate.ok;
+  s.enabled = s.gate.enabled;
+  return s;
 };
 
 // While any live override is held, keep its diagnostic session alive (and
@@ -1210,6 +1328,7 @@ App.prototype.buildView = function () {
     maps: maps,
     engine: this._engineView(),
     enet: this.enet.status(), connect: this.connect,
+    connectView: this.connectView, bridge: this._bridgeView(),
     codes: {
       scope: this.codes.scope,
       scanning: this.codes.scanning,

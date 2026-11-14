@@ -396,7 +396,57 @@ function overlay(cv, t, title, body, foot, color) {
 }
 
 // ------------------------------------------------------------- CONNECT ------
+// CONNECT -> WIRELESS BRIDGE. The head unit has no keyboard, so the car SHOWS
+// the network name and password and you type them into the phone — the same way
+// a vehicle hotspot works.
+function connectBridge(cv, t, view, R) {
+  var b = view.bridge || {}, ap = b.ap || {}, g = b.gate || {};
+  var pw = (R.w - 16) * 0.52;
+
+  D.panel(cv, t, R.x, R.y, pw, R.h, { title: 'WIRELESS BRIDGE', accent: g.armed, accentColor: t.warn });
+  var x = R.x + 24, y = R.y + 70;
+  if (!b.connected) {
+    cv.text(g.enabled ? 'Starting…' : 'Off', x, y, 32, g.enabled ? t.warn : t.dim, { weight: 'bold' });
+    y = wrapText(cv, t, b.error
+      ? ('No bridge daemon on this head unit — ' + b.error + '.')
+      : 'Turn the bridge on to let a phone or laptop reach the car through this head unit.',
+      x, y + 34, pw - 48, 18, t.faint) + 10;
+    wrapText(cv, t, 'The app itself cannot create a Wi-Fi network: a small root helper must be installed on the unit (see docs/BRIDGE.md). Until it is, nothing will appear in your Wi-Fi list.', x, y, pw - 48, 17, t.faint);
+  } else {
+    cv.text(ap.up ? 'Broadcasting' : 'Daemon ready', x, y, 32, ap.up ? t.good : t.warn, { weight: 'bold' });
+    // the credentials, big enough to read and type into a phone
+    cv.text('NETWORK (SSID)', x, y + 44, 15, t.faint, { weight: 'bold' });
+    cv.text(ap.ssid || '—', x + 230, y + 44, 24, t.accent, { weight: 'bold' });
+    cv.text('PASSWORD', x, y + 82, 15, t.faint, { weight: 'bold' });
+    cv.text(ap.pass || b.pass || '—', x + 230, y + 82, 24, t.accent, { weight: 'bold' });
+    cv.text('SECURITY', x, y + 118, 15, t.faint, { weight: 'bold' });
+    cv.text((ap.security || 'WPA2') + (ap.channel ? '   ·   ch ' + ap.channel : ''), x + 230, y + 118, 18, t.text, {});
+    cv.text('ADDRESS', x, y + 146, 15, t.faint, { weight: 'bold' });
+    cv.text(ap.address || '—', x + 230, y + 146, 18, t.text, {});
+  }
+
+  // right: the path the data takes, who is connected, and what was refused
+  var vx = R.x + pw + 16, vw = R.x + R.w - vx;
+  D.panel(cv, t, vx, R.y, vw, R.h, { title: 'CONNECTION' });
+  var ex = vx + 20, ey = R.y + 64;
+  ey = wrapText(cv, t, 'Phone  →  Wi-Fi  →  head unit  →  diagnostic link  →  DME / EGS', ex, ey, vw - 40, 18, t.text) + 8;
+  ey = wrapText(cv, t, 'Only the engine and transmission controllers can be reached, reads only — writes stay behind the flash arming. Every request is checked on the car, not by the helper.', ex, ey, vw - 40, 16, t.faint) + 10;
+
+  cv.text('DEVICES', ex, ey + 6, 15, t.faint, { weight: 'bold' });
+  var sl = b.stations || [];
+  if (!sl.length) cv.text(b.connected ? 'None connected.' : '—', ex + 110, ey + 6, 17, t.dim, {});
+  for (var i = 0; i < sl.length && i < 3; i++) {
+    cv.text((sl[i].ip || sl[i].mac || '?'), ex + 110, ey + 6 + i * 22, 17, t.good, { weight: 'bold' });
+  }
+  var fy = R.y + R.h - 54;
+  cv.text('Relayed ' + (b.relayed || 0) + '   ·   refused ' + (b.refused || 0), ex, fy, 16, t.faint, {});
+  if (b.lastRefusal) wrapText(cv, t, 'Last refusal: ' + b.lastRefusal, ex, fy + 20, vw - 40, 15, t.warn);
+
+  if (b.msg) cv.text(b.msg, R.x + R.w, R.y - 8, 18, b.msgOk ? t.good : t.crit, { align: 'r', weight: 'bold' });
+}
+
 function connect(cv, t, view, R) {
+  if (view.connectView === 'bridge') return connectBridge(cv, t, view, R);
   var e = view.enet || {}, c = view.connect || {};
   var pw = (R.w - 16) * 0.58;
 
