@@ -2,7 +2,7 @@
   "id": "wali_datalog",
   "title": "BeeM-Flash",
   "description": "BeeM-Flash \u2014 live datalogging, whole-vehicle diagnostics, fault-code read/clear, read-only ECU info, map switching and gated calibration flashing for tuned BMW (B58/S58) on the MGU head unit. Independent open-source app, read-only by default.",
-  "version": "2.13.0",
+  "version": "2.14.0",
   "license": "MIT",
   "vendor": "TunedByWali",
   "loggingId": "BMFL",

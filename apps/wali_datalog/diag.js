@@ -119,6 +119,7 @@ function DiagProvider(ctx, opts) {
   this._fails = {};    // did -> consecutive failures
   this._failAt = {};   // did -> time of the last failure
   this._why = {};      // did -> why it last failed (shown instead of a bare '--')
+  this._rank = {};     // channel -> rank of the candidate currently supplying it
   this.blocks = dme.byDid(this.profile); // packed measurement blocks (one read per DID)
   this.cache = {};
   this.lastUpdate = 0;
@@ -133,6 +134,12 @@ DiagProvider.prototype._note = function (block, why) {
   this._fails[block.did] = (this._fails[block.did] || 0) + 1;
   this._failAt[block.did] = Date.now();
   this._why[block.did] = why;
+  // Release the rank lock for this block's channels: if the preferred source has
+  // started refusing, a lower-ranked candidate must be allowed to supply it.
+  for (var r = 0; r < block.fields.length; r++) {
+    var fk = block.fields[r].key;
+    if (this._rank[fk] != null && this._rank[fk] >= (block.fields[r].rank || 0)) delete this._rank[fk];
+  }
   if (this._fails[block.did] === 3 && this.ctx && this.ctx.log && this.ctx.log.warn) {
     try {
       this.ctx.log.warn('[wali] DID 0x' + block.did.toString(16).toUpperCase() +
@@ -186,7 +193,18 @@ DiagProvider.prototype.start = function (scheduler) {
         for (var f = 0; f < block.fields.length; f++) {
           var spec = block.fields[f];
           var v = uds.scaleFromSpec(p.data, spec);
-          if (typeof v === 'number' && isFinite(v)) self.cache[spec.key] = v;
+          if (typeof v !== 'number' || !isFinite(v)) continue;
+          // A candidate that answers an impossible number is not an answer.
+          if (spec.min != null && v < spec.min) continue;
+          if (spec.max != null && v > spec.max) continue;
+          // Ordered candidates: keep the best-ranked source that actually
+          // answers, so a preferred identifier wins once it starts replying and
+          // a fallback never overwrites it.
+          var rank = spec.rank || 0;
+          var held = self._rank[spec.key];
+          if (held != null && rank > held) continue;
+          self.cache[spec.key] = v;
+          self._rank[spec.key] = rank;
         }
         self.lastUpdate = Date.now();
         self._fails[block.did] = 0;

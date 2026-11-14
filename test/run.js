@@ -82,7 +82,9 @@ function near(a, b, eps, msg) { ok(Math.abs(a - b) <= eps, msg + ' (got ' + a + 
   near(148 * r.timing.m + r.timing.b, 10, 1e-9, 'bmw_obd timing: raw 148 -> 10 BTDC (x0.5, offset -64)');
   near(3200 * r.boostAbs.m + r.boostAbs.b, 1.0, 1e-6, 'bmw_obd manifold abs: raw 3200 -> 1.0 bar');
   near(101 * r.baro.m + r.baro.b, 1.01, 1e-6, 'bmw_obd baro: raw 101 -> 1.01 bar');
-  near(2000 * r.railPressure.m + r.railPressure.b, 200, 1e-9, 'bmw_obd rail: raw 2000 -> 200 bar');
+  // railPressure is now an ordered candidate list; rank 0 is the car-tested read.
+  var rail0 = Object.prototype.toString.call(r.railPressure) === '[object Array]' ? r.railPressure[0] : r.railPressure;
+  near(2000 * rail0.m + rail0.b, 200, 1e-9, 'bmw_obd rail: raw 2000 -> 200 bar (rank 0)');
   // relative boost derived in the provider when not read directly (manifold - baro)
   var prov = new Provider({}, {
     getSetting: function (k) { return { demo: 'off', source: 'diag' }[k]; },
@@ -1173,6 +1175,7 @@ Promise.resolve()
   .then(liveAdjustTests)
   .then(svkIdentTests)
   .then(bridgeLinkTests)
+  .then(candidateReadTests)
   .then(report)
   .catch(function (e) { console.error(e); process.exit(1); });
 
@@ -1598,4 +1601,67 @@ function bridgeLinkTests() {
       try { srv.close(); } catch (e) {}
       try { fsMod.unlinkSync(sockPath); } catch (e) {}
     });
+}
+
+// ---- ordered candidate reads: a channel reads from whichever source answers --
+function candidateReadTests() {
+  var dme = require(A + 'dme_profiles');
+
+  // byDid expands a candidate list into one request per DID, each field ranked.
+  var prof = dme.fromJson({
+    label: 'cand', verified: true, ecu: 0x12,
+    reads: {
+      railPressure: [
+        { did: 0x4101, off: 0, len: 2, m: 0.1, min: 0, max: 400 },   // rank 0 (preferred)
+        { did: 0x5658, off: 0, len: 2, m: 0.02, min: 0, max: 400 }   // rank 1 (fallback)
+      ]
+    }
+  });
+  var blocks = dme.byDid(prof);
+  eq(blocks.length, 2, 'candidates: one request per candidate DID');
+  eq(blocks[0].fields[0].rank, 0, 'candidates: the first entry is rank 0');
+  eq(blocks[1].fields[0].rank, 1, 'candidates: the second entry is rank 1');
+
+  // Drive a provider whose DME REFUSES the preferred DID and answers the
+  // fallback — the channel must still read, from the fallback.
+  var asked = [];
+  var trans = {
+    supported: true,
+    send: function (bytes, cb) {
+      var did = (bytes[1] << 8) | bytes[2];
+      asked.push(did);
+      if (did === 0x4101) return cb(null, [0x7F, 0x22, 0x31]);          // requestOutOfRange
+      if (did === 0x5658) return cb(null, [0x62, 0x56, 0x58, 0x27, 0x10]); // 10000 * 0.02 = 200 bar
+      return cb(null, [0x7F, 0x22, 0x31]);
+    }
+  };
+  var ticks = [];
+  var d = new DiagProvider({}, { transport: trans, profile: prof, strict: true });
+  d.start(function (fn) { ticks.push(fn); return 1; });
+  ok(ticks.length === 1, 'candidates: provider started');
+
+  function pump(n) {
+    var p = Promise.resolve();
+    for (var i = 0; i < n; i++) p = p.then(function () { ticks[0](); return new Promise(function (r) { setTimeout(r, 2); }); });
+    return p;
+  }
+  return pump(6).then(function () {
+    var v = d.read().railPressure;
+    near(v, 200, 1e-6, 'candidates: the fallback supplies the channel when the preferred DID is refused');
+    ok(asked.indexOf(0x4101) >= 0 && asked.indexOf(0x5658) >= 0, 'candidates: both candidates were polled');
+
+    // Implausible decodes are discarded rather than displayed as a confident number.
+    var prof2 = dme.fromJson({
+      label: 'bounds', verified: true, ecu: 0x12,
+      reads: { lpfp: { did: 0x4200, off: 0, len: 2, m: 1, min: 0, max: 8 } }
+    });
+    var t2 = { supported: true, send: function (b, cb) { cb(null, [0x62, 0x42, 0x00, 0xFF, 0xFF]); } }; // 65535
+    var ticks2 = [];
+    var d2 = new DiagProvider({}, { transport: t2, profile: prof2, strict: true });
+    d2.start(function (fn) { ticks2.push(fn); return 1; });
+    return Promise.resolve().then(function () { ticks2[0](); return new Promise(function (r) { setTimeout(r, 5); }); })
+      .then(function () {
+        ok(d2.read().lpfp === undefined, 'candidates: an out-of-range decode is discarded, not shown');
+      });
+  });
 }

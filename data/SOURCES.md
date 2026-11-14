@@ -196,3 +196,37 @@ about the vehicle, used for interoperability and clearly attributed.
 The generated `profiles/pidmap.*.json` are `verified:false`. The on-car values
 are suppressed (strict mode) until you confirm the identifiers/scaling for your
 specific DME and set `verified:true`. See `docs/SIGNALS-AND-DIDS.md`.
+
+## Ordered candidate channel reads (v2.14.0)
+
+A channel's entry in `dme_profiles.js` may be a single read spec **or an ordered
+list of candidates**:
+
+```js
+railPressure: [
+  { did: 0xF423, off: 0, len: 2, m: 0.1,  min: 0, max: 400 },   // rank 0: car-tested
+  { did: 0x5658, off: 0, len: 2, m: 0.02, min: 0, max: 400 }    // rank 1: fallback
+]
+```
+
+Different DMEs populate different identifiers, so a channel that reads `--` on
+one car may read fine on another from a different source. Every candidate is
+polled; the decoder keeps the **best-ranked candidate that actually answers**,
+and a candidate the DME refuses is backed off so the next one can supply the
+channel.
+
+**Provenance and honesty.** Rank-0 entries in `bmw_obd` are car-tested. The
+rank-1+ identifiers and the additional channels (rail target, oil pressure,
+fuel flow, ethanol, charge-air temp, cylinder-head temp, transmission oil, VANOS
+intake actual/target) are derived from the community BMW enhanced-PID tables and
+the B58 A2L measurement set already credited above. They are **not verified on
+any particular car**.
+
+Two things guard against a confidently-wrong number:
+
+* every candidate carries `min`/`max` plausibility bounds, and a decode outside
+  them is **discarded** rather than displayed; and
+* a channel with no answering candidate shows `--`, never a guess.
+
+That is a mitigation, not a proof. If a value looks wrong for your engine, treat
+it as wrong and report it — the scaling, not the plumbing, is the uncertain part.
