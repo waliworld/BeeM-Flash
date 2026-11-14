@@ -56,6 +56,22 @@ function handle(frame, opts) {
     }
   }
 
+  // FULL GATEWAY: when the owner has armed pass-through, the policy allow-list is
+  // bypassed entirely - every ECU and every service is relayed. The arm itself
+  // is the consent (it only holds while the lease is valid, is never persisted,
+  // and clears the moment the bridge is turned off). The gate must still be
+  // armed, and the one approved device still owns the session.
+  var passthrough = gate && typeof gate.passthroughArmed === 'function' && gate.passthroughArmed();
+  if (passthrough) {
+    if (!ctx.armed) return Promise.resolve(done(nackFor(data, 0x31), false, 'bridge not armed'));
+    if (typeof opts.sendTo !== 'function') return Promise.resolve(done(nackFor(data, 0x31), false, 'no link to the car'));
+    return Promise.resolve(opts.sendTo(frame.target, data)).then(function (resp) {
+      return done(toBytes(resp), true, 'full-gateway');
+    }, function (e) {
+      return done(nackFor(data, 0x78), false, (e && e.message) || 'the car did not answer');
+    });
+  }
+
   var verdict = relaypolicy.evaluate({ target: frame ? frame.target : -1, uds: data }, ctx);
   if (!verdict.allow) {
     return Promise.resolve(done(verdict.nack || nackFor(data, 0x31), false, verdict.reason || 'refused'));

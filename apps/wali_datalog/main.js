@@ -177,7 +177,7 @@ App.prototype.start = function (ctx) {
     sendTo: function (ecu, bytes) { return self._bridgeSendTo(ecu, bytes); },
     log: (this.ctx.log && this.ctx.log.info) ? function (m) { self.ctx.log.info(m); } : null
   });
-  this.bstate = { busy: false, msg: '', ok: false, mode: 'off' };
+  this.bstate = { busy: false, msg: '', ok: false, mode: 'off', passConfirm: false };
 
   // ---- ui state ---------------------------------------------------------
   this.tab = 'live';
@@ -620,11 +620,13 @@ App.prototype._actions = function () {
   if (s === 'connect') {
     if (self.connectView === 'bridge') {
       var bon = self.bgate.status().enabled;
+      var pt = self.bgate.passthroughArmed();
+      var gwLabel = pt ? 'FULL GW: ON' : (self.bstate.passConfirm ? 'CONFIRM FULL GW' : 'FULL GW: OFF');
       return [
         { label: self.bstate.busy ? 'WORKING…' : (bon ? 'BRIDGE: ON' : 'BRIDGE: OFF'), active: bon, danger: !bon, disabled: self.bstate.busy, fn: function () { self._bridgeToggle(); } },
         { label: 'DEVICES', disabled: !(self.bridge.connected || self.bserver.listening), fn: function () { self._bridgeRefresh(); } },
-        { label: 'NEW PASSWORD', disabled: !self.bridge.connected || self.bstate.busy, fn: function () { self._bridgeNewPass(); } },
-        { label: 'BACK', fn: function () { self.connectView = 'link'; } }
+        { label: gwLabel, active: pt, danger: true, disabled: !bon || self.bstate.busy, fn: function () { self._bridgePassthrough(); } },
+        { label: 'BACK', fn: function () { self.connectView = 'link'; self.bstate.passConfirm = false; } }
       ];
     }
     // ENET SCAN is deliberately NOT here: on the head unit there is no ENET
@@ -865,6 +867,14 @@ App.prototype._engineApply = function () {
 // link, because the ordinary read link refuses write services by design — so
 // the two gates must BOTH agree before anything is written.
 App.prototype._bridgeSendTo = function (ecu, bytes) {
+  // FULL GATEWAY: one link that carries anything to any module. Only reachable
+  // once the owner has armed pass-through (relayengine enforces that); here we
+  // just put the bytes on the car.
+  if (this.bgate && this.bgate.passthroughArmed && this.bgate.passthroughArmed()) {
+    var gwp = this._makeGateway({ passthrough: true });
+    if (!gwp || !gwp.sendTo) return Promise.reject(new Error('no link to the car'));
+    return gwp.sendTo(ecu, bytes, 4000);
+  }
   var sid = (bytes && bytes.length) ? bytes[0] : 0;
   var isWrite = (sid === 0x2E || sid === 0x34 || sid === 0x36 || sid === 0x37 ||
     sid === 0x31 || sid === 0x11 || (sid === 0x10 && bytes[1] === 0x02));
@@ -883,6 +893,7 @@ App.prototype._bridgeToggle = function () {
 
   if (st.enabled) {                       // ---- turn OFF ----
     this.bgate.disable();
+    this.bstate.passConfirm = false;
     this.bstate.busy = true; this.bstate.msg = 'Stopping the bridge\u2026'; this.bstate.ok = true;
     this.bserver.stop();
     Promise.resolve(this.bridge.connected ? this.bridge.apOff() : null).then(function () {
@@ -970,6 +981,27 @@ App.prototype._bridgeViaHelper = function (why) {
   });
 };
 
+// FULL GATEWAY pass-through: hand a connected tool the WHOLE car. Two-step,
+// because it drops every allow-list and permits flashing of any module.
+App.prototype._bridgePassthrough = function () {
+  if (!this.bgate.status().enabled) return;
+  if (this.bgate.passthroughArmed()) {           // turn it back off
+    this.bgate.disarmPassthrough();
+    this.bstate.passConfirm = false;
+    this.bstate.msg = 'Full gateway OFF \u2014 back to the safe, read-only relay.'; this.bstate.ok = true;
+    return;
+  }
+  if (!this.bstate.passConfirm) {                 // first tap: arm the confirm
+    this.bstate.passConfirm = true;
+    this.bstate.msg = 'FULL GATEWAY exposes the ENTIRE car, flashing included. Tap again to confirm.'; this.bstate.ok = false;
+    return;
+  }
+  this.bstate.passConfirm = false;                // second tap: arm it
+  var r = this.bgate.armPassthrough();
+  if (r.ok) { this.bstate.msg = 'FULL GATEWAY ON \u2014 the tool now reaches every module.'; this.bstate.ok = true; }
+  else { this.bstate.msg = r.reason || 'Could not arm full gateway.'; this.bstate.ok = false; }
+};
+
 App.prototype._bridgeNewPass = function () {
   var self = this;
   if (this.bstate.busy || !this.bridge.connected) return;
@@ -1013,6 +1045,8 @@ App.prototype._bridgeView = function () {
   s.enabled = s.gate.enabled;
   s.mode = this.bstate.mode;                 // 'off' | 'direct' | 'helper'
   s.selfTest = this.bstate.selfTest || null;
+  s.passthrough = this.bgate.passthroughArmed();
+  s.passConfirm = this.bstate.passConfirm;
   s.direct = d;
   // In direct mode the counters and devices come from our own listener.
   if (this.bstate.mode === 'direct') {
@@ -1133,9 +1167,10 @@ App.prototype._makeGateway = function (opts) {
   // subscription, and this is called from several tabs.
   var flashing = !!(opts && opts.flashing);
   var liveControl = !!(opts && opts.liveControl);
-  var key = flashing ? '_vlinkFlash' : (liveControl ? '_vlinkLive' : '_vlink');
+  var passthrough = !!(opts && opts.passthrough);
+  var key = passthrough ? '_vlinkPass' : (flashing ? '_vlinkFlash' : (liveControl ? '_vlinkLive' : '_vlink'));
   if (!this[key]) {
-    try { this[key] = vehiclelink.make(this.ctx, { target: 0x12, flashing: flashing, liveControl: liveControl }); } catch (e) { this[key] = null; }
+    try { this[key] = vehiclelink.make(this.ctx, { target: 0x12, flashing: flashing, liveControl: liveControl, passthrough: passthrough }); } catch (e) { this[key] = null; }
   }
   return this[key] || null;
 };

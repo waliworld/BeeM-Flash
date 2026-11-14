@@ -67,3 +67,30 @@ asking you to type them. **NEW PASSWORD** generates a fresh passphrase.
 * Auto-exits after 30 minutes idle, so an access point is never left
   broadcasting for a session you forgot about.
 * Serves one app and one tool at a time.
+
+## Protocols and ports (v2.19.0)
+
+The in-app listener serves **three protocols on one port**, auto-detected from
+the first bytes of each connection, so one setting fits whatever a tool speaks:
+
+* **DoIP / ISO 13400** (port 13400) — the native protocol on G-series. Proven.
+* **HSFZ** (BMW's own, port 6801) — `[len:4][control:2][src][dst][uds]`. The
+  diagnostic-data relay is tested; the identification handshake is best-effort
+  and marked EXPERIMENTAL. Used by ISTA / E-Sys-style tools on F-series.
+* **raw TCP socket** (any port, e.g. 8899) — bare UDS bytes, Wi-Fi-serial style.
+
+Choose the port under SETUP → Bridge port.
+
+## Safe relay vs. FULL GATEWAY
+
+By default the bridge is a **safe relay**: only the engine (`0x12`) and
+transmission (`0x18`), reads only, writes behind the flash arm.
+
+**FULL GATEWAY** (CONNECT → WIRELESS BRIDGE → FULL GW, two taps to confirm)
+hands the connected tool the **entire car** — every module, every service,
+flashing included — over the head unit's TASU link. It is the owner's explicit,
+on-screen choice: it only holds while the bridge lease is valid, is **never**
+persisted, clears the instant the bridge is turned off, and every relayed
+request is still counted in the on-screen audit. One device owns the session at
+a time. This exists because the gateway does not answer the head unit over IP
+(so a raw IP tunnel is impossible), but TASU can address any module directly.

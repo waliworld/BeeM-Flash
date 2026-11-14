@@ -478,8 +478,15 @@ function connectBridge(cv, t, view, R) {
   var vx = R.x + pw + 16, vw = R.x + R.w - vx;
   D.panel(cv, t, vx, R.y, vw, R.h, { title: 'CONNECTION' });
   var ex = vx + 20, ey = R.y + 64;
-  ey = wrapText(cv, t, 'Phone  \u2192  Wi-Fi  \u2192  head unit  \u2192  diagnostic link  \u2192  DME / EGS', ex, ey, vw - 40, 18, t.text) + 8;
-  ey = wrapText(cv, t, 'Only the engine and transmission controllers can be reached, reads only \u2014 writes stay behind the flash arming. Every request is checked on the car.', ex, ey, vw - 40, 16, t.faint) + 10;
+  var pass = b.passthrough;
+  ey = wrapText(cv, t, 'Phone  \u2192  Wi-Fi  \u2192  head unit  \u2192  diagnostic link  \u2192  ' + (pass ? 'EVERY module' : 'DME / EGS'), ex, ey, vw - 40, 18, pass ? t.crit : t.text) + 8;
+  if (pass) {
+    ey = wrapText(cv, t, 'FULL GATEWAY ON \u2014 the tool reaches the WHOLE car, writes and flashing included. Every request is still logged below. Tap FULL GW to return to safe mode.', ex, ey, vw - 40, 16, t.crit) + 10;
+  } else if (b.passConfirm) {
+    ey = wrapText(cv, t, 'Tap FULL GW again to expose the ENTIRE car (all modules, flashing). Or leave it: the safe relay below is usually all you need.', ex, ey, vw - 40, 16, t.warn) + 10;
+  } else {
+    ey = wrapText(cv, t, 'Safe mode: only the engine and transmission, reads only \u2014 writes stay behind the flash arming. FULL GW opens the whole car for a flashing tool.', ex, ey, vw - 40, 16, t.faint) + 10;
+  }
 
   cv.text('DEVICES', ex, ey + 6, 15, t.faint, { weight: 'bold' });
   var sl = b.stations || [];

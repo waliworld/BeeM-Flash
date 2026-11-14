@@ -61,6 +61,7 @@ function VehicleLink(mod, link, opts) {
   this.tgt = (opts && opts.target) || DME;
   this.flashing = !!(opts && opts.flashing);
   this.liveControl = !!(opts && opts.liveControl);
+  this.passthrough = !!(opts && opts.passthrough);
   this.kind = 'tasu';
   this.supported = true;
   var self = this;
@@ -75,6 +76,10 @@ function VehicleLink(mod, link, opts) {
 // all-ECU request), which the live-control tier requires.
 VehicleLink.prototype._check = function (bytes, addr) {
   if (!bytes || !bytes.length) throw new Error('empty request');
+  // FULL GATEWAY pass-through: this link carries anything to any ECU. It exists
+  // ONLY on a link the app builds for the explicitly-armed bridge pass-through;
+  // the ordinary read link, the flash link and the live link never set it.
+  if (this.passthrough) return;
   var sid = bytes[0];
   if (READ_SERVICES[sid]) {
     if (sid === 0x10 && !READ_SESSIONS[bytes[1]] && !this.flashing) {

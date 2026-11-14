@@ -155,9 +155,28 @@ BridgeServer.prototype._onTool = function (c) {
     if (mode === null) {
       if (buf.length < 2) return;
       var v = buf[0], iv = buf[1];
-      mode = ((v === 0x02 && iv === 0xFD) || (v === 0x01 && iv === 0xFE)) ? 'doip' : 'raw';
+      // DoIP: version byte then its inverse (02/FD, or 01/FE on older tools).
+      // HSFZ (BMW's own, used on 6801): a 4-byte big-endian length, so the first
+      // byte is 0x00 for any realistic payload - and no raw UDS request starts
+      // with 0x00 (0x00 is not a service id). Anything else is a raw socket.
+      if ((v === 0x02 && iv === 0xFD) || (v === 0x01 && iv === 0xFE)) mode = 'doip';
+      else if (v === 0x00) mode = 'hsfz';
+      else mode = 'raw';
       self.mode = mode;
       self._log('tool speaks ' + mode.toUpperCase());
+    }
+
+    if (mode === 'hsfz') {
+      while (buf.length >= 6) {
+        var hlen = buf.readUInt32BE(0);
+        if (hlen > MAX_FRAME) { try { c.destroy(); } catch (e) {} return; }
+        if (buf.length < 6 + hlen) break;
+        var ctrl = buf.readUInt16BE(4);
+        var hpl = buf.slice(6, 6 + hlen);
+        buf = buf.slice(6 + hlen);
+        self._onHsfz(c, peer, ctrl, hpl);
+      }
+      return;
     }
 
     if (mode === 'doip') {
@@ -208,6 +227,41 @@ function frame(type, payload) {
   head.writeUInt32BE(payload.length, 4);
   return Buffer.concat([head, payload]);
 }
+
+// HSFZ (Hochgeschwindigkeits-Fahrzeug-Zugang), BMW's own diagnostics-over-IP,
+// the protocol a tool on port 6801 expects. Frame = [len:4][control:2][payload].
+// control 0x0001 is a diagnostic message whose payload is [src][dst][uds...].
+// EXPERIMENTAL: the data-message relay is well defined and tested here, but the
+// identification handshake varies between tool versions and is best-effort.
+function hsfzFrame(control, payload) {
+  payload = payload || [];
+  var head = Buffer.alloc(6);
+  head.writeUInt32BE(payload.length, 0);
+  head.writeUInt16BE(control, 4);
+  return Buffer.concat([head, Buffer.from(payload)]);
+}
+
+BridgeServer.prototype._onHsfz = function (c, peer, control, payload) {
+  var self = this;
+  if (control === 0x0011 || control === 0x0012) {        // request identification
+    // Minimal identification: our logical address, best-effort.
+    var id = Buffer.from([(self.logicalAddress >> 8) & 0xff, self.logicalAddress & 0xff]);
+    try { c.write(hsfzFrame(0x0004, Array.prototype.slice.call(id))); } catch (e) {}
+    return;
+  }
+  if (control !== 0x0001) return;                        // only diagnostic data is relayed
+  if (payload.length < 3) return;
+  var sa = payload[0], ta = payload[1];
+  var uds = Array.prototype.slice.call(payload.slice(2));
+  relayengine.handle({ target: ta & 0xff, uds: uds, peer: peer }, {
+    gate: this.gate, ecuAllow: this.ecuAllow, sendTo: this.sendTo, stats: this.stats
+  }).then(function (r) {
+    if (!r.bytes || !r.bytes.length) return;
+    // response echoes the addresses swapped, then the UDS answer
+    var out = [ta & 0xff, sa & 0xff].concat(r.bytes);
+    try { c.write(hsfzFrame(0x0001, out)); } catch (e) {}
+  }).catch(function (e) { self._log('hsfz relay error: ' + ((e && e.message) || e)); });
+};
 
 BridgeServer.prototype._onFrame = function (c, peer, type, payload) {
   var self = this;
@@ -302,5 +356,6 @@ BridgeServer.prototype.selfTest = function () {
 };
 
 BridgeServer.DEFAULT_PORT = DEFAULT_PORT;
+BridgeServer.hsfzFrame = hsfzFrame;
 BridgeServer.frame = frame;
 module.exports = BridgeServer;

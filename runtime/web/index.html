@@ -115,6 +115,15 @@
       app._bridgeHosts = function () { return [ { name: 'wlan0', address: '172.20.10.11' },
         { name: 'wlan_bridge', address: '172.16.222.97' }, { name: 'vlan80', address: '160.48.199.185' } ]; };
       app.render(cv); cap = 'BRIDGE \u2014 direct, verified'; }
+    else if (name === 'bridge-fullgw') { app = makeApp(); app.tab = 'connect'; app.connectView = 'bridge';
+      app.bgate.acknowledge(); app.bgate.enable(); app.bgate.arm(60000); app.bgate.armPassthrough();
+      app.bstate = { busy: false, mode: 'direct', ok: true, msg: 'FULL GATEWAY ON \u2014 the tool now reaches every module.', passConfirm: false,
+        selfTest: { ok: true, armed: true, detail: 'listener answered and accepted routing' } };
+      app.bserver.listening = true; app.bserver.boundHost = '172.16.222.97'; app.bserver.port = 6801;
+      app.bserver.peers = [{ ip: '172.16.222.105', mac: null }];
+      app.bserver.stats = { relayed: 318, refused: 0, lastRefusal: null, audit: [] };
+      app._bridgeHosts = function () { return [ { name: 'wlan_bridge', address: '172.16.222.97' } ]; };
+      app.render(cv); cap = 'BRIDGE \u2014 FULL GATEWAY (6801)'; }
     else if (name === 'bridge-on') { app = makeApp(); app.tab = 'connect'; app.connectView = 'bridge';
       app.bgate.acknowledge(); app.bgate.enable(); app.bgate.arm(60000);
       app.bstate = { busy: false, mode: 'helper', msg: '1 device connected.', ok: true };

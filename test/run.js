@@ -1177,6 +1177,7 @@ Promise.resolve()
   .then(candidateReadTests)
   .then(bridgeServerTests)
   .then(hsfzProbeTests)
+  .then(passthroughTests)
   .then(report)
   .catch(function (e) { console.error(e); process.exit(1); });
 
@@ -1763,6 +1764,28 @@ function bridgeServerTests() {
       ok(got.length >= 1 && got[0] === 0x62, 'bridgeserver: the raw answer comes back unframed');
     });
   }).then(function () {
+    // HSFZ framing (BMW port 6801): [len:4][control:2][src][dst][uds].
+    carCalls.length = 0;
+    return new Promise(function (res) {
+      var c = net.connect(srv.port, '127.0.0.1');
+      var got = Buffer.alloc(0);
+      c.on('connect', function () {
+        var uds = [0x22, 0xF1, 0x90], payload = Buffer.from([0xF4, 0x12].concat(uds));
+        var head = Buffer.alloc(6); head.writeUInt32BE(payload.length, 0); head.writeUInt16BE(0x0001, 4);
+        c.write(Buffer.concat([head, payload]));
+      });
+      c.on('data', function (d) { got = Buffer.concat([got, d]); });
+      c.on('error', function () { res(Buffer.alloc(0)); });
+      setTimeout(function () { try { c.destroy(); } catch (e) {} res(got); }, 150);
+    }).then(function (got) {
+      eq(srv.mode, 'hsfz', 'bridgeserver: an HSFZ frame is detected (port 6801 tools)');
+      eq(carCalls.length, 1, 'bridgeserver: the HSFZ diagnostic reaches the car');
+      eq(carCalls[0].ecu, 0x12, 'bridgeserver: HSFZ dst address routes to the module');
+      ok(got.length >= 8, 'bridgeserver: an HSFZ response frame is returned');
+      ok(got.readUInt16BE(4) === 0x0001 && got[6] === 0x12 && got[7] === 0xF4, 'bridgeserver: HSFZ response echoes swapped addresses');
+      ok(got[8] === 0x62, 'bridgeserver: HSFZ carries the UDS answer');
+    });
+  }).then(function () {
     srv.stop();
     ok(srv.listening === false, 'bridgeserver: stop() closes the listener');
   });
@@ -1820,4 +1843,62 @@ function hsfzProbeTests() {
       ok(r.ok || !!r.error, 'privprobe: a refusal carries the reason (so EACCES is distinguishable from a crash)');
       eq(r.port, 1023, 'privprobe: tests a privileged port nobody serves, disturbing nothing');
     });
+}
+
+// ---- FULL GATEWAY pass-through: the whole car, behind one explicit arm --------
+function passthroughTests() {
+  var relayengine = require(A + 'relayengine');
+  var BridgeGate = require(A + 'bridgegate');
+
+  var calls = [];
+  function sendTo(ecu, bytes) { calls.push({ ecu: ecu, sid: bytes[0] }); return Promise.resolve([bytes[0] + 0x40]); }
+  var gate = new BridgeGate({ storage: null });
+  gate.acknowledge(); gate.enable(); gate.arm(60000);
+  var peer = { ip: '127.0.0.1', mac: null };
+  function relay(ecu, uds) {
+    return relayengine.handle({ target: ecu, uds: uds, peer: peer }, { gate: gate, sendTo: sendTo, stats: {} });
+  }
+
+  // SAFE mode (default): a write to a non-allow-listed module is refused.
+  return relay(0x40, [0x2E, 0xF1, 0x90, 0x01]).then(function (r) {
+    ok(!r.allowed && r.bytes[0] === 0x7F, 'passthrough OFF: a write to FEM (0x40) is refused');
+    eq(calls.length, 0, 'passthrough OFF: nothing reached the car');
+
+    // ARM full gateway.
+    var a = gate.armPassthrough();
+    ok(a.ok && gate.passthroughArmed(), 'passthrough: arms only while the bridge lease is valid');
+
+    // every module, every service now relays
+    return relay(0x40, [0x2E, 0xF1, 0x90, 0x01]);          // write to FEM
+  }).then(function (r) {
+    ok(r.allowed && r.reason === 'full-gateway', 'passthrough ON: a write to FEM reaches the car');
+    eq(calls[0].ecu, 0x40, 'passthrough ON: relayed to the addressed module, not just DME/EGS');
+    return relay(0x60, [0x22, 0xF1, 0x90]);                // read KOMBI
+  }).then(function (r) {
+    ok(r.allowed, 'passthrough ON: a read to KOMBI (0x60) reaches the car');
+    return relay(0x12, [0x34, 0x00, 0x44, 0xA0, 0x00]);    // requestDownload (flash) to DME
+  }).then(function (r) {
+    ok(r.allowed && calls[calls.length - 1].sid === 0x34, 'passthrough ON: flashing (0x34) is relayed to the DME');
+
+    // DISARM returns to the safe allow-list.
+    gate.disarmPassthrough();
+    calls.length = 0;
+    return relay(0x40, [0x2E, 0xF1, 0x90, 0x01]);
+  }).then(function (r) {
+    ok(!r.allowed, 'passthrough OFF again: the safe allow-list is back');
+    eq(calls.length, 0, 'passthrough OFF again: nothing reached the car');
+
+    // Turning the bridge off clears pass-through so it can never persist.
+    gate.armPassthrough();
+    gate.disable();
+    ok(!gate.passthroughArmed(), 'passthrough: turning the bridge OFF clears full-gateway');
+
+    // The passthrough transport tier permits any service to any ECU.
+    var vlink = require(A + 'vehiclelink');
+    var L = vlink.VehicleLink.prototype, pass = { passthrough: true }, norm = {};
+    var okPass = true; try { L._check.call(pass, [0x34, 0x00], 0x40); } catch (e) { okPass = false; }
+    ok(okPass, 'passthrough link: carries flashing to any ECU');
+    var refused = false; try { L._check.call(norm, [0x34, 0x00], 0x40); } catch (e) { refused = true; }
+    ok(refused, 'ordinary link: still refuses the same request');
+  });
 }

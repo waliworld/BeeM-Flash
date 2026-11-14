@@ -34,6 +34,7 @@ function BridgeGate(opts) {
   this.writeUntil = 0;         // 0 = write not armed
   this.writeEcu = undefined;
   this.allowClearDtc = false;  // separate opt-in for 0x14
+  this.passthrough = false;    // FULL GATEWAY: relay EVERYTHING, every ECU + every service
   this._load();
 }
 
@@ -68,6 +69,7 @@ BridgeGate.prototype.disable = function () {
   this.enabled = false;
   this.leaseUntil = 0; this.peer = null;
   this.writeUntil = 0; this.writeEcu = undefined; this.allowClearDtc = false;
+  this.passthrough = false;
 };
 
 // Tier 2: open / renew / drop the lease that lets the daemon hold its listener.
@@ -84,7 +86,21 @@ BridgeGate.prototype.renew = function (ms) {
 BridgeGate.prototype.disarm = function () {
   this.leaseUntil = 0; this.peer = null;
   this.writeUntil = 0; this.writeEcu = undefined; this.allowClearDtc = false;
+  this.passthrough = false;
 };
+
+// FULL GATEWAY pass-through. When armed, the bridge hands a connected tool the
+// WHOLE car - every module and every service, flashing included - instead of
+// the read-only, DME/EGS-only default. It is a separate, explicit arm that only
+// holds while the lease is valid and is NEVER persisted, so it cannot survive a
+// restart and cannot be on by accident. This is the owner's deliberate choice.
+BridgeGate.prototype.armPassthrough = function () {
+  if (!this.leaseValid()) return { ok: false, reason: 'Turn the bridge ON first.' };
+  this.passthrough = true;
+  return { ok: true };
+};
+BridgeGate.prototype.disarmPassthrough = function () { this.passthrough = false; };
+BridgeGate.prototype.passthroughArmed = function () { return this.passthrough && this.leaseValid(); };
 BridgeGate.prototype.leaseValid = function () { return this.enabled && this.leaseUntil > this.now(); };
 
 // Pin the single approved peer (shown on the HU before the first byte is relayed).
@@ -130,7 +146,8 @@ BridgeGate.prototype.status = function () {
     peer: this.peer,
     writeArmed: this.writeArmed(),
     writeEcu: this.writeArmed() ? this.writeEcu : null,
-    allowClearDtc: this.allowClearDtc && this.leaseValid()
+    allowClearDtc: this.allowClearDtc && this.leaseValid(),
+    passthrough: this.passthroughArmed()
   };
 };
 
