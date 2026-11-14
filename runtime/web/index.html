@@ -169,7 +169,10 @@
       app.bdiag = { running: false, msg: 'Done', result: {
         net: [ { iface: 'wlan0', ip: '192.168.44.1', mac: 'a4:50:46:aa:bb:cc', internal: false }, { iface: 'socnet0', ip: '160.48.199.115', mac: '02:11:22:33:44:55', internal: false }, { iface: 'lo', ip: '127.0.0.1', mac: '', internal: true } ],
         sockets: [ { path: '/run/beem-probe/p.sock', status: 'ENOENT' }, { path: '/dev/shm/beem-probe/p.sock', status: 'ENOENT' } ],
-        tasu: { status: 'ok', vin: 'WBA5R1C09NFK12345', bytes: 20 } } };
+        tasu: { status: 'ok', vin: '5UX83DP04P9S09849', bytes: 20 },
+        priv: { uid: 12226, gid: 12226, euid: 12226, root: false },
+        privBind: { ok: false, port: 1023, error: 'EACCES' },
+        gateway: { identify: { replies: [], asked: ['172.16.222.255','255.255.255.255'] }, reachable: [] } } };
       app.render(cv); cap = 'SETUP → DIAGNOSTICS (sample result)';
     }
     else { app = makeApp(); app.tab = 'live'; app.render(cv); }

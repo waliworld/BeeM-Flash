@@ -1181,6 +1181,7 @@ Promise.resolve()
   .then(discoveryTests)
   .then(tunePickerTests)
   .then(pollingControlTests)
+  .then(rebindTests)
   .then(report)
   .catch(function (e) { console.error(e); process.exit(1); });
 
@@ -2017,4 +2018,34 @@ function pollingControlTests() {
   app._applyPolling();
   ok(app.diag.timer === 1, 'polling: pollers resume once the tool disconnects');
   return Promise.resolve();
+}
+
+// ---- the bridge listener re-binds after a fast off/on (EADDRINUSE recovery) --
+function rebindTests() {
+  var net = require('net');
+  var BridgeServer = require(A + 'bridgeserver');
+  var BridgeGate = require(A + 'bridgegate');
+  var gate = new BridgeGate({ storage: null }); gate.acknowledge(); gate.enable(); gate.arm(60000);
+  var srv = new BridgeServer({ port: 0, host: '127.0.0.1', gate: gate, sendTo: function () { return Promise.resolve([0x62]); } });
+
+  return srv.start().then(function (r) {
+    ok(r.ok, 'rebind: listener comes up');
+    var port = srv.server.address().port;
+    // open a tool connection, then stop() while it is open
+    return new Promise(function (resolve) {
+      var c = net.connect(port, '127.0.0.1');
+      c.on('connect', function () { setTimeout(function () { resolve(port); }, 30); });
+      c.on('error', function () { resolve(port); });
+    }).then(function (port) {
+      ok(srv._conns && srv._conns.length >= 1, 'rebind: an open tool connection is tracked');
+      srv.stop();                       // destroys the connection + closes the socket
+      srv.host = '127.0.0.1'; srv.port = port;
+      // immediately bind the SAME port again - this used to fail EADDRINUSE
+      return srv.start();
+    });
+  }).then(function (r2) {
+    ok(r2.ok, 'rebind: binding the same port again right after stop() succeeds');
+    srv.stop();
+    ok(!srv.listening, 'rebind: stop() leaves nothing listening');
+  });
 }

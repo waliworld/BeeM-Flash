@@ -56,7 +56,40 @@ BridgeServer.prototype._net = function () {
 // start() -> Promise<{ ok, host, port, error }>
 // Never throws: a sandbox refusal is an ANSWER (and the UI shows the errno),
 // not a crash.
-BridgeServer.prototype.start = function (_retried) {
+// A single bind attempt. Resolves { ok, host, port } or { ok:false, error }.
+BridgeServer.prototype._bindOnce = function () {
+  var self = this, net = this._net();
+  return new Promise(function (resolve) {
+    var settled = false;
+    function settle(r) { if (!settled) { settled = true; resolve(r); } }
+    var srv;
+    try { srv = net.createServer(function (c) { self._onTool(c); }); }
+    catch (e) { return settle({ ok: false, error: (e && (e.code || e.message)) || String(e) }); }
+    srv.on('error', function (e) {
+      var code = (e && e.code) ? e.code : ((e && e.message) || String(e));
+      try { srv.close(); } catch (x) {}
+      settle({ ok: false, error: code });
+    });
+    function ready() {
+      self.server = srv; self.listening = true; self.lastError = null;
+      var a = null; try { a = srv.address(); } catch (e) {}
+      self.boundHost = (a && a.address) ? a.address : (self.host || '0.0.0.0');
+      self._log('bridge listening on ' + self.boundHost + ':' + self.port);
+      settle({ ok: true, host: self.boundHost, port: self.port });
+    }
+    try {
+      if (self.host) srv.listen(self.port, self.host, ready);
+      else srv.listen(self.port, ready);
+    } catch (e) { settle({ ok: false, error: (e && (e.code || e.message)) || String(e) }); }
+  });
+};
+
+// Bring the listener up, retrying through EADDRINUSE. That code almost always
+// means OUR OWN previous listener has not finished releasing the port (a fast
+// off/on, a reload, or the app restarting on car wake), so we drop whatever we
+// are still holding and try again a few times with a growing pause before
+// reporting failure.
+BridgeServer.prototype.start = function () {
   var self = this;
   if (this.listening) return Promise.resolve({ ok: true, host: this.boundHost, port: this.port });
   var net = this._net();
@@ -64,58 +97,30 @@ BridgeServer.prototype.start = function (_retried) {
     this.lastError = 'no socket support in this runtime';
     return Promise.resolve({ ok: false, error: this.lastError });
   }
-  return new Promise(function (resolve) {
-    var settled = false;
-    function settle(r) { if (!settled) { settled = true; resolve(r); } }
-    var srv;
-    try { srv = net.createServer(function (c) { self._onTool(c); }); }
-    catch (e) {
-      self.lastError = (e && (e.code || e.message)) || String(e);
-      return settle({ ok: false, error: self.lastError });
-    }
-    srv.on('error', function (e) {
-      // EACCES / EPERM -> the sandbox forbids listening (the helper is needed).
-      // EADDRINUSE     -> the port is still held, almost always by OUR OWN
-      //   previous listener that had not finished closing (toggling off then
-      //   on fast, or a reload). Drop whatever we have and try ONCE more after
-      //   a moment before giving up.
-      var code = (e && e.code) ? e.code : ((e && e.message) || String(e));
-      self.listening = false;
-      self.server = null;
-      self._log('bridge listener failed: ' + code);
-      if (code === 'EADDRINUSE' && !_retried) {
-        try { srv.close(); } catch (x) {}
-        setTimeout(function () {
-          self.start(true).then(settle);
-        }, 600);
-        return;
+  var MAX = 6;
+  function loop(n) {
+    return self._bindOnce().then(function (r) {
+      if (r.ok) return r;
+      if (r.error === 'EADDRINUSE' && n < MAX) {
+        if (self.server) { try { self.server.close(); } catch (e) {} self.server = null; }
+        self.listening = false;
+        return new Promise(function (res) { setTimeout(res, 300 * n); }).then(function () { return loop(n + 1); });
       }
-      self.lastError = code;
-      settle({ ok: false, error: code });
+      self.lastError = r.error; self.listening = false; self.server = null;
+      self._log('bridge listener failed: ' + r.error);
+      return r;
     });
-    try {
-      if (self.host) srv.listen(self.port, self.host, ready);
-      else srv.listen(self.port, ready);
-    } catch (e) {
-      self.lastError = (e && (e.code || e.message)) || String(e);
-      return settle({ ok: false, error: self.lastError });
-    }
-    function ready() {
-      self.server = srv;
-      self.listening = true;
-      self.lastError = null;
-      var a = null;
-      try { a = srv.address(); } catch (e) {}
-      self.boundHost = (a && a.address) ? a.address : (self.host || '0.0.0.0');
-      self._log('bridge listening on ' + self.boundHost + ':' + self.port);
-      settle({ ok: true, host: self.boundHost, port: self.port });
-    }
-  });
+  }
+  return loop(1);
 };
 
 BridgeServer.prototype.stop = function () {
   this.peers = [];
   this.listening = false;
+  // Drop any open tool connections first; otherwise server.close() lingers until
+  // they end and the port is not released, which is what caused EADDRINUSE on a
+  // quick off/on.
+  if (this._conns) { this._conns.forEach(function (c) { try { c.destroy(); } catch (e) {} }); this._conns = []; }
   if (this.server) { try { this.server.close(); } catch (e) {} this.server = null; }
 };
 
@@ -139,6 +144,8 @@ BridgeServer.prototype._onTool = function (c) {
   var self = this;
   var peer = { ip: c.remoteAddress || '?', mac: null };
   this.peers.push(peer);
+  if (!this._conns) this._conns = [];
+  this._conns.push(c);
   var mode = null;                    // 'doip' | 'raw' — decided from the first bytes
   var buf = Buffer.alloc(0);
   this._log('tool connected from ' + peer.ip);
@@ -203,6 +210,7 @@ BridgeServer.prototype._onTool = function (c) {
 
   function gone() {
     for (var i = 0; i < self.peers.length; i++) if (self.peers[i] === peer) { self.peers.splice(i, 1); break; }
+    if (self._conns) for (var j = 0; j < self._conns.length; j++) if (self._conns[j] === c) { self._conns.splice(j, 1); break; }
   }
   c.on('error', gone);
   c.on('close', gone);

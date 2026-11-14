@@ -700,46 +700,52 @@ function setupDiag(cv, t, view, R) {
     cv.text(sk.status.toUpperCase() + '  ' + sk.path, R2, y + 24 + j * 22, 15, okk ? t.accent : t.faint, { weight: okk ? 'bold' : 'normal' });
   }
   if (!socks.length) cv.text('no socket paths tested', R2, y + 24, 15, t.faint, {});
-  // TASU (P6)
-  var ty = R.y + 150;
-  cv.fillRect(R.x, ty - 16, R.w, 1, t.line);
-  cv.text('P6 TASU', L, ty + 6, 16, t.accent, { weight: 'bold' });
-  var tu = res.tasu || {};
-  var tmsg, tcol;
-  if (tu.status === 'ok') { tmsg = 'DME answered \u2014 VIN ' + (tu.vin || '') + '  (the car talks to us \u2014 GO)'; tcol = t.text; }
-  else if (tu.status === 'nrc') { tmsg = 'DME refused: NRC 0x' + (tu.nrc || 0).toString(16).toUpperCase() + ' (reached the ECU, it declined this read)'; tcol = t.warn; }
-  else if (tu.status === 'no-reply') { tmsg = 'No reply from the DME (' + (tu.note || '') + ')'; tcol = t.crit; }
-  else if (tu.status === 'no-link') { tmsg = 'No diagnostic link in this build'; tcol = t.faint; }
-  else { tmsg = 'Unexpected: ' + JSON.stringify(tu).slice(0, 60); tcol = t.dim; }
-  cv.text(tmsg, L + 110, ty + 6, 17, tcol, { weight: 'bold' });
-  // P8 — what this app process is actually allowed to do
-  var pv = res.priv || {}, pb = res.privBind || {};
-  var py = R.y + R.h - 136;
-  cv.text('P8 PRIVILEGE', L, py, 16, t.accent, { weight: 'bold' });
-  var who = (pv.uid == null) ? 'unknown' : ('uid ' + pv.uid + '  gid ' + pv.gid + (pv.euid != null && pv.euid !== pv.uid ? '  euid ' + pv.euid : ''));
-  cv.text(who + (pv.root ? '   \u2014 ROOT' : '   \u2014 not root'), L + 140, py, 16, pv.root ? t.good : t.text, { weight: 'bold' });
-  cv.text(pb.ok ? 'can bind privileged ports (<1024)' : ('cannot bind <1024: ' + (pb.error || '?')),
-    L + 140, py + 22, 16, pb.ok ? t.good : t.faint, {});
-
-  // P7 — the car's gateway over IP
-  var gwres = res.gateway || {};
-  var gy = R.y + R.h - 92;
-  cv.text('P7 GATEWAY', L, gy, 16, t.accent, { weight: 'bold' });
-  var ident = gwres.identify || {}, reach = gwres.reachable || [];
-  if (gwres.error) {
-    cv.text(gwres.error, L + 140, gy, 16, t.faint, {});
-  } else if (ident.replies && ident.replies.length) {
-    cv.text('answered by ' + ident.replies.map(function (r) { return r.from; }).join(', '), L + 140, gy, 16, t.good, { weight: 'bold' });
-    var okp = reach.filter(function (r) { return r.ok; });
-    cv.text(okp.length ? ('open: ' + okp.map(function (r) { return r.host + ':' + r.port; }).join('  ')) : 'no diagnostic port accepted a connection',
-      L + 140, gy + 22, 16, okp.length ? t.good : t.warn, {});
-  } else if (ident.error) {
-    cv.text('UDP refused by the sandbox (' + ident.error + ')', L + 140, gy, 16, t.warn, {});
-  } else {
-    cv.text('no gateway announced itself on ' + ((ident.asked || []).join(', ') || 'this network'), L + 140, gy, 16, t.faint, {});
+  // ---- lower half: one probe per row, evenly spaced, each clipped ----------
+  var ly = R.y + 150, lrh = 30, lvx = L + 150, lvw = R.w - 160;
+  cv.fillRect(R.x, ly - 16, R.w, 1, t.line);
+  function diagRow(i, label, value, col) {
+    var yy = ly + i * lrh;
+    cv.text(label, L, yy, 16, t.accent, { weight: 'bold' });
+    var sv = String(value == null ? '' : value);
+    if (cv.textWidth(sv, 16, 'bold') > lvw) {
+      while (sv.length > 4 && cv.textWidth(sv + '\u2026', 16, 'normal') > lvw) sv = sv.slice(0, -1);
+      sv += '\u2026';
+    }
+    cv.text(sv, lvx, yy, 16, col || t.text, { weight: 'bold' });
   }
 
-  cv.text('P3 (phone \u2192 head unit) is not testable from the app \u2014 run tools/bridge-probes on the unit.', L, ty + 40, 15, t.faint, {});
+  // P6 TASU — the link that actually works
+  var tu = res.tasu || {};
+  var tmsg, tcol;
+  if (tu.status === 'ok') { tmsg = 'DME answered \u2014 VIN ' + (tu.vin || '') + '  (GO)'; tcol = t.good; }
+  else if (tu.status === 'nrc') { tmsg = 'DME refused NRC 0x' + (tu.nrc || 0).toString(16).toUpperCase() + ' (reached the ECU)'; tcol = t.warn; }
+  else if (tu.status === 'no-reply') { tmsg = 'No reply from the DME (' + (tu.note || '') + ')'; tcol = t.crit; }
+  else if (tu.status === 'no-link') { tmsg = 'no diagnostic link in this build'; tcol = t.faint; }
+  else { tmsg = 'unexpected'; tcol = t.dim; }
+  diagRow(0, 'P6 TASU', tmsg, tcol);
+
+  // P7 GATEWAY — the car's gateway over IP (one line)
+  var gwres = res.gateway || {}, ident = gwres.identify || {}, reach = gwres.reachable || [];
+  var p7, p7c;
+  if (gwres.error) { p7 = gwres.error; p7c = t.faint; }
+  else if (ident.replies && ident.replies.length) {
+    var okp = reach.filter(function (r) { return r.ok; });
+    p7 = 'answered by ' + ident.replies.map(function (r) { return r.from; }).join(', ') +
+      (okp.length ? '  \u00b7  open ' + okp.map(function (r) { return r.port; }).join('/') : '  \u00b7  no port open');
+    p7c = okp.length ? t.good : t.warn;
+  } else if (ident.error) { p7 = 'UDP refused by the sandbox (' + ident.error + ')'; p7c = t.warn; }
+  else { p7 = 'no gateway announced itself (TASU is the working path)'; p7c = t.faint; }
+  diagRow(1, 'P7 GATEWAY', p7, p7c);
+
+  // P8 PRIVILEGE — what the app process may do (one line)
+  var pv = res.priv || {}, pb = res.privBind || {};
+  var who = (pv.uid == null) ? 'unknown' : ('uid ' + pv.uid + ' gid ' + pv.gid);
+  var p8 = who + (pv.root ? ' \u2014 ROOT' : ' \u2014 not root') + '  \u00b7  ' +
+    (pb.ok ? 'can bind <1024' : 'cannot bind <1024 (' + (pb.error || '?') + ')');
+  diagRow(2, 'P8 PRIVILEGE', p8, pv.root ? t.good : t.text);
+
+  // P3 note
+  cv.text('P3 (phone \u2192 head unit) can only be confirmed by connecting a tool to the bridge.', L, ly + 3 * lrh + 6, 15, t.faint, {});
 }
 
 // Settings grid geometry, shared by the renderer and the tap handler so the two
