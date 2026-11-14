@@ -247,21 +247,33 @@ function log(cv, t, view, R) {
     cv.text('Record a log, then do a clean WOT pull — the peak power estimate,', mx + 24, R.y + 128, 17, t.faint, {});
     cv.text('peak boost and 100–200 time are captured automatically.', mx + 24, R.y + 150, 17, t.faint, {});
   }
-  // right: recent logs
-  var lx = mx + mw + 16, lw = R.x + R.w - lx;
-  D.panel(cv, t, lx, R.y, lw, R.h, { title: 'RECENT LOGS' });
+  // right: recent logs (tap one to select; the action bar can then DELETE it)
+  var g = logGeom(R);
+  D.panel(cv, t, g.lx, R.y, g.lw, R.h, { title: 'RECENT LOGS' });
   var sess = view.sessions || [];
   if (sess.length === 0) {
-    cv.text('No logs yet.', lx + 24, R.y + 86, 22, t.dim, {});
-    cv.text('Sessions export to USB with a summary footer.', lx + 20, R.y + 118, 16, t.faint, {});
+    cv.text('No logs yet.', g.lx + 24, R.y + 86, 22, t.dim, {});
+    cv.text('Record a session, then export or delete it here.', g.lx + 20, R.y + 118, 16, t.faint, {});
   } else {
-    for (var s = 0; s < Math.min(sess.length, 6); s++) {
-      var yy = R.y + 70 + s * 38;
-      cv.text(sess[s].name, lx + 20, yy, 17, t.text, {});
-      cv.text(F.humanBytes(sess[s].size), lx + lw - 18, yy, 17, t.dim, { align: 'r' });
-      cv.fillRect(lx + 20, yy + 10, lw - 38, 1, t.line);
+    cv.text('tap a log to select', g.lx + 20, R.y + 44, 14, t.faint, {});
+    for (var s = 0; s < sess.length && s < g.max; s++) {
+      var yy = g.y0 + s * g.rh, seld = s === view.logSel;
+      if (seld) { cv.roundRect(g.lx + 10, yy - 20, g.lw - 20, g.rh - 4, 3, t.panel3); cv.fillRect(g.lx + 10, yy - 20, 3, g.rh - 4, t.accent); }
+      cv.text(sess[s].name, g.lx + 20, yy, 17, seld ? t.accent : t.text, { weight: seld ? 'bold' : 'normal' });
+      cv.text(F.humanBytes(sess[s].size), g.lx + g.lw - 18, yy, 17, t.dim, { align: 'r' });
+      if (!seld) cv.fillRect(g.lx + 20, yy + 10, g.lw - 38, 1, t.line);
+    }
+    if (view.logConfirmDel && view.logSel >= 0 && sess[view.logSel]) {
+      cv.text('Delete "' + sess[view.logSel].name + '"? tap DELETE again', g.lx + 20, R.y + R.h - 16, 15, t.crit, { weight: 'bold' });
     }
   }
+}
+
+// Geometry of the RECENT LOGS rows, shared by the renderer and the tap handler.
+function logGeom(R) {
+  var pw = 470, mx = R.x + pw + 16, mw = 560;
+  var lx = mx + mw + 16, lw = R.x + R.w - lx;
+  return { lx: lx, lw: lw, y0: R.y + 70, rh: 38, max: 6 };
 }
 
 // ------------------------------------------------------------- CHANNELS -----
@@ -498,15 +510,13 @@ function connect(cv, t, view, R) {
   var y2 = wrapText(cv, t, sub, sx, sy + 40, pw - 48, 19, t.dim);
   wrapText(cv, t, 'BeeM-Flash reads your car over the head unit’s own diagnostic link. Live data, fault codes and ECU info use it with no connection step — you don’t need to “connect”.', sx, y2 + 16, pw - 48, 18, t.faint);
 
-  // SECONDARY: ENET/DoIP — optional, advanced, and honest that it won't connect here.
+  // SECONDARY: ENET / DoIP - a plain answer to "can this ever find the car?"
   var vx = R.x + pw + 16, vw = R.x + R.w - vx;
-  D.panel(cv, t, vx, R.y, vw, R.h, { title: 'ENET / DoIP — OPTIONAL' });
+  D.panel(cv, t, vx, R.y, vw, R.h, { title: 'ENET / DoIP' });
   var ex = vx + 20, ey = R.y + 64;
-  ey = wrapText(cv, t, 'For a plug-in ENET cable (OBD port → Ethernet) on a laptop. ENET: ON only enables this app’s DoIP client; SCAN then looks for a car on the network. On the head unit there is no ENET cable, so “No vehicle found” is CORRECT — nothing is broken.', ex, ey, vw - 40, 16, t.faint) + 10;
-  ey = wrapText(cv, t, 'You do not need this: LIVE, CODES, INFO and FLASH already talk to the car over the head unit’s own link. For a phone, use WIRELESS BRIDGE.', ex, ey, vw - 40, 16, t.dim) + 12;
-  if (e.vehicle) { cv.text('Vehicle: ' + (e.vehicle.host || '?'), ex, ey, 17, t.text, { weight: 'bold' }); }
-  else if (e.scanning) { cv.text('Scanning…', ex, ey, 17, t.warn, { weight: 'bold' }); }
-  else { cv.text(e.enabled ? 'ENET ON — tap ENET SCAN' : 'ENET OFF (tap ENET: OFF to enable)', ex, ey, 15, e.enabled ? t.warn : t.faint, {}); }
+  ey = wrapText(cv, t, 'This looks for a car over a plug-in ENET cable (OBD port → Ethernet) on a laptop. The head unit has no such cable, so it will NEVER find a vehicle here — that is expected, not a fault.', ex, ey, vw - 40, 17, t.text) + 10;
+  ey = wrapText(cv, t, 'You do not need it. Your car is ALREADY connected through the head unit’s own link — that is what LIVE, CODES, INFO and FLASH use (see “Connected” on the left).', ex, ey, vw - 40, 16, t.dim) + 8;
+  wrapText(cv, t, 'To let a PHONE reach the car, use WIRELESS BRIDGE below.', ex, ey, vw - 40, 16, t.faint);
 }
 
 // --------------------------------------------------------------- CODES ------
@@ -582,8 +592,11 @@ function flash(cv, t, view, R) {
   }
   if (!f.descriptor) {
     cv.text('NO CALIBRATION LOADED', R.x + 24, py + 50, 24, t.warn, { weight: 'bold' });
-    cv.text(f.status || 'Place your descriptor + calibration under the app data dir (flash/).', R.x + 24, py + 86, 19, t.dim, {});
-    cv.text('Nothing is bundled — you supply the calibration, address and keys. See docs/FLASHING.md.', R.x + 24, py + 116, 18, t.faint, {});
+    if (f.status) cv.text(f.status, R.x + 24, py + 84, 18, t.crit, {});
+    cv.text('RELOAD re-scans the app\u2019s data folder for a tune you placed there. To LOAD one:', R.x + 24, py + 114, 18, t.dim, {});
+    cv.text('1.  put your calibration file + a descriptor.json into:', R.x + 40, py + 142, 17, t.faint, {});
+    cv.text((f.flashDir || '<app data>/flash/'), R.x + 60, py + 166, 18, t.accent, { weight: 'bold' });
+    cv.text('2.  tap RELOAD.   Nothing is bundled — you supply the tune, address and keys (docs/FLASHING.md).', R.x + 40, py + 192, 17, t.faint, {});
     return;
   }
   var d = f.descriptor;
@@ -760,6 +773,13 @@ function info(cv, t, view, R) {
     // securityAccessDenied/serviceNotSupportedInActiveSession mean it does but
     // is withholding it - a completely different fix.
     var shown = it.ok ? it.value : (it.nrcName ? 'not available (' + it.nrcName + ')' : it.value);
+    // Never let a value bleed into the next column: clip to the cell width.
+    var avail = cw - 230 - 16;
+    shown = String(shown);
+    if (cv.textWidth(shown, vf, it.ok ? 'bold' : 'normal') > avail) {
+      while (shown.length > 4 && cv.textWidth(shown + '\u2026', vf, 'normal') > avail) shown = shown.slice(0, -1);
+      shown += '\u2026';
+    }
     cv.text(shown, x + 230, y, vf, it.ok ? t.text : t.faint, { weight: it.ok ? 'bold' : 'normal' });
     if (pitch >= 23) cv.fillRect(x, y + 11, cw - 24, 1, t.line);
   }
@@ -793,7 +813,7 @@ module.exports = {
   W: W, H: H, CONTENT: CONTENT, BAR: BAR,
   tabRects: tabRects, barRects: barRects, scaleCv: scaleCv,
   chrome: chrome, content: content,
-  live: live, log: log, channels: channels, maps: maps, engine: engine, engineGeom: engineGeom, setupGeom: setupGeom, connect: connect, codes: codes, info: info, flash: flash, setup: setup,
+  live: live, log: log, logGeom: logGeom, channels: channels, maps: maps, engine: engine, engineGeom: engineGeom, setupGeom: setupGeom, connect: connect, codes: codes, info: info, flash: flash, setup: setup,
   cval: cval,
   byName: content
 };

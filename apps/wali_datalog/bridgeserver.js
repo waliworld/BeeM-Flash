@@ -56,7 +56,7 @@ BridgeServer.prototype._net = function () {
 // start() -> Promise<{ ok, host, port, error }>
 // Never throws: a sandbox refusal is an ANSWER (and the UI shows the errno),
 // not a crash.
-BridgeServer.prototype.start = function () {
+BridgeServer.prototype.start = function (_retried) {
   var self = this;
   if (this.listening) return Promise.resolve({ ok: true, host: this.boundHost, port: this.port });
   var net = this._net();
@@ -75,12 +75,23 @@ BridgeServer.prototype.start = function () {
     }
     srv.on('error', function (e) {
       // EACCES / EPERM -> the sandbox forbids listening (the helper is needed).
-      // EADDRINUSE     -> something already owns the port.
-      self.lastError = (e && e.code) ? e.code : ((e && e.message) || String(e));
+      // EADDRINUSE     -> the port is still held, almost always by OUR OWN
+      //   previous listener that had not finished closing (toggling off then
+      //   on fast, or a reload). Drop whatever we have and try ONCE more after
+      //   a moment before giving up.
+      var code = (e && e.code) ? e.code : ((e && e.message) || String(e));
       self.listening = false;
       self.server = null;
-      self._log('bridge listener failed: ' + self.lastError);
-      settle({ ok: false, error: self.lastError });
+      self._log('bridge listener failed: ' + code);
+      if (code === 'EADDRINUSE' && !_retried) {
+        try { srv.close(); } catch (x) {}
+        setTimeout(function () {
+          self.start(true).then(settle);
+        }, 600);
+        return;
+      }
+      self.lastError = code;
+      settle({ ok: false, error: code });
     });
     try {
       if (self.host) srv.listen(self.port, self.host, ready);

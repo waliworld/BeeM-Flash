@@ -151,6 +151,7 @@ App.prototype.start = function (ctx) {
   // ENGINE tab state: which control row is selected, the pending value, the
   // two-step confirm flag and the last result line.
   this.eng = { sel: 0, pending: {}, confirm: false, busy: false, msg: '', ok: false };
+  this.logSel = -1; this.logConfirmDel = false;   // RECENT LOGS selection + delete confirm
 
   // ---- wireless bridge ---------------------------------------------------
   // The consent gate is the app's own state machine (acknowledge -> enable ->
@@ -444,8 +445,8 @@ App.prototype._enetToggleEnable = function () {
 
 App.prototype._enetScan = function () {
   var self = this;
-  if (!this.enet.enabled) { this._flash('Enable the connection first.'); return; }
-  this.enet.scan(function () { return self._makeDiscoverySocket(); }, { stopOnFirst: true }).then(function (found) {
+  if (!this.enet.enabled) { this._flash('Enable the connection first.'); return Promise.resolve(); }
+  return this.enet.scan(function () { return self._makeDiscoverySocket(); }, { stopOnFirst: true }).then(function (found) {
     if (found && found.length) {
       self.enet.setVehicle({ host: found[0].host, logicalAddress: found[0].logicalAddress, vin: found[0].vin });
       self._flash('Found vehicle at ' + found[0].host);
@@ -592,7 +593,8 @@ App.prototype._actions = function () {
   if (s === 'log') return [
     { label: logging ? 'STOP' : 'START', active: logging, fn: function () { self._toggleRecord(); } },
     { label: 'MARKER', disabled: !logging, fn: function () { self.marker('mark'); } },
-    { label: 'EXPORT', fn: function () { self._export(); } }
+    { label: 'EXPORT', fn: function () { self._export(); } },
+    { label: this.logConfirmDel ? 'CONFIRM' : 'DELETE', danger: true, disabled: this.logSel < 0 || logging, fn: function () { self._logDelete(); } }
   ];
   if (s === 'channels') return [
     { label: 'LOG', fn: function () { self._toggleLog(); } },
@@ -625,10 +627,11 @@ App.prototype._actions = function () {
         { label: 'BACK', fn: function () { self.connectView = 'link'; } }
       ];
     }
+    // ENET SCAN is deliberately NOT here: on the head unit there is no ENET
+    // cable, so it can never find a car (see the panel text). The car is already
+    // reached through the head-unit link, and a phone uses WIRELESS BRIDGE.
     return [
       { label: self.connect.checking ? 'CHECKING…' : 'CHECK LINK', disabled: self.connect.checking, fn: function () { self._connectCheck(); } },
-      { label: this.enet.enabled ? 'ENET: ON' : 'ENET: OFF', active: this.enet.enabled, fn: function () { self._enetToggle(); } },
-      { label: 'ENET SCAN', disabled: !this.enet.enabled || this.enet.scanning, fn: function () { self._enetScan(); } },
       { label: 'WIRELESS BRIDGE', fn: function () { self.connectView = 'bridge'; } }
     ];
   }
@@ -904,6 +907,7 @@ App.prototype._bridgeToggle = function () {
   var host = this._bridgeHost();
   this.bserver.host = host;
   this.bserver.port = Number(this.getSetting('bridgeport')) || 13400;
+  this.bserver.stop();   // release any listener we still hold before re-binding
   this.bserver.start().then(function (r) {
     if (r.ok) {
       self.bstate.mode = 'direct';
@@ -1028,14 +1032,32 @@ App.prototype._bridgeHosts = function () {
     var bd = require('./bridgediag');
     var list = (bd.netInfo() || []).filter(function (i) {
       return i.ip && i.ip !== '127.0.0.1' && !i.internal;
-    }).map(function (i) { return { name: i.iface, address: i.ip }; });
-    // The car's own internal vlans are not reachable from a phone; show the
-    // likely-useful addresses first rather than burying them.
-    list.sort(function (a, b) { return rank(a.address) - rank(b.address); });
-    function rank(ip) {
-      if (/^160\.48\./.test(ip)) return 3;          // car-internal vlan
-      if (/^172\.16\./.test(ip)) return 2;          // internal wlan bridge (CarPlay / rear seat)
-      return 1;                                      // a network something else can join
+    }).map(function (i) {
+      return { name: i.iface, address: i.ip, hint: hintFor(i.iface, i.ip), rank: rankFor(i.iface, i.ip) };
+    });
+    // Phone-reachable addresses first. The car's OWN Wi-Fi (DIRECT-BMW, which
+    // hands out 172.16.222.x) is exactly what a phone joins, so it leads; the
+    // phone-hotspot address the car joined is next; the internal container veths
+    // (10.x) and the car's diagnostic vlans (160.48.x) are not phone-reachable
+    // and sink to the bottom.
+    list.sort(function (a, b) { return a.rank - b.rank; });
+    function rankFor(iface, ip) {
+      iface = (iface || '').toLowerCase();
+      if (/^172\.16\./.test(ip)) return 0;                 // the car's own DIRECT-BMW Wi-Fi
+      if (/^wl/.test(iface)) return 1;                      // any Wi-Fi interface
+      if (/^172\.20\.10\./.test(ip) || /^192\.168\./.test(ip)) return 1;  // a phone hotspot
+      if (/^169\.254\./.test(ip)) return 6;                // link-local, not useful
+      if (/^10\./.test(ip)) return 5;                       // internal container veth
+      if (/^160\.48\./.test(ip)) return 5;                 // car diagnostic vlan
+      return 3;
+    }
+    function hintFor(iface, ip) {
+      if (/^172\.16\./.test(ip)) return 'the car\u2019s own Wi-Fi (DIRECT-BMW) \u2014 join it on your phone';
+      if (/^172\.20\.10\./.test(ip) || /^192\.168\./.test(ip)) return 'your phone\u2019s hotspot';
+      if (/^wl/i.test(iface || '')) return 'a Wi-Fi network';
+      if (/^10\./.test(ip)) return 'internal \u2014 not reachable from a phone';
+      if (/^160\.48\./.test(ip)) return 'car network \u2014 not reachable from a phone';
+      return '';
     }
     return list;
   } catch (e) { return []; }
@@ -1208,6 +1230,20 @@ App.prototype._infoRead = function () {
   }).then(function (res) {
     self.info.items = res.items || [];
     self.info.tune = res.tune || null;
+    // The SVK lists several software units and runs ~90 characters, which
+    // overflowed the value column. Collapse it to the calibration (SWFL) unit
+    // the tune match already picked, plus a count; keep the full list in .full.
+    for (var si = 0; si < self.info.items.length; si++) {
+      var it = self.info.items[si];
+      if (it.did === 0xF101 && it.ok && typeof it.value === 'string') {
+        var units = it.value.split(/\s+/).filter(Boolean);
+        if (units.length > 1) {
+          it.full = it.value;
+          var cal = (self.info.tune && self.info.tune.calId) || units[units.length - 1];
+          it.value = cal + '  (+' + (units.length - 1) + ' more units)';
+        }
+      }
+    }
     // The flash prerequisite means "the owner has SEEN what is on this car", so it
     // must require that the car actually identified itself. ecuinfo.read resolves
     // ok:true even when every single DID failed (each error is swallowed into an
@@ -1430,7 +1466,7 @@ App.prototype.buildView = function () {
     demo: this.latest.demo, live: this.latest.live,
     vals: this.latest.values,
     rec: rec,
-    sessions: sessions,
+    sessions: sessions, logSel: this.logSel, logConfirmDel: this.logConfirmDel,
     enabled: this.enabled,
     displayed: this.displayed,
     maxtiles: this.maxTiles(),
@@ -1451,6 +1487,7 @@ App.prototype.buildView = function () {
       moduleCount: this._codeModules().length
     },
     flash: {
+      flashDir: ((this.ctx.dataDir || '') ? (this.ctx.dataDir + '/flash/') : 'flash/'),
       armed: this.flash.armed, running: this.flash.running, confirm: this.flash.confirm,
       progress: this.flash.progress, step: this.flash.step, status: this.flash.status,
       descriptor: this.flash.descriptor, result: this.flash.result,
@@ -1530,12 +1567,41 @@ App.prototype._onTap = function (x, y) {
 // Page-specific touch targets inside the content band (screens.CONTENT).
 App.prototype._contentTap = function (x, y) {
   var R = screens.CONTENT, s = this.tab;
+  if (s === 'log') return this._logTap(x, y, R);
   if (s === 'channels') return this._channelsTap(x, y, R);
   if (s === 'setup') return this._setupTap(x, y, R);
   if (s === 'maps') return this._mapsTap(x, y, R);
   if (s === 'engine') return this._engineTap(x, y, R);
   if (s === 'connect') return this._connectTap(x, y, R);
   if (s === 'flash') return this._flashTap(x, y, R);
+};
+
+// LOG: tap a recorded session to select it; the action bar can then DELETE it.
+App.prototype._logTap = function (x, y, R) {
+  var sess = this._sessions();
+  if (!sess.length) return;
+  var g = screens.logGeom(R);
+  for (var i = 0; i < sess.length && i < g.max; i++) {
+    var yy = g.y0 + i * g.rh;
+    if (x >= g.lx + 10 && x <= g.lx + g.lw - 10 && y >= yy - 22 && y <= yy + g.rh - 24) {
+      this.logSel = (this.logSel === i) ? -1 : i;
+      this.logConfirmDel = false;
+      return;
+    }
+  }
+};
+
+// Two-step delete of the selected session. Erases the recorded CSV from storage.
+App.prototype._logDelete = function () {
+  var sess = this._sessions();
+  if (this.logSel < 0 || !sess[this.logSel]) return;
+  if (!this.logConfirmDel) { this.logConfirmDel = true; return; }
+  this.logConfirmDel = false;
+  var name = sess[this.logSel].name;
+  try { if (this.storage && this.storage.remove) this.storage.remove(name); } catch (e) { this._flash('Delete failed: ' + ((e && e.message) || e)); return; }
+  this._sessionsDirty = true;
+  this.logSel = -1;
+  this._flash('Deleted ' + name, true);
 };
 
 // ENGINE: tap a row to select it, or tap one of its option chips to stage that

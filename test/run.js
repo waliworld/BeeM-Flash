@@ -742,10 +742,10 @@ Promise.resolve()
 
     ok(!app.diag.supported && !app.monitor.supported, 'app: boots with no transport until connected');
 
-    // CONNECT redesign: BTN_A = CHECK LINK (head-unit link), BTN_B = ENET toggle
-    // (acknowledges + enables the optional DoIP path in one tap), BTN_C = ENET SCAN.
-    app.onButton('BTN_B'); // ENET toggle on
-    ok(app.enet.acknowledged && app.enet.enabled, 'app: the ENET toggle acknowledges and enables in one tap');
+    // ENET is no longer a head-unit action-bar button (it can never find a car
+    // there); the optional DoIP client is still exercised through its methods.
+    app._enetToggle(); // acknowledge + enable in one call
+    ok(app.enet.acknowledged && app.enet.enabled, 'app: the ENET toggle acknowledges and enables in one call');
     ok(!app.diag.supported, 'app: ENET enabled but no vehicle yet -> still no transport');
 
     ctx.doipSocket = function () {
@@ -753,8 +753,7 @@ Promise.resolve()
         deliver(announceBytes('WBATESTVIN0000001', 0x1000), { address: '169.254.1.1' });
       });
     };
-    app.onButton('BTN_C'); // Scan
-    return new Promise(function (resolve) { setTimeout(resolve, 20); }).then(function () {
+    return app._enetScan().then(function () {
       ok(app.diag.supported && app.monitor.supported, 'app: after a successful scan, a real transport is wired in');
       eq(app.enet.vehicle.host, '169.254.1.1', 'app: discovered vehicle host stored');
 
@@ -824,7 +823,7 @@ Promise.resolve()
         });
         });
       }).then(function () {
-        app.onButton('BTN_B'); // Disable
+        app._enetToggle(); // Disable (ENET is driven by its method, not a button, now)
         ok(!app.diag.supported && !app.monitor.supported, 'app: disabling tears the transport back out');
 
         app.stop(); // release timers so the test process can exit cleanly
