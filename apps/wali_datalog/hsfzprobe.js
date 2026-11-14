@@ -103,25 +103,59 @@ function reach(host, port, opts) {
 }
 
 // run() -> { identify, reachable } — the whole question in one call.
+// Candidate gateway addresses on each subnet the unit is on. The gateway often
+// does NOT answer a discovery broadcast but DOES accept a directed connection
+// (this is how ISTA/E-Sys reach it). On BMW's internal diagnostic Ethernet the
+// gateway has historically sat at .99 of a 160.48.x block; we also try the
+// conventional .1 and the unit's own-address neighbours. Read-only: a TCP
+// connect, nothing written to the car.
+function candidateHosts(opts) {
+  var osMod = opts.osMod;
+  var os = osMod || (function () { try { return require('os'); } catch (e) { return null; } })();
+  if (!os) return [];
+  var out = {}, ifs = os.networkInterfaces() || {};
+  Object.keys(ifs).forEach(function (name) {
+    (ifs[name] || []).forEach(function (a) {
+      if (!a || (a.family !== 'IPv4' && a.family !== 4) || a.internal) return;
+      var m = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(a.address);
+      if (!m) return;
+      var base = m[1] + '.' + m[2] + '.' + m[3] + '.', self = parseInt(m[4], 10);
+      [1, 99, 100, self - 1, self + 1].forEach(function (h) {
+        if (h >= 1 && h <= 254 && h !== self) out[base + h] = 1;
+      });
+    });
+  });
+  return Object.keys(out);
+}
+
 function run(opts) {
   opts = opts || {};
   return identify(opts).then(function (id) {
-    // Probe whatever announced itself, plus any host the caller named.
-    var hosts = {};
+    // Probe whatever announced itself, any host the caller named, AND a bounded
+    // set of directed gateway candidates on the unit's own subnets.
+    var hosts = {}, directed = {};
     (id.replies || []).forEach(function (r) { hosts[r.from] = 1; });
     (opts.hosts || []).forEach(function (h) { hosts[h] = 1; });
-    var list = Object.keys(hosts);
-    if (!list.length) return { identify: id, reachable: [] };
-    var jobs = [];
+    if (opts.directed !== false) candidateHosts(opts).forEach(function (h) { if (!hosts[h]) directed[h] = 1; });
+    var list = Object.keys(hosts), dlist = Object.keys(directed);
+    var jobs = [], labels = [];
     list.forEach(function (h) {
-      jobs.push(reach(h, HSFZ_TCP, opts));
-      jobs.push(reach(h, DOIP, opts));
+      jobs.push(reach(h, HSFZ_TCP, opts)); labels.push({ host: h, kind: 'announced' });
+      jobs.push(reach(h, DOIP, opts)); labels.push({ host: h, kind: 'announced' });
     });
-    return Promise.all(jobs).then(function (rs) { return { identify: id, reachable: rs }; });
+    dlist.forEach(function (h) {
+      jobs.push(reach(h, HSFZ_TCP, opts)); labels.push({ host: h, kind: 'directed' });
+      jobs.push(reach(h, DOIP, opts)); labels.push({ host: h, kind: 'directed' });
+    });
+    if (!jobs.length) return { identify: id, reachable: [], directed: dlist };
+    return Promise.all(jobs).then(function (rs) {
+      for (var i = 0; i < rs.length; i++) if (labels[i]) rs[i].kind = labels[i].kind;
+      return { identify: id, reachable: rs, directed: dlist };
+    });
   });
 }
 
 module.exports = {
-  run: run, identify: identify, reach: reach, hsfzFrame: hsfzFrame, ipCandidates: ipCandidates,
+  run: run, identify: identify, reach: reach, candidateHosts: candidateHosts, hsfzFrame: hsfzFrame, ipCandidates: ipCandidates,
   HSFZ_TCP: HSFZ_TCP, HSFZ_UDP: HSFZ_UDP, DOIP: DOIP
 };

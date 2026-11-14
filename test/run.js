@@ -1923,6 +1923,18 @@ function discoveryTests() {
   ok(hid.slice(6).toString('ascii').indexOf('5UX83DP04P9S09849') >= 0, 'discovery: HSFZ identification carries the VIN');
 
   ok(Discovery.isDoipIdent(Buffer.from([0x02, 0xFD, 0x00, 0x01, 0, 0, 0, 0])), 'discovery: recognises a DoIP identification request');
+
+  // directed gateway candidates from the unit's own subnets (the research payoff:
+  // the gateway answers a directed connection, not a broadcast)
+  var hp = require(A + 'hsfzprobe');
+  var fakeOs = { networkInterfaces: function () { return {
+    vlan73: [{ family: 'IPv4', address: '160.48.199.119', internal: false }],
+    lo: [{ family: 'IPv4', address: '127.0.0.1', internal: true }] }; } };
+  var cands = hp.candidateHosts({ osMod: fakeOs });
+  ok(cands.indexOf('160.48.199.99') >= 0, 'p7: the BMW-historical gateway .99 is a directed candidate');
+  ok(cands.indexOf('160.48.199.1') >= 0, 'p7: the conventional .1 gateway is a directed candidate');
+  ok(cands.indexOf('160.48.199.119') < 0, 'p7: the unit\'s own address is not probed as a gateway');
+  ok(cands.indexOf('127.0.0.1') < 0, 'p7: loopback is never a gateway candidate');
   ok(!Discovery.isDoipIdent(Buffer.from([0x02, 0xFD, 0x80, 0x01, 0, 0, 0, 0])), 'discovery: ignores a non-identification DoIP message');
 
   // live UDP round-trip on an ephemeral port (not the real 13400, so nothing clashes)

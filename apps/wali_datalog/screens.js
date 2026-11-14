@@ -727,14 +727,18 @@ function setupDiag(cv, t, view, R) {
   // P7 GATEWAY — the car's gateway over IP (one line)
   var gwres = res.gateway || {}, ident = gwres.identify || {}, reach = gwres.reachable || [];
   var p7, p7c;
-  if (gwres.error) { p7 = gwres.error; p7c = t.faint; }
+  var openHosts = reach.filter(function (r) { return r.ok; });
+  if (openHosts.length) {
+    // A reachable gateway on the internal network is the big prize: a tool could
+    // be proxied straight to it. Show which host/port answered a connection.
+    p7 = 'GATEWAY REACHABLE \u2014 ' + openHosts.map(function (r) { return r.host + ':' + r.port; }).join('  ');
+    p7c = t.good;
+  } else if (gwres.error) { p7 = gwres.error; p7c = t.faint; }
   else if (ident.replies && ident.replies.length) {
-    var okp = reach.filter(function (r) { return r.ok; });
-    p7 = 'answered by ' + ident.replies.map(function (r) { return r.from; }).join(', ') +
-      (okp.length ? '  \u00b7  open ' + okp.map(function (r) { return r.port; }).join('/') : '  \u00b7  no port open');
-    p7c = okp.length ? t.good : t.warn;
+    p7 = 'announced by ' + ident.replies.map(function (r) { return r.from; }).join(', ') + '  \u00b7  no port open';
+    p7c = t.warn;
   } else if (ident.error) { p7 = 'UDP refused by the sandbox (' + ident.error + ')'; p7c = t.warn; }
-  else { p7 = 'no gateway announced itself (TASU is the working path)'; p7c = t.faint; }
+  else { p7 = 'no gateway on broadcast or directed probe (TASU is the working path)'; p7c = t.faint; }
   diagRow(1, 'P7 GATEWAY', p7, p7c);
 
   // P8 PRIVILEGE — what the app process may do (one line)
