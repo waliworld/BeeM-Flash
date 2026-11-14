@@ -94,3 +94,30 @@ persisted, clears the instant the bridge is turned off, and every relayed
 request is still counted in the on-screen audit. One device owns the session at
 a time. This exists because the gateway does not answer the head unit over IP
 (so a raw IP tunnel is impossible), but TASU can address any module directly.
+
+## How it installs — can the Store do it?
+
+Short answer: **the Store installs the app, not the helper.**
+
+* The MGU Store (`mgu-store`) installs **sandboxed apps** that run as the app
+  user (`tm_oap_app`, not root). BeeM-Flash is one of those. A helper installed
+  that way would hit the **same walls** the app does — it could not create a
+  Wi-Fi access point or bind a privileged port — so a Store app cannot *be* the
+  root helper.
+* A **root daemon absolutely can run on the MGU** — the unit's own GPU renderer
+  (`mgu-renderd`) and Tailscale (`tailscaled`) are exactly that: root services on
+  `/var/opt` with a unit on the rootfs. The helper installs the same way. What
+  the Store will not do is install a *third-party* root component automatically.
+
+So the helper needs **root once, at install time** — which you already have via
+your root-shell / SSH-root tool. That is the intended path:
+
+1. Get the files onto the unit (your root tool, `scp`, a USB copy — any way).
+2. Run `sh install.sh` **as root**. With systemd present it installs a service
+   that starts at boot and restarts on failure; without it, a detached process.
+3. Done — it is now part of the unit until `sh uninstall.sh`.
+
+**Does it need its own repo?** No. It lives in `tools/beem-bridge/` in the
+BeeM-Flash repo and ships as plain files. Package it alongside your root tool if
+that is how you deploy to units — nothing here needs a separate catalog or
+release. Only the *app* goes through the Store; the helper rides with root.

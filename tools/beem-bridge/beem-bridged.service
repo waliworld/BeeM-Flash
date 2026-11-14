@@ -1,0 +1,22 @@
+[Unit]
+# BeeM-Flash wireless bridge helper.
+# Installs and runs the same way the MGU's own GPU renderer (mgu-renderd) and
+# Tailscale do: a root daemon on /var/opt with a unit on the rootfs. It owns the
+# Wi-Fi access point and the DoIP/HSFZ listener; BeeM-Flash (the sandboxed app)
+# attaches to its UNIX socket and decides what may reach the car.
+Description=BeeM-Flash wireless bridge helper
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+# NODE is substituted by install.sh with the unit's own node path.
+ExecStart=__NODE__ /var/opt/beem-bridge/beem-bridged.js
+Restart=on-failure
+RestartSec=5
+# Writes nothing persistent outside /run; the AP goes down when the service stops.
+RuntimeDirectory=beem-bridge
+User=root
+
+[Install]
+WantedBy=multi-user.target
