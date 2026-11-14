@@ -408,22 +408,34 @@ function connectBridge(cv, t, view, R) {
   var x = R.x + 24, y = R.y + 70;
 
   if (mode === 'direct') {
-    // Hosted by the app itself: no helper, no PC. The phone joins a network the
-    // car is ALREADY on, then connects to this address.
+    // Hosted by the app itself. The car does NOT make a network: it is already
+    // ON one (often a phone hotspot). The tool dials the CAR's address on that
+    // network, so that address is the thing to show.
+    var st = b.selfTest;
     cv.text('On \u2014 hosted here', x, y, 30, t.good, { weight: 'bold' });
-    cv.text('CONNECT TO', x, y + 46, 15, t.faint, { weight: 'bold' });
-    cv.text((d.host && d.host !== '0.0.0.0' ? d.host : 'this head unit') + ' : ' + (d.port || 13400),
-      x + 210, y + 46, 24, t.accent, { weight: 'bold' });
-    var hy = y + 80, hosts = b.hosts || [];
-    if (hosts.length) {
-      cv.text('ADDRESSES', x, hy, 15, t.faint, { weight: 'bold' });
-      for (var hi = 0; hi < hosts.length && hi < 4; hi++) {
-        cv.text(hosts[hi].name + '   ' + hosts[hi].address, x + 210, hy + hi * 22, 17, t.text, {});
-      }
-      hy += Math.min(hosts.length, 4) * 22 + 16;
+    if (st) {
+      cv.text(st.ok ? '\u2713 listener verified' : '\u2717 ' + (st.detail || 'not answering'),
+        x + 300, y - 2, 17, st.ok ? t.good : t.crit, { weight: 'bold' });
     }
-    wrapText(cv, t, 'Join the car\u2019s Wi-Fi from your phone, then point the tool at that address, port ' +
-      (d.port || 13400) + '. The app cannot create a network \u2014 it listens on one the car already has.',
+
+    var hosts = b.hosts || [], hy = y + 42;
+    cv.text('CONNECT YOUR TOOL TO', x, hy, 15, t.faint, { weight: 'bold' });
+    hy += 26;
+    if (!hosts.length) {
+      cv.text('port ' + (d.port || 13400) + ' \u2014 no network address yet', x, hy, 22, t.warn, { weight: 'bold' });
+      hy += 30;
+    } else {
+      for (var hi = 0; hi < hosts.length && hi < 3; hi++) {
+        var first = hi === 0;
+        cv.text(hosts[hi].address + ' : ' + (d.port || 13400), x, hy, first ? 25 : 19,
+          first ? t.accent : t.dim, { weight: 'bold' });
+        cv.text(hosts[hi].name, x + 290, hy, 15, t.faint, {});
+        hy += first ? 30 : 24;
+      }
+      hy += 6;
+    }
+    wrapText(cv, t, 'Your phone and the car must be on the SAME Wi-Fi \u2014 usually the car joined your phone\u2019s hotspot. ' +
+      'The app does not make a network; use the address above that is on the network your phone is on.',
       x, hy, pw - 48, 17, t.faint);
   } else if (mode === 'helper' && b.connected) {
     cv.text(ap.up ? 'On \u2014 helper access point' : 'Helper ready', x, y, 30, ap.up ? t.good : t.warn, { weight: 'bold' });
@@ -490,7 +502,8 @@ function connect(cv, t, view, R) {
   var vx = R.x + pw + 16, vw = R.x + R.w - vx;
   D.panel(cv, t, vx, R.y, vw, R.h, { title: 'ENET / DoIP — OPTIONAL' });
   var ex = vx + 20, ey = R.y + 64;
-  ey = wrapText(cv, t, 'For an external ENET / Wi-Fi adapter only. Not needed for normal use — and the head unit’s own software can’t open this link, so SCAN won’t find a vehicle here.', ex, ey, vw - 40, 16, t.faint) + 12;
+  ey = wrapText(cv, t, 'For a plug-in ENET cable (OBD port → Ethernet) on a laptop. ENET: ON only enables this app’s DoIP client; SCAN then looks for a car on the network. On the head unit there is no ENET cable, so “No vehicle found” is CORRECT — nothing is broken.', ex, ey, vw - 40, 16, t.faint) + 10;
+  ey = wrapText(cv, t, 'You do not need this: LIVE, CODES, INFO and FLASH already talk to the car over the head unit’s own link. For a phone, use WIRELESS BRIDGE.', ex, ey, vw - 40, 16, t.dim) + 12;
   if (e.vehicle) { cv.text('Vehicle: ' + (e.vehicle.host || '?'), ex, ey, 17, t.text, { weight: 'bold' }); }
   else if (e.scanning) { cv.text('Scanning…', ex, ey, 17, t.warn, { weight: 'bold' }); }
   else { cv.text(e.enabled ? 'ENET ON — tap ENET SCAN' : 'ENET OFF (tap ENET: OFF to enable)', ex, ey, 15, e.enabled ? t.warn : t.faint, {}); }

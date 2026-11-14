@@ -108,11 +108,13 @@
     else if (name === 'bridge-off') { app = makeApp(); app.tab = 'connect'; app.connectView = 'bridge'; app.render(cv); cap = 'BRIDGE \u2014 off (no daemon)'; }
     else if (name === 'bridge-direct') { app = makeApp(); app.tab = 'connect'; app.connectView = 'bridge';
       app.bgate.acknowledge(); app.bgate.enable(); app.bgate.arm(60000);
-      app.bstate = { busy: false, mode: 'direct', msg: 'Bridge on \u2014 connect to 172.16.222.97:13400', ok: true };
-      app.bserver.listening = true; app.bserver.boundHost = '172.16.222.97'; app.bserver.port = 13400;
-      app.bserver.peers = [{ ip: '172.16.222.54', mac: null }];
-      app.bserver.stats = { relayed: 96, refused: 2, lastRefusal: 'ECU 0x40 not in relay allow-list', audit: [] };
-      app.render(cv); cap = 'BRIDGE \u2014 direct (no helper needed)'; }
+      app.bstate = { busy: false, mode: 'direct', ok: true, msg: 'Bridge on and verified \u2014 connect a tool to port 13400',
+        selfTest: { ok: true, armed: true, detail: 'listener answered and accepted routing' } };
+      app.bserver.listening = true; app.bserver.boundHost = '::'; app.bserver.port = 13400;
+      app.bserver.peers = []; app.bserver.stats = { relayed: 0, refused: 0, lastRefusal: null, audit: [] };
+      app._bridgeHosts = function () { return [ { name: 'wlan0', address: '172.20.10.11' },
+        { name: 'wlan_bridge', address: '172.16.222.97' }, { name: 'vlan80', address: '160.48.199.185' } ]; };
+      app.render(cv); cap = 'BRIDGE \u2014 direct, verified'; }
     else if (name === 'bridge-on') { app = makeApp(); app.tab = 'connect'; app.connectView = 'bridge';
       app.bgate.acknowledge(); app.bgate.enable(); app.bgate.arm(60000);
       app.bstate = { busy: false, mode: 'helper', msg: '1 device connected.', ok: true };

@@ -904,9 +904,15 @@ App.prototype._bridgeToggle = function () {
   this.bserver.host = host;
   this.bserver.start().then(function (r) {
     if (r.ok) {
-      self.bstate.busy = false; self.bstate.mode = 'direct'; self.bstate.ok = true;
-      self.bstate.msg = 'Bridge on \u2014 connect to ' + r.host + ':' + r.port;
-      return;
+      self.bstate.mode = 'direct';
+      // Prove the listener really answers before telling the user it is on.
+      return self.bserver.selfTest().then(function (t) {
+        self.bstate.busy = false; self.bstate.ok = !!t.ok;
+        self.bstate.selfTest = t;
+        self.bstate.msg = t.ok
+          ? 'Bridge on and verified \u2014 connect a tool to port ' + r.port
+          : 'Listener started but did not answer: ' + t.detail;
+      });
     }
     // Binding on a specific address can fail where binding every address works.
     if (host) {
@@ -928,17 +934,11 @@ App.prototype._bridgeToggle = function () {
 
 // The address to listen on: the unit's wireless interface if we can see one
 // (that is the network a phone joins), else let the runtime choose.
-App.prototype._bridgeHost = function () {
-  try {
-    var bd = require('./bridgediag');
-    var ifs = bd.netInfo() || [];
-    for (var i = 0; i < ifs.length; i++) {
-      var n = String(ifs[i].name || '');
-      if (/^wl|wlan/i.test(n) && ifs[i].address) return ifs[i].address;
-    }
-  } catch (e) { /* fall through */ }
-  return null;
-};
+// Listen on EVERY address the unit has. We cannot know which network the
+// phone will be on - the car may be joined to a phone hotspot, a home Wi-Fi or
+// its own internal bridge - so binding one interface would silently exclude the
+// others. null = every address.
+App.prototype._bridgeHost = function () { return null; };
 
 // 2) HELPER: the sandbox refused to listen, so fall back to the root daemon.
 //    Say plainly which one is in play and why.
@@ -980,8 +980,12 @@ App.prototype._bridgeRefresh = function () {
   if (this.bstate.mode === 'direct') {
     this.bgate.renew(this._config().bridge && this._config().bridge.leaseMs);
     var n = this.bserver.peers.length;
-    this.bstate.msg = n + ' device' + (n === 1 ? '' : 's') + ' connected.';
-    this.bstate.ok = true;
+    this.bserver.selfTest().then(function (t) {
+      self.bstate.selfTest = t;
+      self.bstate.msg = n + ' device' + (n === 1 ? '' : 's') + ' connected\u2003\u00b7\u2003' +
+        (t.ok ? 'listener verified' : 'listener NOT answering: ' + t.detail);
+      self.bstate.ok = !!t.ok;
+    });
     return;
   }
   if (!this.bridge.connected) return;
@@ -1002,6 +1006,7 @@ App.prototype._bridgeView = function () {
   s.busy = this.bstate.busy; s.msg = this.bstate.msg; s.msgOk = this.bstate.ok;
   s.enabled = s.gate.enabled;
   s.mode = this.bstate.mode;                 // 'off' | 'direct' | 'helper'
+  s.selfTest = this.bstate.selfTest || null;
   s.direct = d;
   // In direct mode the counters and devices come from our own listener.
   if (this.bstate.mode === 'direct') {
@@ -1013,12 +1018,24 @@ App.prototype._bridgeView = function () {
 };
 
 // Every address a phone could try, for the on-screen instructions.
+// Every address a tool could actually dial, newest-looking first. netInfo()
+// reports { iface, ip } - reading .name/.address here silently produced an
+// empty list, which is why the page showed no address at all.
 App.prototype._bridgeHosts = function () {
   try {
     var bd = require('./bridgediag');
-    return (bd.netInfo() || []).filter(function (i) {
-      return i.address && i.address !== '127.0.0.1';
-    }).map(function (i) { return { name: i.name, address: i.address }; });
+    var list = (bd.netInfo() || []).filter(function (i) {
+      return i.ip && i.ip !== '127.0.0.1' && !i.internal;
+    }).map(function (i) { return { name: i.iface, address: i.ip }; });
+    // The car's own internal vlans are not reachable from a phone; show the
+    // likely-useful addresses first rather than burying them.
+    list.sort(function (a, b) { return rank(a.address) - rank(b.address); });
+    function rank(ip) {
+      if (/^160\.48\./.test(ip)) return 3;          // car-internal vlan
+      if (/^172\.16\./.test(ip)) return 2;          // internal wlan bridge (CarPlay / rear seat)
+      return 1;                                      // a network something else can join
+    }
+    return list;
   } catch (e) { return []; }
 };
 

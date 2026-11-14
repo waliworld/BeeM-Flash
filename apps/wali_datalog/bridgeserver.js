@@ -191,6 +191,61 @@ BridgeServer.prototype._onFrame = function (c, peer, type, payload) {
   }).catch(function (e) { self._log('relay error: ' + ((e && e.message) || e)); });
 };
 
+// selfTest() -> Promise<{ ok, detail }>
+//
+// Dials our OWN listener over the loopback address and performs a DoIP routing
+// activation. It proves the listener is up, reachable and framing correctly
+// WITHOUT any phone or tool, which separates the two failures people actually
+// hit: "the app is not serving" vs "the network cannot reach the app". The
+// second is far more common and needs a completely different fix.
+BridgeServer.prototype.selfTest = function () {
+  var self = this;
+  if (!this.listening) return Promise.resolve({ ok: false, detail: 'the listener is not running' });
+  var net = this._net();
+  if (!net || !net.connect) return Promise.resolve({ ok: false, detail: 'no socket support' });
+  return new Promise(function (resolve) {
+    var done = false, got = Buffer.alloc(0), c;
+    function finish(r) {
+      if (done) return; done = true;
+      try { c && c.destroy(); } catch (e) {}
+      resolve(r);
+    }
+    var timer = setTimeout(function () { finish({ ok: false, detail: 'no answer from our own listener' }); }, 1500);
+    try { c = net.connect(self.port, '127.0.0.1'); } catch (e) {
+      clearTimeout(timer);
+      return finish({ ok: false, detail: (e && (e.code || e.message)) || String(e) });
+    }
+    c.on('connect', function () {
+      try { c.write(frame(0x0005, Buffer.from([0x0e, 0x00, 0, 0, 0, 0, 0]))); } catch (e) {}
+    });
+    c.on('data', function (d) {
+      got = Buffer.concat([got, d]);
+      while (got.length >= 8) {
+        var type = got.readUInt16BE(2), len = got.readUInt32BE(4);
+        if (got.length < 8 + len) break;
+        var payload = got.slice(8, 8 + len);
+        got = got.slice(8 + len);
+        if (type === 0x0006) {
+          clearTimeout(timer);
+          var code = payload[4];
+          // 0x10 = accepted (the bridge is armed), 0x06 = refused because it is
+          // not armed. BOTH prove the listener and the framing work.
+          return finish({
+            ok: true,
+            armed: code === 0x10,
+            detail: code === 0x10 ? 'listener answered and accepted routing'
+              : 'listener answered (routing refused until the bridge is armed)'
+          });
+        }
+      }
+    });
+    c.on('error', function (e) {
+      clearTimeout(timer);
+      finish({ ok: false, detail: (e && (e.code || e.message)) || String(e) });
+    });
+  });
+};
+
 BridgeServer.DEFAULT_PORT = DEFAULT_PORT;
 BridgeServer.frame = frame;
 module.exports = BridgeServer;
