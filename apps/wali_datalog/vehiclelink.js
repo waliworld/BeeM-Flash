@@ -38,6 +38,14 @@ var FLASH_SERVICES = {
   0x31: 'routineControl',
   0x11: 'ecuReset'
 };
+// Live engine adjustments (exhaust flap, tuner map/cooling controls) use
+// InputOutputControlByIdentifier. It is a WRITE - it overrides an actuator on a
+// running engine - so it gets its own tier, separately armed from flashing, and
+// it is permitted ONLY to the engine controller. Nothing here touches
+// calibration, and returning control to the ECU (0x2F .. 0x00) undoes it.
+var LIVE_SERVICES = {
+  0x2F: 'inputOutputControlByIdentifier'
+};
 // Only the default (0x01) and extended (0x03) sessions. A programming session
 // (0x02) belongs to the flashing allow-list.
 var READ_SESSIONS = { 0x01: true, 0x03: true };
@@ -49,6 +57,7 @@ function VehicleLink(mod, link, opts) {
   this.link = link;
   this.tgt = (opts && opts.target) || DME;
   this.flashing = !!(opts && opts.flashing);
+  this.liveControl = !!(opts && opts.liveControl);
   this.kind = 'tasu';
   this.supported = true;
   var self = this;
@@ -59,13 +68,22 @@ function VehicleLink(mod, link, opts) {
 }
 
 // Refuse a service this link is not allowed to carry, before anything is sent.
-VehicleLink.prototype._check = function (bytes) {
+// addr is the ECU the request is addressed to (undefined for a functional /
+// all-ECU request), which the live-control tier requires.
+VehicleLink.prototype._check = function (bytes, addr) {
   if (!bytes || !bytes.length) throw new Error('empty request');
   var sid = bytes[0];
   if (READ_SERVICES[sid]) {
     if (sid === 0x10 && !READ_SESSIONS[bytes[1]] && !this.flashing) {
       throw new Error('session 0x' + hex2(bytes[1]) + ' needs the flash path');
     }
+    return;
+  }
+  if (LIVE_SERVICES[sid]) {
+    // Never broadcast an actuator override, and never aim one at a module other
+    // than the engine controller, whatever the caller asked for.
+    if (!this.liveControl) throw new Error('service 0x' + hex2(sid) + ' needs the live-control path');
+    if (addr !== DME) throw new Error('live control is only permitted to the engine controller');
     return;
   }
   if (this.flashing && FLASH_SERVICES[sid]) return;
@@ -78,7 +96,7 @@ VehicleLink.prototype._check = function (bytes) {
 VehicleLink.prototype.sendTo = function (addr, bytes, timeoutMs) {
   var self = this;
   var arr = Array.prototype.slice.call(bytes);
-  try { this._check(arr); } catch (e) { return Promise.reject(e); }
+  try { this._check(arr, addr); } catch (e) { return Promise.reject(e); }
   var sid = arr[0], data = arr.slice(1);
   return this.ready.then(function (ok) {
     if (!ok) throw new Error('head unit diagnostic link not ready' + (self.link.error ? ': ' + self.link.error : ''));
@@ -164,4 +182,4 @@ function make(ctx, opts) {
   return new VehicleLink(mod, link, opts);
 }
 
-module.exports = { make: make, VehicleLink: VehicleLink, DME: DME, READ_SERVICES: READ_SERVICES, FLASH_SERVICES: FLASH_SERVICES };
+module.exports = { make: make, VehicleLink: VehicleLink, DME: DME, READ_SERVICES: READ_SERVICES, FLASH_SERVICES: FLASH_SERVICES, LIVE_SERVICES: LIVE_SERVICES };

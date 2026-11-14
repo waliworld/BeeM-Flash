@@ -16,6 +16,7 @@ var Provider = require('./provider');
 var FastLog = require('./fastlog');
 var LogEngine = require('./logengine');
 var MapControl = require('./mapcontrol');
+var LiveAdjust = require('./liveadjust');
 var EnetGate = require('./enetgate');
 var doip = require('./doip');
 var vehiclelink = require('./vehiclelink');
@@ -44,10 +45,12 @@ var TABS = [
   //   SETUP     settings & diagnostics     SETUP
   { key: 'live', label: 'LIVE' }, { key: 'log', label: 'LOG' }, { key: 'channels', label: 'CHANNELS' },
   { key: 'connect', label: 'CONNECT' }, { key: 'info', label: 'INFO' }, { key: 'codes', label: 'CODES' },
-  { key: 'maps', label: 'MAPS' }, { key: 'flash', label: 'FLASH' }, { key: 'setup', label: 'SETUP' }
+  { key: 'maps', label: 'MAPS' }, { key: 'engine', label: 'ENGINE' }, { key: 'flash', label: 'FLASH' },
+  { key: 'setup', label: 'SETUP' }
 ];
 var SCREEN_ORDER = ['live', 'log', 'channels', 'maps', 'connect', 'codes', 'info', 'flash', 'setup'];
-var DEFAULTS = { demo: 'auto', source: 'auto', platform: 'B58', rate: 10, units: 'metric', style: 'tiles', maxtiles: 8, autostart: false, mapcontrol: 'off' };
+var DEFAULTS = { demo: 'auto', source: 'auto', platform: 'B58', rate: 10, units: 'metric', style: 'tiles', maxtiles: 8, autostart: false, mapcontrol: 'off',
+  engineconfig: 'off', tuner: 'off', layout: 'full', renderer: 'auto' };
 // 'knock' is deliberately NOT a default tile: knock retard has no standard DID on
 // the MG1 DME, so it can only ever read '--' out of the box (it stays available in
 // CHANNELS for anyone who supplies a pidmap). 'load' is shown instead - it is in the
@@ -65,7 +68,11 @@ var SETTINGS_SCHEMA = [
   { key: 'source', label: 'Data source', hint: 'auto / fast / bus / UDS / OBD-II', options: ['auto', 'fast', 'someip', 'diag', 'obd'] },
   { key: 'platform', label: 'Engine platform', options: ['B58', 'S58'] },
   { key: 'autostart', label: 'Auto-start on drive', bool: true },
-  { key: 'mapcontrol', label: 'Map control', hint: 'writes to the DME', options: ['off', 'armed'], danger: true }
+  { key: 'layout', label: 'Screen layout', hint: 'full screen / HMI frame', options: ['full', 'standard'] },
+  { key: 'renderer', label: 'Renderer', hint: 'GPU 60 fps / software', options: ['auto', 'software'] },
+  { key: 'mapcontrol', label: 'Map control', hint: 'writes to the DME', options: ['off', 'armed'], danger: true },
+  { key: 'engineconfig', label: 'Engine config', hint: 'live engine controls (writes)', options: ['off', 'armed'], danger: true },
+  { key: 'tuner', label: 'Tuner', hint: 'enables live map + max cooling', options: ['off', 'mhd'] }
 ];
 
 function App() {}
@@ -128,6 +135,18 @@ App.prototype.start = function (ctx) {
     config: this._config().mapControl,
     keyFn: this._mapKeyFn()
   });
+
+  // ---- live engine controls (exhaust flap / tuner map / max cooling) -----
+  // Separate from map control and from flashing: these are temporary actuator
+  // overrides on a running engine (UDS 0x2F), armed by their own setting.
+  this.live = new LiveAdjust({
+    enabled: this._engineArmed(),
+    tuner: this.getSetting('tuner'),
+    config: this._config().liveAdjust
+  });
+  // ENGINE tab state: which control row is selected, the pending value, the
+  // two-step confirm flag and the last result line.
+  this.eng = { sel: 0, pending: {}, confirm: false, busy: false, msg: '', ok: false };
 
   // ---- ui state ---------------------------------------------------------
   this.tab = 'live';
@@ -205,6 +224,7 @@ App.prototype._bridgeProbe = function () {
 // Reconfigure from settings without dropping an active recording.
 App.prototype._applySettings = function () {
   this.map.setEnabled(this._armed());
+  if (this.live) { this.live.setEnabled(this._engineArmed()); this.live.setTuner(this.getSetting('tuner')); }
   if (this.engine.state !== LogEngine.STATE.LOGGING) {
     this.engine.configure({
       channels: this.enabled, rate: Number(this.getSetting('rate')), units: this.getSetting('units')
@@ -554,6 +574,15 @@ App.prototype._actions = function () {
     { label: this.confirm ? 'CONFIRM' : 'APPLY', danger: this.confirm, disabled: !this.map.enabled, fn: function () { self._mapApply(); } },
     { label: 'CANCEL', disabled: !this.confirm, fn: function () { self.confirm = false; } }
   ];
+  if (s === 'engine') {
+    var on = this.live.enabled;
+    return [
+      { label: 'PREV', disabled: !on, fn: function () { self._engineMove(-1); } },
+      { label: 'NEXT', disabled: !on, fn: function () { self._engineMove(1); } },
+      { label: this.eng.confirm ? 'CONFIRM' : 'APPLY', danger: true, disabled: !on || this.eng.busy, fn: function () { self._engineApply(); } },
+      { label: this.eng.confirm ? 'CANCEL' : 'RELEASE', disabled: !on || this.eng.busy, fn: function () { self._engineCancelOrRelease(); } }
+    ];
+  }
   if (s === 'connect') return [
     { label: self.connect.checking ? 'CHECKING…' : 'CHECK LINK', disabled: self.connect.checking, fn: function () { self._connectCheck(); } },
     { label: this.enet.enabled ? 'ENET: ON' : 'ENET: OFF', active: this.enet.enabled, fn: function () { self._enetToggle(); } },
@@ -698,6 +727,106 @@ App.prototype._mapApply = function () {
 // tab strip and the content), fading after a few seconds. This is the home for
 // one-off messages like "No logs to export" or "No vehicle found" - they used
 // to be written into this._mapMsg and leaked onto the MAPS status panel.
+// ---- live engine controls (ENGINE tab) ---------------------------------
+// Each row is one control; the selected row's value is cycled with PREV/NEXT (or
+// by tapping an option) and only written when APPLY is confirmed. Nothing here
+// touches the calibration - see liveadjust.js.
+App.prototype._engineRows = function () { return this.live.controls(); };
+
+// The ENGINE tab's render model: every control with its staged value, whether it
+// is live-confirmed, and why a tuner-only row is unavailable.
+App.prototype._engineView = function () {
+  var self = this, rows = this._engineRows();
+  var tunerOn = this.getSetting('tuner') !== 'off';
+  return {
+    enabled: this.live.enabled,
+    tuner: this.getSetting('tuner'),
+    sel: this.eng.sel,
+    confirm: this.eng.confirm,
+    busy: this.eng.busy,
+    msg: this.eng.msg,
+    ok: this.eng.ok,
+    controls: rows.map(function (c) {
+      return {
+        key: c.key, label: c.label, note: c.note, tunerOnly: c.tunerOnly,
+        options: c.options,
+        value: self._engineValue(c),
+        sent: self.live.state[c.key] || null,
+        confirmed: !!self.live.confirmed[c.key],
+        locked: !!(c.tunerOnly && !tunerOn)
+      };
+    })
+  };
+};
+
+// The value currently staged for a control: the pending edit, else the last value
+// we successfully sent, else the first option (the released / safe one).
+App.prototype._engineValue = function (ctl) {
+  if (this.eng.pending[ctl.key] != null) return this.eng.pending[ctl.key];
+  if (this.live.state[ctl.key] != null) return this.live.state[ctl.key];
+  return ctl.options[0].value;
+};
+
+App.prototype._engineMove = function (dir) {
+  var rows = this._engineRows();
+  if (!rows.length) return;
+  this.eng.sel = (this.eng.sel + dir + rows.length) % rows.length;
+  this.eng.confirm = false;
+};
+
+// Stage the next value for the selected control (does not write).
+App.prototype._engineCycle = function () {
+  var rows = this._engineRows(), ctl = rows[this.eng.sel];
+  if (!ctl) return;
+  var cur = this._engineValue(ctl), i = 0;
+  for (var k = 0; k < ctl.options.length; k++) if (ctl.options[k].value === cur) i = k;
+  this.eng.pending[ctl.key] = ctl.options[(i + 1) % ctl.options.length].value;
+  this.eng.confirm = false;
+};
+
+App.prototype._engineApply = function () {
+  var self = this;
+  var rows = this._engineRows(), ctl = rows[this.eng.sel];
+  if (!ctl || this.eng.busy) return;
+  var value = this._engineValue(ctl);
+  var prep = this.live.prepare(ctl.key, value, this.latest.values, this.latest.live);
+  if (!prep.ok) { this.eng.msg = prep.reasons[0] || 'Cannot apply'; this.eng.ok = false; return; }
+  // Two-step: the first APPLY arms the confirm, the second actually writes.
+  if (!this.eng.confirm) { this.eng.confirm = true; return; }
+  this.eng.confirm = false;
+  this.eng.busy = true;
+  this.eng.msg = 'Applying ' + ctl.label + '…'; this.eng.ok = true;
+  var gw = this._makeGateway({ liveControl: true });
+  var send = gw && gw.send ? function (b) { return gw.send(b); } : null;
+  Promise.resolve(send ? this.live.commit(send, ctl.key, value, this.latest.values, this.latest.live) :
+    { ok: false, confirmed: false, message: 'No diagnostic transport available.' })
+    .then(function (res) {
+      self.eng.busy = false;
+      self.eng.msg = res.message; self.eng.ok = !!res.ok;
+      if (res.ok) delete self.eng.pending[ctl.key];
+    }).catch(function (e) {
+      self.eng.busy = false;
+      self.eng.msg = (e && e.message) || String(e); self.eng.ok = false;
+    });
+};
+
+// CANCEL while a confirm is pending; otherwise hand every override back to the ECU.
+App.prototype._engineCancelOrRelease = function () {
+  var self = this;
+  if (this.eng.confirm) { this.eng.confirm = false; return; }
+  if (this.eng.busy) return;
+  this.eng.busy = true; this.eng.msg = 'Returning control to the ECU…'; this.eng.ok = true;
+  var gw = this._makeGateway({ liveControl: true });
+  var send = gw && gw.send ? function (b) { return gw.send(b); } : null;
+  Promise.resolve(send ? this.live.releaseAll(send) : { ok: false, message: 'No diagnostic transport available.' })
+    .then(function (res) {
+      self.eng.busy = false; self.eng.pending = {};
+      self.eng.msg = res.message; self.eng.ok = !!res.ok;
+    }).catch(function (e) {
+      self.eng.busy = false; self.eng.msg = (e && e.message) || String(e); self.eng.ok = false;
+    });
+};
+
 App.prototype._flash = function (msg, ok) {
   this._toast = { msg: msg, ok: ok === true, at: (typeof Date !== 'undefined' && Date.now) ? Date.now() : 0 };
   if (this.ctx.log && this.ctx.log.info) this.ctx.log.info(msg);
@@ -729,9 +858,10 @@ App.prototype._makeGateway = function (opts) {
   // flasher now run on. Cached: building it opens a SOME/IP proxy and a response
   // subscription, and this is called from several tabs.
   var flashing = !!(opts && opts.flashing);
-  var key = flashing ? '_vlinkFlash' : '_vlink';
+  var liveControl = !!(opts && opts.liveControl);
+  var key = flashing ? '_vlinkFlash' : (liveControl ? '_vlinkLive' : '_vlink');
   if (!this[key]) {
-    try { this[key] = vehiclelink.make(this.ctx, { target: 0x12, flashing: flashing }); } catch (e) { this[key] = null; }
+    try { this[key] = vehiclelink.make(this.ctx, { target: 0x12, flashing: flashing, liveControl: liveControl }); } catch (e) { this[key] = null; }
   }
   return this[key] || null;
 };
@@ -832,8 +962,14 @@ App.prototype._infoRead = function () {
     // ok:false item), so trusting it would let the flasher arm against a DME that
     // answered nothing at all.
     var got = self.info.items.filter(function (x) { return x.ok; }).length;
+    // What counts as "identified" must match what this ECU family actually
+    // answers. A Bosch MG1 refuses the generic/supplier identification DIDs but
+    // reports its software units through the SVK (0xF101), so the SVK and BMW's
+    // own software number (0xF188) identify the calibration just as well as the
+    // older F17C/F194 pair.
     var identified = self.info.items.some(function (x) {
-      return x.ok && (x.did === 0xF17C || x.did === 0xF194 || x.did === 0x0904);
+      return x.ok && (x.did === 0xF101 || x.did === 0xF188 || x.did === 0xF17C ||
+        x.did === 0xF194 || x.did === 0x0904);
     });
     self.info.done = identified;
     if (identified) {
@@ -1049,6 +1185,7 @@ App.prototype.buildView = function () {
     style: this.style(),
     selection: this.selection,
     maps: maps,
+    engine: this._engineView(),
     enet: this.enet.status(), connect: this.connect,
     codes: {
       scope: this.codes.scope,
@@ -1097,6 +1234,12 @@ App.prototype._armed = function () {
   var v = this.getSetting('mapcontrol');
   return v === 'armed' || v === true || v === 'on';
 };
+// Live engine controls are ARMED only on the explicit "armed" choice. This is a
+// separate switch from map control: arming one must never arm the other.
+App.prototype._engineArmed = function () {
+  var v = this.getSetting('engineconfig');
+  return v === 'armed' || v === true || v === 'on';
+};
 // The SecurityAccess key algorithm for map control, if the ECU needs one and the
 // user configured it (config.mapControl.securityAlgo, a seedkey makeAlgo spec).
 // No manufacturer algorithm is bundled.
@@ -1137,8 +1280,30 @@ App.prototype._contentTap = function (x, y) {
   if (s === 'channels') return this._channelsTap(x, y, R);
   if (s === 'setup') return this._setupTap(x, y, R);
   if (s === 'maps') return this._mapsTap(x, y, R);
+  if (s === 'engine') return this._engineTap(x, y, R);
   if (s === 'connect') return this._connectTap(x, y, R);
   if (s === 'flash') return this._flashTap(x, y, R);
+};
+
+// ENGINE: tap a row to select it, or tap one of its option chips to stage that
+// value. Staging never writes - APPLY + CONFIRM does.
+App.prototype._engineTap = function (x, y, R) {
+  if (!this.live.enabled) return;
+  var rows = this._engineRows(), geo = screens.engineGeom(R, rows.length);
+  for (var i = 0; i < rows.length; i++) {
+    var g = geo[i];
+    if (y < g.y || y > g.y + g.h) continue;
+    this.eng.sel = i; this.eng.confirm = false;
+    var ctl = rows[i];
+    for (var k = 0; k < ctl.options.length; k++) {
+      var c = g.chips[k];
+      if (c && x >= c.x && x <= c.x + c.w) {
+        if (!(ctl.tunerOnly && this.getSetting('tuner') === 'off')) this.eng.pending[ctl.key] = ctl.options[k].value;
+        return;
+      }
+    }
+    return;
+  }
 };
 
 App.prototype._channelsTap = function (x, y, R) {
@@ -1156,11 +1321,10 @@ App.prototype._channelsTap = function (x, y, R) {
   }
 };
 App.prototype._setupTap = function (x, y, R) {
-  var items = SETTINGS_SCHEMA, cols = 2, gx = 16, gy = 12, cw = (R.w - gx) / cols, rh = 56, perCol = Math.ceil(items.length / cols);
-  for (var i = 0; i < items.length; i++) {
-    var col = Math.floor(i / perCol), row = i % perCol;
-    var ix = R.x + col * (cw + gx), iy = R.y + row * (rh + gy);
-    if (hit({ x: ix, y: iy, w: cw, h: rh }, x, y)) { this.setupSel = i; this._cycleSetting(i); return; }
+  // Same geometry the renderer uses, so a tap always lands on the row you see.
+  var geo = screens.setupGeom(R, SETTINGS_SCHEMA.length);
+  for (var i = 0; i < geo.length; i++) {
+    if (hit(geo[i], x, y)) { this.setupSel = i; this._cycleSetting(i); return; }
   }
 };
 App.prototype._mapsTap = function (x, y, R) {

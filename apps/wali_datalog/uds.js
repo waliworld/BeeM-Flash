@@ -17,6 +17,11 @@ var SID = {
   READ_DID: 0x22,
   READ_MEM: 0x23, // ReadMemoryByAddress (read-only; used for A2L address measurements)
   DDDI: 0x2C, // DynamicallyDefineDataIdentifier (the fast block read uses 2C 88 01)
+  // InputOutputControlByIdentifier: the LIVE adjustment service (exhaust flap and
+  // the tuner map/cooling controls). It overrides an actuator while the engine
+  // runs; it does NOT write calibration and nothing it does survives an ignition
+  // cycle once control is returned to the ECU. See liveadjust.js.
+  IO_CONTROL: 0x2F,
   ROUTINE: 0x31,
   REQUEST_DOWNLOAD: 0x34, // calibration flashing (write): see flash.js
   TRANSFER_DATA: 0x36,
@@ -104,6 +109,23 @@ function buildSecuritySendKey(level, keyBytes) {
 
 function buildRoutineControl(sub, rid, data) {
   return [SID.ROUTINE, u8(sub), hi(rid), lo(rid)].concat(data || []);
+}
+
+// InputOutputControlByIdentifier (0x2F), standard ISO 14229 form:
+//   2F <didHi> <didLo> <controlParameter> [controlState ...]
+// controlParameter: 0x00 returnControlToECU, 0x01 resetToDefault,
+// 0x02 freezeCurrentState, 0x03 shortTermAdjustment.
+// Returning control to the ECU (0x00) is how every live override is undone.
+function buildIoControl(did, controlParameter, data) {
+  return [SID.IO_CONTROL, hi(did), lo(did), u8(controlParameter)].concat(data || []);
+}
+
+// Some tuner calibrations expose their own live controls through 0x2F with a
+// NON-standard short payload (a one-byte group selector and a one-byte value)
+// rather than a 2-byte DID. Kept separate from buildIoControl so the standard
+// form is never silently reshaped, and so the unverified tuner path is obvious.
+function buildIoControlRaw(group, value) {
+  return [SID.IO_CONTROL, u8(group), u8(value)];
 }
 
 // ReadDTCInformation (0x19): read fault codes. Default subfunction 0x02
@@ -263,6 +285,8 @@ module.exports = {
   buildSecurityRequestSeed: buildSecurityRequestSeed,
   buildSecuritySendKey: buildSecuritySendKey,
   buildRoutineControl: buildRoutineControl,
+  buildIoControl: buildIoControl,
+  buildIoControlRaw: buildIoControlRaw,
   buildMonitorRequest: buildMonitorRequest,
   buildEcuReset: buildEcuReset,
   buildRequestDownload: buildRequestDownload,

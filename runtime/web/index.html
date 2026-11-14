@@ -100,6 +100,10 @@
     else if (name === 'maps-off') { app = makeApp({ mapcontrol: 'off' }); drive(app, 6); app.tab = 'maps'; app.render(cv); cap = 'MAPS — off (safe default)'; }
     else if (name === 'maps') { app = makeApp({ mapcontrol: 'armed' }); drive(app, 6); app.map.requested = 2; app.tab = 'maps'; app.render(cv); cap = 'MAPS — armed'; }
     else if (name === 'maps-confirm') { app = makeApp({ mapcontrol: 'armed' }); drive(app, 6); app.map.requested = 2; app.confirm = true; app.tab = 'maps'; app.render(cv); cap = 'MAPS — confirm'; }
+    else if (name === 'engine-off') { app = makeApp({ engineconfig: 'off' }); drive(app, 6); app.tab = 'engine'; app.render(cv); cap = 'ENGINE \u2014 off (safe default)'; }
+    else if (name === 'engine') { app = makeApp({ engineconfig: 'armed', tuner: 'mhd' }); drive(app, 6); app.tab = 'engine'; app.render(cv); cap = 'ENGINE \u2014 armed (tuner)'; }
+    else if (name === 'engine-locked') { app = makeApp({ engineconfig: 'armed', tuner: 'off' }); drive(app, 6); app.tab = 'engine'; app.render(cv); cap = 'ENGINE \u2014 tuner features locked'; }
+    else if (name === 'engine-confirm') { app = makeApp({ engineconfig: 'armed', tuner: 'mhd' }); drive(app, 6); app.tab = 'engine'; app.eng.sel = 0; app.eng.pending.flap = 'open'; app.eng.confirm = true; app.render(cv); cap = 'ENGINE \u2014 confirm'; }
     else if (name === 'connect') { app = makeApp(); app.connect = { state: 'ok', detail: 'DME answered \u2014 VIN 5UX83DP04P9S09849', checking: false }; app.tab = 'connect'; app.render(cv); cap = 'CONNECT — head-unit link OK'; }
     else if (name === 'connect-locked') { app = makeApp(); drive(app, 6); app.tab = 'connect'; app.render(cv); cap = 'CONNECT — locked'; }
     else if (name === 'codes') { app = withEnet(makeApp()); app.codes.msg = ''; app.tab = 'codes'; app.render(cv); cap = 'CODES — before scan'; }

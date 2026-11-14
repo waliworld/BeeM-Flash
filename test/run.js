@@ -1170,6 +1170,8 @@ Promise.resolve()
     });
   })
   .then(bridgeDiagTests)
+  .then(liveAdjustTests)
+  .then(svkIdentTests)
   .then(report)
   .catch(function (e) { console.error(e); process.exit(1); });
 
@@ -1366,5 +1368,112 @@ function bridgeDiagTests() {
   }).then(function (r) {
     eq(r.status, 'no-link', 'bridgediag: no transport reads as no-link, never a false positive');
     ok(Array.isArray(bd.netInfo()), 'bridgediag: netInfo returns an interface list');
+  });
+}
+
+// ---- live engine controls (ENGINE tab): bytes, gates, preconditions ---------
+function liveAdjustTests() {
+  var LiveAdjust = require(A + 'liveadjust');
+  var uds = require(A + 'uds');
+  var vlink = require(A + 'vehiclelink');
+
+  // --- request bytes (the part that must be exactly right) ---
+  eq(uds.buildIoControl(0x60FD, 0x03, [0x03, 0xE8]).join(','), '47,96,253,3,3,232', 'uds: exhaust-flap OPEN is 2F 60FD 03 03E8');
+  eq(uds.buildIoControl(0x60FD, 0x03, [0x23, 0x28]).join(','), '47,96,253,3,35,40', 'uds: exhaust-flap CLOSE is 2F 60FD 03 2328');
+  eq(uds.buildIoControl(0x60FD, 0x00).join(','), '47,96,253,0', 'uds: returnControlToECU is 2F 60FD 00');
+  eq(uds.buildIoControlRaw(0x01, 0x02).join(','), '47,1,2', 'uds: tuner raw io-control is 2F <group> <value>');
+  eq(uds.SID.IO_CONTROL, 0x2F, 'uds: IO_CONTROL service id');
+
+  // --- the transport gate: 0x2F only on an armed live link, only to the DME ---
+  var L = vlink.VehicleLink.prototype;
+  function gate(opts, bytes, addr) {
+    var fake = { liveControl: !!opts.liveControl, flashing: !!opts.flashing };
+    try { L._check.call(fake, bytes, addr); return 'allowed'; } catch (e) { return e.message; }
+  }
+  eq(gate({ liveControl: true }, [0x2F, 0x60, 0xFD, 0x00], 0x12), 'allowed', 'vehiclelink: 0x2F allowed to the DME on an armed live link');
+  ok(/live-control path/.test(gate({}, [0x2F, 0x60, 0xFD, 0x00], 0x12)), 'vehiclelink: 0x2F refused on the ordinary read link');
+  ok(/engine controller/.test(gate({ liveControl: true }, [0x2F, 0x60, 0xFD, 0x00], 0x18)), 'vehiclelink: 0x2F refused to a module other than the DME');
+  ok(/engine controller/.test(gate({ liveControl: true }, [0x2F, 0x60, 0xFD, 0x00], undefined)), 'vehiclelink: 0x2F never broadcast (functional refused)');
+  ok(/live-control path/.test(gate({ flashing: true }, [0x2F, 0x60, 0xFD, 0x00], 0x12)), 'vehiclelink: arming the flash path does NOT arm live control');
+
+  // --- preconditions ---
+  var live = new LiveAdjust({ enabled: false });
+  ok(live.prepare('flap', 'open', { rpm: 800, speed: 0 }, true).ok === false, 'liveadjust: refuses while disarmed');
+  live.setEnabled(true);
+  ok(live.prepare('flap', 'open', { rpm: 800, speed: 0 }, false).ok === false, 'liveadjust: refuses on demo/stale data');
+  ok(live.prepare('flap', 'open', { rpm: 800, speed: 0 }, true).ok === true, 'liveadjust: flap allowed with a running engine on live data');
+  ok(live.prepare('flap', 'open', { rpm: 0, speed: 0 }, true).ok === false, 'liveadjust: refuses an override with the engine stopped');
+  ok(live.prepare('flap', 'auto', { rpm: 0, speed: 0 }, true).ok === true, 'liveadjust: releasing back to the ECU is never blocked');
+  ok(live.prepare('map', 'map2', { rpm: 800, speed: 0 }, true).ok === false, 'liveadjust: tuner map refused while Tuner is off');
+  live.setTuner('mhd');
+  ok(live.prepare('map', 'map2', { rpm: 800, speed: 0 }, true).ok === true, 'liveadjust: tuner map allowed once Tuner is declared');
+  ok(live.prepare('map', 'map2', { rpm: 800, speed: 40 }, true).ok === false, 'liveadjust: live map change refused while moving');
+  ok(live.prepare('map', 'map2', { rpm: 3000, speed: 0 }, true).ok === false, 'liveadjust: live map change refused above idle');
+  ok(live.build('map', 'map2').join(',') === '47,1,1', 'liveadjust: map slots are 0-based on the wire');
+  ok(live.build('map', 'map9') === null, 'liveadjust: an out-of-range map slot builds nothing');
+  ok(live.build('cooling', 'on').join(',') === '47,3,1', 'liveadjust: max cooling on');
+
+  // --- commit: positive echo confirms, NRC never claims success ---
+  var sent = [];
+  function okSend(b) { sent.push(b); return Promise.resolve([0x6F, 0x60, 0xFD, 0x03]); }
+  function nrcSend() { return Promise.resolve([0x7F, 0x2F, 0x31]); }
+  return live.commit(okSend, 'flap', 'open', { rpm: 800, speed: 0 }, true).then(function (r) {
+    ok(r.ok === true && r.confirmed === true, 'liveadjust: a positive 0x6F reply confirms the control');
+    eq(sent[0].join(','), '47,96,253,3,3,232', 'liveadjust: commit sent the exhaust-flap OPEN bytes');
+    eq(live.state.flap, 'open', 'liveadjust: the confirmed value is remembered');
+    return live.commit(nrcSend, 'cooling', 'on', { rpm: 800, speed: 0 }, true);
+  }).then(function (r) {
+    ok(r.ok === false && r.confirmed === false, 'liveadjust: an NRC never reads as applied');
+    ok(/does not implement/.test(r.message), 'liveadjust: an out-of-range NRC explains the tune lacks the control');
+    ok(live.state.cooling === undefined, 'liveadjust: a refused control is not remembered');
+    return live.releaseAll(okSend);
+  }).then(function (r) {
+    ok(r.ok === true && r.released === 1, 'liveadjust: releaseAll hands the held actuator back to the ECU');
+    ok(live.state.flap === undefined, 'liveadjust: released controls are forgotten');
+  });
+}
+
+// ---- MG1 identification via the SVK software-unit list (0xF101) -------------
+// The car under test (Bosch MG1CS201) answers VIN / serial / build date / SGBD
+// but REFUSES the generic identification DIDs, so the calibration identity has
+// to come from the SVK. These cases lock that behaviour in.
+function svkIdentTests() {
+  var ecuinfo = require(A + 'ecuinfo');
+
+  // SVK bytes carrying one SWFL unit id: 00 00 5D 55 28 96 06
+  var svkBody = [0x01, 0x00, 0x00, 0x00, 0x5D, 0x55, 0x28, 0x96, 0x06, 0x00];
+  eq(ecuinfo.decode('svk', svkBody), '00005D55289606', 'ecuinfo: the SVK decoder extracts the 7-byte software-unit id');
+  ok(ecuinfo.decode('svk', [0x01, 0x02, 0x03]).length > 0, 'ecuinfo: an unparsable SVK falls back to hex rather than going blank');
+
+  var wanted = {};
+  ecuinfo.DEFAULT_DIDS.forEach(function (d) { wanted[d.did] = true; });
+  ok(wanted[0xF101], 'ecuinfo: the SVK DID is read');
+  ok(wanted[0xF188], 'ecuinfo: BMW manufacturer software number is read');
+
+  // A DME that behaves like the real MG1: only VIN, serial, build date, SGBD and
+  // the SVK answer; everything else is requestOutOfRange.
+  function mg1Send(bytes) {
+    if (bytes[0] !== 0x22) return Promise.resolve([0x7F, bytes[0], 0x11]);
+    var did = (bytes[1] << 8) | bytes[2];
+    if (did === 0xF190) return Promise.resolve([0x62, 0xF1, 0x90].concat(str('5UX83DP04P9S09849')));
+    if (did === 0xF18C) return Promise.resolve([0x62, 0xF1, 0x8C].concat(str('0031228110')));
+    if (did === 0xF101) return Promise.resolve([0x62, 0xF1, 0x01].concat(svkBody));
+    return Promise.resolve([0x7F, 0x22, 0x31]);           // requestOutOfRange
+  }
+  function str(s) { return s.split('').map(function (c) { return c.charCodeAt(0); }); }
+
+  return ecuinfo.read(mg1Send, { obd9: false }).then(function (res) {
+    function item(did) { for (var i = 0; i < res.items.length; i++) if (res.items[i].did === did) return res.items[i]; return null; }
+    ok(item(0xF101) && item(0xF101).ok, 'ecuinfo: the SVK reads on an MG1-like DME');
+    eq(item(0xF101).value, '00005D55289606', 'ecuinfo: the reported software-unit id');
+    var refused = item(0xF194);
+    ok(refused && !refused.ok, 'ecuinfo: the supplier software number still refuses, as on the real car');
+    eq(refused.nrcName, 'requestOutOfRange', 'ecuinfo: the refusal reason is surfaced so the UI can explain it');
+    // the flash prerequisite (main.js) accepts SVK / BMW SW as identification
+    var identified = res.items.some(function (x) {
+      return x.ok && (x.did === 0xF101 || x.did === 0xF188 || x.did === 0xF17C || x.did === 0xF194 || x.did === 0x0904);
+    });
+    ok(identified, 'ecuinfo: an MG1 that reports only its SVK still counts as identified');
+    ok(res.tune && String(res.tune.calId || '').indexOf('00005D55') === 0, 'ecuinfo: the tune matcher keys on the SVK id');
   });
 }

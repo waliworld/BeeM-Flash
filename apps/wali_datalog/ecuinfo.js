@@ -17,6 +17,17 @@ var seedkey = require('./seedkey');
 
 var DEFAULT_DIDS = [
   { did: 0xF190, label: 'VIN', kind: 'ascii' },
+  // BMW's SVK (Software-Verbau-Kenndaten): the software-unit list. On a Bosch
+  // MG1/MD1 this - not the generic F1xx identification DIDs - is where the
+  // calibration identity actually lives, which is why a B58 answers VIN / serial
+  // / build date / SGBD index but refuses Software number and Calibration ID.
+  // The SWFL entry is the 7-byte "00 00 5D 55 <3-byte version>" form that the
+  // bundled stock-calibration tables are keyed on.
+  { did: 0xF101, label: 'Software units (SVK)', kind: 'svk' },
+  // BMW *manufacturer* software number/version. BMW populates these where the
+  // Bosch *supplier* pair (F194/F195) is left blank, so they are tried first.
+  { did: 0xF188, label: 'BMW software number', kind: 'ascii' },
+  { did: 0xF189, label: 'BMW software version', kind: 'ascii' },
   { did: 0xF187, label: 'Part number', kind: 'ascii' },
   { did: 0xF191, label: 'Hardware number', kind: 'ascii' },
   { did: 0xF193, label: 'Hardware version', kind: 'ascii' },
@@ -54,8 +65,38 @@ function toHex(bytes) {
 // B48/B38). Keyed by the 6-hex F150 value, uppercase.
 var SGBD_NAMES = { '0F26B4': 'DME8FF_R' };
 
+// Pull the software-unit identifiers out of an SVK (0xF101) reply.
+//
+// BMW packs each unit as a 4-byte process-class/base id followed by a 3-byte
+// version, e.g. 00 00 5D 55 | 28 96 06. We do NOT assume the surrounding record
+// layout (entry width and the process-class byte codes vary by ECU generation
+// and are not verified here) - instead we scan for the 7-byte shape and return
+// every distinct id. That is deliberately defensive: a wrong structural guess
+// would silently produce a wrong calibration id, and a wrong cal id is worse
+// than none when it decides whether the car reads as stock or tuned.
+function svkIds(bytes) {
+  var out = [], seen = {};
+  if (!bytes) return out;
+  function h2(n) { var s = (n & 0xff).toString(16).toUpperCase(); return s.length === 1 ? '0' + s : s; }
+  for (var i = 0; i + 7 <= bytes.length;) {
+    // A unit id is 00 00 <base-hi> <base-lo> <3-byte version>, e.g.
+    // 00 00 5D 55 28 96 06. Requiring a NON-ZERO base high byte keeps the scan
+    // from locking onto a window shifted one byte into a run of zeros.
+    if (bytes[i] !== 0x00 || bytes[i + 1] !== 0x00 || bytes[i + 2] === 0x00) { i++; continue; }
+    var id = '';
+    for (var k = 0; k < 7; k++) id += h2(bytes[i + k]);
+    if (!seen[id]) { seen[id] = true; out.push(id); }
+    i += 7;                               // never report overlapping windows
+  }
+  return out;
+}
+
 function decode(kind, bytes) {
   if (!bytes || !bytes.length) return '';
+  if (kind === 'svk') {
+    var ids = svkIds(bytes);
+    return ids.length ? ids.join('  ') : toHex(bytes);
+  }
   if (kind === 'hex') return toHex(bytes);
   if (kind === 'date' && bytes.length >= 3) {
     // BMW/ISO identification date is commonly BCD yy mm dd (or yyyy mm dd).
@@ -118,8 +159,15 @@ var STOCK = buildStockIndex(stockdb);
 function computeTune(items, opts) {
   opts = opts || {};
   function val(did) { for (var i = 0; i < items.length; i++) if (items[i].did === did && items[i].ok) return items[i].value; return null; }
-  var calId = val(0xF17C) || val(0x0904), sw = val(0xF194) || val(0x0904), hw = val(0xF191), prog = val(0xF199);
-  var raw = [calId, sw, hw].filter(Boolean).map(function (s) { return String(s).toUpperCase(); });
+  // Ordered by what actually answers on a Bosch MG1: the SVK software-unit list
+  // first, then BMW's manufacturer software number, then the generic/supplier
+  // DIDs and the OBD service-09 cal id as best-effort fallbacks.
+  var svk = val(0xF101);
+  var svkList = svk ? String(svk).split(/\s+/).filter(Boolean) : [];
+  var calId = val(0xF17C) || val(0x0904) || svkList[0] || null;
+  var sw = val(0xF188) || val(0xF194) || val(0x0904) || svkList[0] || null;
+  var hw = val(0xF191), prog = val(0xF199);
+  var raw = [calId, sw, hw].concat(svkList).filter(Boolean).map(function (s) { return String(s).toUpperCase(); });
   var reported = raw.map(norm);           // canonical form for identifier matching
   var hay = raw.join(' ');                // readable form for the ECU type / signatures
 

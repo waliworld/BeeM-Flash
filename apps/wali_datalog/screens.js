@@ -330,6 +330,61 @@ function maps(cv, t, view, R) {
 }
 
 // A centered modal confirmation overlay.
+// ---------------------------------------------------------------- ENGINE ----
+// Geometry shared by the renderer and the tap handler so they can never drift:
+// one row per control, with its option chips laid out right of the label.
+function engineGeom(R, n) {
+  var out = [], rowH = Math.min(84, Math.floor((R.h - 8) / Math.max(n, 1))), chipW = 132, chipH = 40, gap = 10;
+  for (var i = 0; i < n; i++) {
+    var y = R.y + 6 + i * rowH, chips = [];
+    for (var k = 0; k < 6; k++) chips.push({ x: R.x + 470 + k * (chipW + gap), y: y + 10, w: chipW, h: chipH });
+    out.push({ y: y, h: rowH - 6, chips: chips, chipH: chipH });
+  }
+  return out;
+}
+
+function engine(cv, t, view, R) {
+  var e = view.engine || { controls: [] };
+  if (!e.enabled) {
+    D.panel(cv, t, R.x, R.y, R.w, R.h, { accent: true, accentColor: t.warn });
+    cv.text('ENGINE CONFIG IS OFF', R.x + R.w / 2, R.y + R.h / 2 - 20, 40, t.text, { align: 'c', weight: 'bold' });
+    cv.text('These controls command the engine while it runs. They are disabled by default.', R.x + R.w / 2, R.y + R.h / 2 + 22, 22, t.dim, { align: 'c' });
+    cv.text('Turn on SETUP → "Engine config" to use this page.', R.x + R.w / 2, R.y + R.h / 2 + 54, 22, t.dim, { align: 'c' });
+    return;
+  }
+  cv.text('LIVE ENGINE CONTROLS — temporary, reversible, no flashing', R.x, R.y - 8, 18, t.dim, { weight: 'bold' });
+  if (e.msg) cv.text(e.msg, R.x + R.w, R.y - 8, 18, e.ok ? t.good : t.crit, { align: 'r', weight: 'bold' });
+
+  var rows = e.controls, geo = engineGeom(R, rows.length);
+  for (var i = 0; i < rows.length; i++) {
+    var c = rows[i], g = geo[i], isSel = i === e.sel;
+    cv.roundRect(R.x, g.y, R.w, g.h, 3, isSel ? t.panel3 : t.panel2);
+    if (isSel) cv.fillRect(R.x, g.y, 3, g.h, t.accent);
+    cv.text(c.label, R.x + 20, g.y + 28, 21, c.locked ? t.faint : t.text, { weight: 'bold' });
+    var sub = c.locked ? 'Tuner required — set SETUP → "Tuner"' : c.note;
+    cv.text(String(sub).slice(0, 64), R.x + 20, g.y + 50, 14, t.faint, {});
+    // current state, right of the label block
+    if (c.confirmed && c.sent) cv.text('ACTIVE: ' + c.sent, R.x + R.w - 20, g.y + 28, 15, t.good, { align: 'r', weight: 'bold' });
+    for (var k = 0; k < c.options.length && k < g.chips.length; k++) {
+      var o = c.options[k], ch = g.chips[k], on = o.value === c.value;
+      cv.roundRect(ch.x, ch.y, ch.w, ch.h, 3, on && !c.locked ? t.accent : t.line);
+      cv.text(o.label, ch.x + ch.w / 2, ch.y + 26, 17, c.locked ? t.faint : (on ? t.ink : t.dim), { align: 'c', weight: 'bold' });
+    }
+  }
+  if (e.confirm) {
+    var sel = rows[e.sel] || { label: '' };
+    overlay(cv, t, 'CONFIRM ENGINE CONTROL',
+      'Set ' + sel.label + ' to "' + labelOfOpt(sel, sel.value) + '" — this commands the engine controller now.',
+      'Tap CONFIRM to apply, CANCEL to back out.', t.crit);
+  }
+}
+
+function labelOfOpt(ctl, value) {
+  var opts = (ctl && ctl.options) || [];
+  for (var i = 0; i < opts.length; i++) if (opts[i].value === value) return opts[i].label;
+  return String(value);
+}
+
 function overlay(cv, t, title, body, foot, color) {
   cv.fillRect(0, 0, W, BAR.y - 8, 'rgba(6,6,6,0.82)'); // dim the page, keep the action bar bright
   var bw = 900, bh = 240, bx = (W - bw) / 2, by = (H - bh) / 2;
@@ -525,20 +580,35 @@ function setupDiag(cv, t, view, R) {
   cv.text('P3 (phone \u2192 head unit) is not testable from the app \u2014 run tools/bridge-probes on the unit.', L, ty + 40, 15, t.faint, {});
 }
 
+// Settings grid geometry, shared by the renderer and the tap handler so the two
+// can never disagree. Goes to three columns (and shorter rows) once there are
+// enough settings that two columns would run past the content area.
+function setupGeom(R, n) {
+  var cols = n > 10 ? 3 : 2, gx = 16, gy = 12;
+  var perCol = Math.ceil(n / Math.max(cols, 1));
+  var cw = (R.w - (cols - 1) * gx) / cols;
+  var rh = Math.min(56, Math.floor((R.h - (perCol - 1) * gy) / Math.max(perCol, 1)));
+  var out = [];
+  for (var i = 0; i < n; i++) {
+    var col = Math.floor(i / perCol), row = i % perCol;
+    out.push({ x: R.x + col * (cw + gx), y: R.y + row * (rh + gy), w: cw, h: rh });
+  }
+  return out;
+}
+
 function setup(cv, t, view, R) {
   if (view.setupView === 'diag') return setupDiag(cv, t, view, R);
   var items = view.setup || [];
-  var cols = 2, gx = 16, gy = 12, cw = (R.w - gx) / cols, rh = 56, perCol = Math.ceil(items.length / cols);
+  var geo = setupGeom(R, items.length);
   for (var i = 0; i < items.length; i++) {
-    var col = Math.floor(i / perCol), row = i % perCol;
-    var x = R.x + col * (cw + gx), y = R.y + row * (rh + gy);
+    var g = geo[i], x = g.x, y = g.y, cw = g.w, rh = g.h;
     var it = items[i], sel = i === (view.setupSel || 0);
     cv.roundRect(x, y, cw, rh, 3, sel ? t.panel3 : t.panel2);
     if (sel) cv.fillRect(x, y, 3, rh, t.accent);
-    cv.text(it.label, x + 20, y + 24, 19, t.text, { weight: 'bold' });
-    if (it.hint) cv.text(it.hint, x + 20, y + 46, 14, t.faint, {});
+    cv.text(it.label, x + 20, y + (rh >= 46 ? 24 : Math.round(rh / 2) + 6), 19, t.text, { weight: 'bold' });
+    if (it.hint && rh >= 46) cv.text(it.hint, x + 20, y + rh - 10, 14, t.faint, {});
     var danger = it.danger && (it.value === 'armed' || it.value === 'on' || it.value === true);
-    cv.text(String(it.display), x + cw - 20, y + 34, 22, danger ? t.crit : t.accent, { align: 'r', weight: 'bold' });
+    cv.text(String(it.display), x + cw - 20, y + Math.round(rh / 2) + 8, 22, danger ? t.crit : t.accent, { align: 'r', weight: 'bold' });
   }
 }
 
@@ -562,7 +632,12 @@ function info(cv, t, view, R) {
     var x = R.x + 28 + col * cw, y = R.y + 56 + row * 29;
     var it = items[i];
     cv.text(it.label.toUpperCase(), x, y, 15, t.faint, { weight: 'bold' });
-    cv.text(it.value, x + 230, y, 20, it.ok ? t.text : t.faint, { weight: it.ok ? 'bold' : 'normal' });
+    // On a refusal show WHY (the UDS negative-response name), not just "not
+    // available": requestOutOfRange means the ECU has no such identifier, while
+    // securityAccessDenied/serviceNotSupportedInActiveSession mean it does but
+    // is withholding it - a completely different fix.
+    var shown = it.ok ? it.value : (it.nrcName ? 'not available (' + it.nrcName + ')' : it.value);
+    cv.text(shown, x + 230, y, 20, it.ok ? t.text : t.faint, { weight: it.ok ? 'bold' : 'normal' });
     cv.fillRect(x, y + 11, cw - 24, 1, t.line);
   }
   // Tune / last-flash status line.
@@ -588,14 +663,14 @@ function info(cv, t, view, R) {
 }
 
 function content(name) {
-  return { live: live, log: log, channels: channels, maps: maps, connect: connect, codes: codes, info: info, flash: flash, setup: setup }[name] || live;
+  return { live: live, log: log, channels: channels, maps: maps, engine: engine, connect: connect, codes: codes, info: info, flash: flash, setup: setup }[name] || live;
 }
 
 module.exports = {
   W: W, H: H, CONTENT: CONTENT, BAR: BAR,
   tabRects: tabRects, barRects: barRects, scaleCv: scaleCv,
   chrome: chrome, content: content,
-  live: live, log: log, channels: channels, maps: maps, connect: connect, codes: codes, info: info, flash: flash, setup: setup,
+  live: live, log: log, channels: channels, maps: maps, engine: engine, engineGeom: engineGeom, setupGeom: setupGeom, connect: connect, codes: codes, info: info, flash: flash, setup: setup,
   cval: cval,
   byName: content
 };
